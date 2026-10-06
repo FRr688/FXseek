@@ -1,0 +1,2147 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0 | Copyright (c) 2026 FXseek. All rights reserved. | 本文件是 FXseek 的一部分：非商业用途免费，商业用途需取得授权（见仓库根目录 COMMERCIAL.md）。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设置与备份 · FXseek媒体库</title>
+<style>
+:root{
+  /* 亮色降亮度：页面浅灰 + 卡片近白，避免大面积纯白刺眼 */
+  --bg:#eef1f5; --bg-side:#eaedf2; --bg-card:#f7f9fb; --bg-soft:#eaedf2;
+  --bg-hover:#e3e7ed; --bg-sel:#e0e9f9;
+  --border:#d9dde4; --border-strong:#c6ccd5;
+  --text:#1a1d21; --text-2:#636a77; --text-3:#8f96a2;
+  --accent:#1a1d21; --accent-hover:#000000;
+  --blue:#4a7de0; --danger:#dc2626; --danger-bg:#fef2f2;
+  --lime:#c8f542;
+  /* 侧栏「淡灯效」 */
+  --side-glow-1:rgba(99,102,241,.17);
+  --side-glow-2:rgba(236,72,153,.12);
+}
+.ico{flex-shrink:0;vertical-align:-0.14em}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+/* 字号缩放：所有尺寸都用 rem，改这里的根字号即可整体缩放（基准 16px = 当前观感） */
+html{font-size:16px}
+html[data-font="small"]{font-size:14.5px}
+html[data-font="large"]{font-size:17.5px}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+  background:var(--bg);color:var(--text);font-size:0.875rem;-webkit-font-smoothing:antialiased}
+body[data-theme="dark"]{
+  --bg:#16181d;--bg-side:#1b1e24;--bg-card:#1f232a;--bg-soft:#23272f;--bg-hover:#262b33;--bg-sel:#2b313a;
+  --border:#2e333c;--border-strong:#3a4048;--text:#e8eaed;--text-2:#9aa1ad;--text-3:#6b7280;
+  /* --accent 在亮色下是「近黑＝主色」，暗色下必须抬亮，否则主按钮会糊在卡片上
+     （它是 background + 白字，不能简单换成浅色）。 */
+  --accent:#3c4453;--accent-hover:#4a5262;
+}
+/* logo 标记：浅色/夜间都用同一张品牌图（背景已裁剪放大） */
+body[data-theme="dark"] .logo .mark{background:linear-gradient(135deg,#6366f1,#a855f7 55%,#ec4899)}
+body[data-theme="dark"]{--side-glow-1:rgba(99,102,241,.27); --side-glow-2:rgba(236,72,153,.19)}
+body[data-theme="dark"] .logo .brand b{color:#fff}
+.app{display:flex;height:100vh}
+
+/* 侧边栏 */
+.side{width:230px;flex-shrink:0;border-right:1px solid var(--border);
+  background:
+    radial-gradient(120% 58% at 0% -12%, var(--side-glow-1), rgba(0,0,0,0) 64%),
+    radial-gradient(100% 46% at 100% 110%, var(--side-glow-2), rgba(0,0,0,0) 68%),
+    var(--bg-side);
+  display:flex;flex-direction:column;padding:16px 12px}
+/* 侧栏搜索：过滤设置项 */
+.side-search{display:flex;align-items:center;gap:8px;margin:0 2px 16px;padding:8px 10px;
+  border-radius:9px;background:var(--bg-soft);border:1px solid var(--border);color:var(--text-3)}
+.side-search:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.09)}
+.side-search input{flex:1;min-width:0;border:none;background:transparent;outline:none;
+  font-size:0.8125rem;color:var(--text);font-family:inherit}
+.side-search input::placeholder{color:var(--text-3)}
+.logo{display:flex;align-items:center;gap:9px;padding:6px 8px 20px;font-weight:700;font-size:1rem;letter-spacing:-.2px}
+.logo .mark{width:27px;height:27px;border-radius:8px;color:#fff;
+  background:linear-gradient(135deg,#6366f1,#a855f7 55%,#ec4899);
+  box-shadow:0 2px 8px rgba(139,92,246,.42), inset 0 1px 0 rgba(255,255,255,.28);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  overflow:hidden}
+.logo .mark img{display:block;width:19px;height:auto}
+.logo .mark svg{display:block}
+.logo .brand{display:flex;flex-direction:row;align-items:baseline;gap:8px;line-height:1.05}
+.logo .brand b{font-size:0.9688rem;font-weight:800;letter-spacing:.2px;color:#000}
+.logo .brand i{font-style:normal;font-size:0.6562rem;font-weight:600;letter-spacing:2.5px;color:var(--text-3);margin-top:0}
+
+/* ── 品牌广告语（logo 下一行）——流光渐变扫过 + 微呼吸 ── */
+.logo .slogan{display:block;width:max-content;font-size:0.5625rem;font-weight:600;letter-spacing:1.6px;
+  margin:1px 0 0 0;line-height:1.2;white-space:nowrap;cursor:default;
+  background:linear-gradient(100deg,#818cf8 0%,#c084fc 22%,#f472b6 44%,#38bdf8 66%,#818cf8 100%);
+  background-size:220% 100%;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  animation:slogansheen 4.8s linear infinite, sloganbreath 4.8s ease-in-out infinite}
+@keyframes slogansheen{
+  0%{background-position:0% 0}
+  100%{background-position:-220% 0}
+}
+@keyframes sloganbreath{
+  0%,100%{opacity:.62;filter:drop-shadow(0 0 0px rgba(168,85,247,0))}
+  50%{opacity:1;filter:drop-shadow(0 0 6px rgba(168,85,247,.45))}
+}
+/* hover 时扫光加速一次 */
+.logo:hover .slogan{animation-duration:1.6s,1.6s}
+/* 减弱动态效果时只保留静态渐变字 */
+html[data-anim="off"] .logo .slogan,
+@media (prefers-reduced-motion:reduce){
+  html:not([data-anim="full"]) .logo .slogan{animation:none;opacity:.85}
+}
+/* ── 英文界面：广告语变长（Multimodal Fast Retrieval Agent），收窄字距并允许溢出省略 ── */
+html[data-i18n="en"] .logo .slogan{letter-spacing:.4px;font-size:0.5rem;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.logo .brandwrap{display:flex;flex-direction:column;gap:0;min-width:0}
+
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+  color:var(--text-2);text-decoration:none;font-size:0.8438rem;transition:.12s}
+.nav a:hover{background:var(--bg-hover);color:var(--text)}
+.nav a.active{background:var(--bg-sel);color:var(--text);font-weight:600}
+.nav .ic{width:16px;text-align:center;font-size:0.8125rem;opacity:.75}
+.side-sec{margin-top:22px;padding:0 10px;font-size:0.6875rem;color:var(--text-3);
+  text-transform:uppercase;letter-spacing:.6px}
+.side-foot{border-top:1px solid var(--border);padding-top:10px;margin-top:auto}
+.side-foot a{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+  font-size:0.8125rem;color:var(--text-2);text-decoration:none}
+.side-foot a:hover{background:var(--bg-hover);color:var(--text)}
+.side-foot a.active{background:var(--bg-sel);color:var(--text);font-weight:600}
+
+/* 主区：居中单列，最大 880px */
+.main{flex:1;overflow-y:auto;padding:30px 40px 80px}
+.wrap{max-width:880px;margin:0 auto}
+.head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;gap:20px}
+.head .lbl{font-size:0.7188rem;color:var(--text-3);letter-spacing:.5px;margin-bottom:6px;text-transform:uppercase}
+.head h1{font-size:1.625rem;font-weight:700;letter-spacing:-.6px;margin-bottom:7px}
+.head .desc{font-size:0.8125rem;color:var(--text-2);max-width:620px;line-height:1.55}
+.ver{padding:5px 13px;border-radius:20px;border:1px solid var(--border);font-size:0.75rem;
+  color:var(--text-3);background:var(--bg-soft);white-space:nowrap;margin-top:4px}
+
+/* 分组：区块标题 + 单列堆叠卡片 */
+.sec{margin-bottom:30px;scroll-margin-top:20px}
+.sec:last-child{margin-bottom:0}
+.sechd{display:flex;align-items:center;gap:11px;
+  font-size:0.7188rem;font-weight:700;color:var(--text-3);letter-spacing:.9px;
+  text-transform:uppercase;margin:0 0 11px 3px}
+.sechd::after{content:'';flex:1;height:1px;background:var(--border)}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;
+  padding:16px 20px 17px;margin-bottom:12px}
+.card:last-child{margin-bottom:0}
+/* 卡片头部：小徽标 + 标题/描述，下方一条分割线，下面是设置行 */
+.cardhead{display:flex;gap:12px;align-items:flex-start;padding-bottom:13px;
+  border-bottom:1px solid var(--border)}
+.cardhead .htxt{min-width:0;flex:1}
+.cardhead .icobox{margin-top:1px}
+.card h2{font-size:0.9062rem;font-weight:650;letter-spacing:-.1px;margin:0 0 3px}
+.card .d{font-size:0.7812rem;color:var(--text-2);line-height:1.55;margin:0}
+.icobox{width:32px;height:32px;border-radius:9px;background:var(--bg-soft);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;color:var(--text-2)}
+
+.row{display:flex;align-items:center;gap:18px;padding:13px 0;margin:0}
+.row + .row{border-top:1px solid var(--border)}
+/* 标签与控件顶部对齐（多行文本域用） */
+.row.top{align-items:flex-start}
+.row.top .k{padding-top:7px}
+/* 窄控件（数字、语言代码这类短字段） */
+.row > .w-sm{flex:0 0 152px;width:152px}
+/* 左标签（可带灰色小字说明）；右侧放控件 */
+.row .k{flex:1 1 auto;min-width:0;font-size:0.8438rem;color:var(--text);line-height:1.45}
+.row .k .sub{display:block;font-size:0.75rem;color:var(--text-3);margin-top:4px;line-height:1.55}
+.row > .seg,.row > .acts,.row > .btn{flex:0 0 auto}
+/* 堆叠行：控件本身较长 / 有多行说明时，标签在上、控件在下 */
+.row.stack{display:block;padding:14px 0}
+.row.stack .k{margin-bottom:11px;font-size:0.8438rem}
+.row.stack .hintline{margin-top:9px}
+/* 控件不再拉满整行 */
+.row > input[type=text],.row > input[type=password],.row > select{flex:0 0 330px;width:330px}
+.row > input[type=number]{flex:0 0 112px;width:112px}
+.row > textarea{flex:0 0 400px;width:400px;min-height:76px}
+/* 控件组：下拉 + 一个紧挨着的小按钮（如「模型」旁边的「获取列表」）。
+   总宽跟别的控件一样是 330px，右边缘对齐，看着才齐整。 */
+.fld{display:flex;align-items:center;gap:8px;flex:0 0 330px;min-width:0}
+.row > .fld{flex:0 0 330px}
+.fld > select,.fld > input{flex:1 1 auto;width:auto;min-width:0}
+.fld > .btn{padding:8px 11px;flex:0 0 auto}
+
+/* 密钥框：眼睛按钮浮在输入框右内侧，不占额外宽度、也不推挤左边的说明文字 */
+.keywrap{position:relative;flex:0 0 330px;min-width:0}
+.keywrap > input{width:100%;padding-right:38px}
+.keywrap > .eye{position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:28px;height:28px;padding:0;display:grid;place-items:center;
+  background:transparent;border:0;border-radius:7px;color:var(--text-3);
+  cursor:pointer;transition:color .15s,background .15s}
+.keywrap > .eye:hover{color:var(--text);background:var(--bg-soft)}
+.keywrap > .eye.on{color:var(--blue)}
+.keywrap > .eye:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+
+/* ==========================================================================
+   字段横排（.fgrid）—— 让每张服务卡「占满全幅」（与 MCP 卡同宽）的同时不竖着很长：
+   把 服务商 / API 地址 / API Key / 模型 这类同级字段并成一排，标签在控件上方。
+   ========================================================================== */
+.fgrid{display:grid;gap:14px 16px;align-items:start;
+  grid-template-columns:minmax(150px,1.15fr) minmax(150px,1.1fr) minmax(130px,.95fr) minmax(205px,1.5fr)}
+.fgrid > .fgroup{display:flex;flex-direction:column;gap:8px;min-width:0}
+/* 说明文字长短不一（服务商那行会换成两种），给标签区一个下限高度，
+   否则每格的控件会各自错位，一行看过去参差不齐。 */
+.fgrid > .fgroup > .k{flex:none;font-size:0.8125rem;line-height:1.45;min-height:56px}
+.fgrid > .fgroup > .k .sub{display:block;font-size:0.7188rem;line-height:1.5;margin-top:2px}
+.fgrid .keywrap,.fgrid .fld{width:100%;flex:1 1 auto}
+.fgrid > .fgroup > select,.fgrid > .fgroup > input{width:100%}
+.fgrid .fld > select{flex:1 1 auto;width:auto;min-width:0}
+/* 内容区 .wrap 恒定上限 880px，所以断点按「视口 - 侧栏 230 - .main 内边距 80」折算 */
+@media (max-width:1140px){.fgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.fgrid{grid-template-columns:minmax(0,1fr)}}
+
+/* 一行多栏（.row.grid3）：外观那种「三个分段控件并排」 */
+.row.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:start}
+/* 四栏：外观行塞进「语言」之后用。窄屏先退到 2 列，再退到 1 列 */
+.row.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;align-items:start}
+.fgroup{display:flex;flex-direction:column;gap:9px;min-width:0}
+.fgroup .k{flex:none}
+/* 三段撑满各自的栏 + 组内按钮等宽：否则三块的总宽各随字数变，右边缘参差不齐，
+   选中态一亮就更明显。等宽之后文字天然居中，一行看过去才齐。 */
+.row.grid3 .seg,.row.grid4 .seg{display:flex;width:100%;flex-wrap:wrap}
+/* 英文比中文长（「简体中文」→「Simplified Chinese」，「跟随系统」→「Follow system」），
+   四栏并排时会挤到只剩 `llow system`。所以按钮保底按内容宽度（min-width:max-content），
+   一排装不下就整颗换行 —— 中文那几个字本来就装得下，行为不变。 */
+.row.grid3 .seg button,.row.grid4 .seg button{flex:1 1 auto;justify-content:center;min-width:max-content;padding:6px 8px}
+@media (max-width:1500px){
+  /* 四栏并排时英文标签会挤（「Simplified Chinese」+「English」两块就占满了），
+     所以窄一点就退成 2×2 —— 每栏宽了，分段控件一行装得下，不用换行。 */
+  .row.grid4{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+}
+@media (max-width:900px){
+  .row.grid3,.row.grid4{grid-template-columns:minmax(0,1fr);gap:14px}
+}
+
+/* 折叠块：把「不常改」的东西收起来，卡片才不至于一眼望不到头 */
+details.fold{margin-top:14px;border:1px solid var(--border);border-radius:11px;
+  background:var(--bg-soft);overflow:hidden}
+details.fold > summary{list-style:none;cursor:pointer;padding:11px 14px;font-size:0.8125rem;
+  color:var(--text-2);display:flex;align-items:center;gap:9px;user-select:none}
+details.fold > summary::-webkit-details-marker{display:none}
+details.fold > summary::after{content:"⌄";color:var(--text-3);
+  font-size:0.9rem;line-height:1;transition:transform .15s}
+details.fold[open] > summary::after{transform:rotate(180deg)}
+details.fold > summary:hover{color:var(--text)}
+/* 徽标占一个 flex 位（内容空也占位），靠它把后面的箭头一起顶到右边 */
+details.fold > summary .fbadge{margin-left:auto;font-size:0.7188rem;color:var(--text-3);
+  font-variant-numeric:tabular-nums}
+details.fold > summary .fbadge.hot{color:var(--blue);font-weight:600}
+details.fold > .foldbody{padding:0 14px 6px}
+/* 折叠体里的行是卡片里最后一批，去掉分割线免得和折叠加起来变双层边 */
+details.fold > .foldbody > .row:last-child{border-bottom:0}
+
+/* 分段控件 */
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  background:var(--bg-soft);padding:2px;gap:2px}
+.seg button{border:none;background:transparent;padding:6px 14px;font-size:0.8125rem;color:var(--text-2);
+  cursor:pointer;transition:background .14s,color .14s;
+  display:flex;align-items:center;gap:6px;border-radius:8px;white-space:nowrap}
+.seg button:hover{background:var(--bg-hover);color:var(--text)}
+.seg button.on{background:var(--bg-card);color:var(--text);font-weight:600;
+  box-shadow:0 1px 3px rgba(0,0,0,.07),0 0 0 1px var(--border)}
+
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:9px;
+  border:1px solid var(--border-strong);background:var(--bg-card);color:var(--text);
+  font-size:0.8125rem;font-weight:500;cursor:pointer;transition:.12s;white-space:nowrap}
+.btn:hover{background:var(--bg-hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#ffffff;font-weight:600}
+.btn.primary:hover{background:var(--accent-hover)}
+/* 高频动作按钮（「等不及空闲」的补全标签 / 补全转写）：给它一手品牌蓝，
+   灰色按钮一排里一眼就能找到。禁用态（正在跑）压暗但保持同色，不会突然变成灰按钮。 */
+.btn.accent{background:var(--blue);border-color:var(--blue);color:#ffffff;font-weight:600}
+.btn.accent:hover{background:#3a68c4;border-color:#3a68c4}
+.btn.accent:disabled{background:var(--blue);border-color:var(--blue);opacity:.45;cursor:default}
+.btn.danger{color:var(--danger);border-color:#fecaca;background:var(--danger-bg)}
+.btn.danger:hover{background:#fee2e2}
+.acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:15px}
+/* 设置行里的按钮组不要额外上边距 */
+.row > .acts{margin-top:0}
+
+.stat{font-size:0.7812rem;color:var(--text-2);margin-top:13px;line-height:1.7}
+.stat b{color:var(--text);font-weight:600}
+.bar{height:7px;border-radius:4px;background:var(--bg-soft);overflow:hidden;margin:10px 0 6px}
+.bar > i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:.3s}
+.hintline{font-size:0.7188rem;color:var(--text-3);margin-top:10px;line-height:1.65}
+/* 正在补全时把进度那行点亮，这样「等不及空闲」下面一眼就能看到在跑，
+   不用去展开「后台补全」折叠块。 */
+.hintline.hot{color:var(--blue)}
+.hintline.hot b{font-weight:600}
+.hintline code{background:var(--bg-soft);padding:1px 5px;border-radius:4px;font-size:0.6875rem}
+.card input[type=text],.card input[type=password],.card input[type=number],.card select,.card textarea{
+  padding:8px 12px;border:1px solid var(--border);border-radius:9px;font-size:0.8125rem;
+  outline:none;background:var(--bg-card);color:var(--text);font-family:inherit;min-width:0}
+.card input:focus,.card select:focus,.card textarea:focus{
+  border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.09)}
+.card textarea{resize:vertical;line-height:1.6}
+
+/* 回收站列表 */
+.tlist{max-height:230px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin-top:14px}
+.trow{display:flex;align-items:center;gap:11px;padding:10px 13px;border-bottom:1px solid var(--border);font-size:0.7812rem}
+.trow:last-child{border-bottom:none}
+.trow .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow .tm{color:var(--text-3);font-size:0.7188rem}
+.trow .miss{color:var(--danger);font-size:0.6875rem}
+.tempty{padding:24px;text-align:center;color:var(--text-3);font-size:0.7812rem}
+.badge{padding:2px 8px;border-radius:5px;background:var(--bg-soft);color:var(--text-2);font-size:0.6875rem}
+
+/* ---- MCP 服务：Agent 卡片 ---- */
+.mcplist{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.mcprow{display:flex;align-items:center;gap:11px;padding:11px 2px;
+  border-top:1px solid var(--border);transition:opacity .15s}
+.mcprow:first-child{border-top:none}
+.mcprow.off{opacity:.5}
+.mcprow .mi{width:30px;height:30px;border-radius:8px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:var(--bg-soft);color:var(--text-2);font-size:0.75rem;font-weight:700}
+/* 位图版 logo（WorkBuddy / Hermes）：直接把官方图标铺满方块 */
+.mcprow .mi.mimg img{width:100%;height:100%;object-fit:cover;display:block}
+.mcprow .mi svg{display:block}
+/* 未安装的 Agent：图标去饱和压暗，别抢已接入的注意力 */
+.mcprow.off .mi{filter:grayscale(1);opacity:.55}
+.mcprow .mt{flex:1;min-width:0}
+.mcprow .mt b{display:block;font-size:0.8438rem;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mcprow .mt span{display:block;font-size:0.6875rem;color:var(--text-3);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mcprow .st{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;
+  font-size:0.6875rem;font-weight:600;padding:3px 9px;border-radius:20px}
+.mcprow .st.ok{background:rgba(34,197,94,.13);color:#16a34a}
+.mcprow .st.no{background:var(--bg-soft);color:var(--text-3)}
+.mcprow .st.noinstall{background:transparent;color:var(--text-3);font-weight:400}
+.mcprow .st .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+/* 技能标记：已就位是安静的一条，缺失才是要看的（琥珀色） */
+.mcprow .skok{flex:0 0 auto;font-size:0.6562rem;padding:2px 7px;border-radius:20px;
+  background:var(--bg-soft);color:var(--text-3);white-space:nowrap}
+.mcprow .skmiss{flex:0 0 auto;font-size:0.6562rem;padding:2px 7px;border-radius:20px;
+  background:rgba(245,158,11,.13);color:#d97706;font-weight:600;white-space:nowrap;
+  cursor:pointer}
+.mcprow.off .skok,.mcprow.off .skmiss{display:none}
+/* 逐行小开关 */
+.mcprow .sw{flex:0 0 auto;border:none;cursor:pointer;font-size:0.6875rem;
+  padding:4px 11px;border-radius:8px;background:var(--bg-soft);color:var(--text-2);
+  transition:background .12s,color .12s}
+.mcprow .sw:hover{background:var(--bg-hover);color:var(--text)}
+.mcprow .sw.on{background:var(--blue);color:#fff}
+.mcprow .sw.off{background:rgba(220,38,38,.1);color:#dc2626}
+.mcprow .sw.on:hover{background:#1d4ed8;color:#fff}
+.mcprow .sw.off:hover{background:rgba(220,38,38,.17)}
+.mcprow .sw:disabled{opacity:.45;cursor:default}
+
+/* 工具清单 */
+.mcptools{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:9px;margin-top:4px}
+.mcptool{padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+.mcptool b{display:block;font-size:0.7812rem;font-weight:600;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--blue)}
+.mcptool span{display:block;font-size:0.6875rem;color:var(--text-3);
+  margin-top:4px;line-height:1.55}
+
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:#1a1d21;color:#fff;
+  padding:10px 20px;border-radius:9px;font-size:0.8125rem;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+.toast.show{opacity:1}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#d6d9de;border-radius:5px;border:2px solid var(--bg)}
+/* 操作日志 */
+.logview{margin-top:12px;max-height:300px;overflow-y:auto;background:var(--bg-soft);
+  border:1px solid var(--border);border-radius:9px;padding:6px}
+.logview .lrow{display:flex;align-items:baseline;gap:10px;padding:6px 9px;
+  border-bottom:1px solid var(--border);font-size:0.75rem}
+.logview .lrow:last-child{border-bottom:none}
+.logview .lt{color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0;font-size:0.6875rem}
+.logview .la{font-weight:600;color:var(--text);flex-shrink:0;min-width:64px}
+.logview .ld{color:var(--text-2);word-break:break-all;flex:1}
+.logview .lrow.warn .la{color:var(--warn,#d29922)}
+.logview .lrow.error .la{color:var(--danger,#dc2626)}
+.logview .tempty{text-align:center;color:var(--text-3);padding:26px 0;font-size:0.7812rem}
+
+/* ── 关于 ──────────────────────────────────────────────────────────── */
+/* 头部：把默认的方形 icobox 换成本应用同款渐变 logo，和侧栏呼应 */
+.abthead .ablogo{width:40px;height:40px;border-radius:12px;color:#fff;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#6366f1,#a855f7 55%,#ec4899);
+  box-shadow:0 3px 12px rgba(139,92,246,.34), inset 0 1px 0 rgba(255,255,255,.28)}
+.abthead .ablogo img{display:block;width:28px;height:auto}
+.card h2 .abver{font-size:0.6875rem;font-weight:650;letter-spacing:.2px;
+  color:var(--text-2);background:var(--bg-soft);border:1px solid var(--border);
+  border-radius:999px;padding:2px 9px;margin-left:9px;vertical-align:2px;
+  font-variant-numeric:tabular-nums}
+/* 事实格：固定两列，2×2 正好铺满；窄屏落成一列 */
+.abgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:1px;background:var(--border);border:1px solid var(--border);
+  border-radius:11px;overflow:hidden;margin-top:4px}
+@media (max-width:900px){ .abgrid{grid-template-columns:minmax(0,1fr)} }
+.abcell{background:var(--bg-card);padding:11px 14px;min-width:0}
+.abcell b{display:block;font-size:0.6875rem;font-weight:650;color:var(--text-3);
+  letter-spacing:.3px;margin-bottom:4px}
+.abcell i{display:block;font-style:normal;font-size:0.7812rem;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.privline{display:flex;gap:8px;align-items:flex-start;margin-top:14px;padding:10px 12px;
+  border-radius:9px;background:var(--bg-soft);border:1px solid var(--border);
+  font-size:0.7188rem;color:var(--text-2);line-height:1.6}
+.privline .icn{margin-top:2px;color:var(--text-3)}
+/* 打赏：两张卡等宽并排，二维码统一放进白底方框（扫码要静默区，深浅色都不能动它） */
+.donrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,240px));
+  gap:14px;margin-top:4px}
+.doncard{border:1px solid var(--border);border-radius:13px;background:var(--bg-card);
+  padding:13px;display:flex;flex-direction:column;gap:11px;
+  transition:.16s border-color,.16s transform,.16s box-shadow}
+.doncard:hover{border-color:var(--border-strong);transform:translateY(-2px);
+  box-shadow:0 6px 18px rgba(0,0,0,.07)}
+body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
+.donimg{background:#fff;border-radius:10px;height:196px;padding:9px;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.donimg img{max-width:100%;max-height:100%;object-fit:contain;border-radius:5px;display:block}
+.donmeta{text-align:center;line-height:1.5}
+.donmeta b{display:block;font-size:0.8125rem;font-weight:650;color:var(--text)}
+.donmeta i{font-style:normal;font-size:0.7188rem;color:var(--text-3)}
+/* 右边空出来的那一格：整张卡是一个 <a>，所以悬停要有明显反馈，
+   否则没人看得出它能点。高度与二维码卡对齐（.starimg 也是 196px），
+   免得网格里另外两张被拉伸、底下多出一块空白。 */
+.doncard.starcard{text-decoration:none;cursor:pointer}
+.doncard.starcard:hover,.doncard.starcard:focus-visible{border-color:var(--blue)}
+.doncard.starcard:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.starimg{height:196px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;background:var(--bg-soft);border:1px dashed var(--border-strong);border-radius:10px;
+  transition:.16s border-color,.16s background}
+.starimg .mark{width:62px;height:62px;fill:var(--text-2);transition:.16s fill,.16s transform}
+.doncard.starcard:hover .starimg{border-color:var(--blue);background:var(--bg-hover)}
+.doncard.starcard:hover .starimg .mark{fill:var(--blue);transform:scale(1.06)}
+.starbtn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;
+  background:var(--blue);color:#ffffff;font-size:0.7812rem;font-weight:600;transition:.16s background}
+.doncard.starcard:hover .starbtn{background:#3a68c4}
+.starbtn .icn{color:currentColor}
+</style>
+<!-- ★ 必须在页面主脚本之前加载：主脚本里的 applyTheme(SETTINGS) → applyLang() 是
+     解析期就排队的，i18n.js 放到 </body> 前的话，本地服务器一快，它还没执行，
+     if(window.I18N) 就静默跳过 —— 于是「切了英文、再回设置页还是中文」。
+     i18n.js 末尾那句 applyNode 有 if(document.body) 兜着，放 head 里是安全的。 -->
+<script src="/i18n.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo"><span class="mark"><img src="assets/baboon_white.png" alt=""></span><span class="brandwrap"><span class="brand"><b>FXseek</b><i>媒体库</i></span><span class="slogan">多模态快速检索智能管家</span></span></div>
+    <div class="side-search">
+      <i class="icn" data-icon="search" data-size="14"></i>
+      <input type="text" id="setSearch" placeholder="搜索设置…" autocomplete="off">
+    </div>
+    <nav class="nav" id="secNav">
+      <a data-sec="sec-look" class="active"><span class="ic"><i class="icn" data-icon="sparkles" data-size="14"></i></span>外观</a>
+      <a data-sec="sec-data"><span class="ic"><i class="icn" data-icon="save" data-size="14"></i></span>数据与安全</a>
+      <a data-sec="sec-ai"><span class="ic"><i class="icn" data-icon="cpu" data-size="14"></i></span>智能服务</a>
+      <a data-sec="sec-mcp"><span class="ic"><i class="icn" data-icon="link" data-size="14"></i></span>MCP 服务</a>
+      <a data-sec="sec-perf"><span class="ic"><i class="icn" data-icon="database" data-size="14"></i></span>性能与环境</a>
+      <a data-sec="sec-about"><span class="ic"><i class="icn" data-icon="info" data-size="14"></i></span>关于</a>
+    </nav>
+    <div class="side-foot">
+      <a href="/"><span class="ic"><i class="icn" data-icon="home" data-size="14"></i></span>返回首页</a>
+    </div>
+  </aside>
+
+  <main class="main">
+   <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>设置与备份</h1>
+        <div class="desc">管理本机配置、数据安全和当前版本信息。</div>
+      </div>
+      <div class="ver" id="ver">1.0.0</div>
+    </div>
+
+      <section class="sec" id="sec-look">
+        <div class="sechd">外观</div>
+
+        <!-- 显示与外观 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="sparkles" data-size="17"></i></span><div class="htxt">
+            <h2>显示与外观</h2>
+            <div class="d">自动模式会在本地时间 07:00–19:00 使用白天主题，其余时间使用夜晚主题；字号调整不影响资产卡片尺寸。</div>
+          </div>
+        </div>
+        <div class="row grid4">
+          <div class="fgroup">
+            <div class="k">界面语言</div>
+            <div class="seg" id="segLang">
+              <button data-v="zh">简体中文</button>
+              <button data-v="en">English</button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <div class="k">界面主题</div>
+            <div class="seg" id="segTheme">
+              <button data-v="auto"><i class="icn" data-icon="clock" data-size="13"></i> 自动</button>
+              <button data-v="light"><i class="icn" data-icon="sparkles" data-size="13"></i> 白天</button>
+              <button data-v="dark"><i class="icn" data-icon="sparkles" data-size="13"></i> 夜晚</button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <div class="k">字体大小</div>
+            <div class="seg" id="segFont">
+              <button data-v="small">T 小</button>
+              <button data-v="medium">T 中</button>
+              <button data-v="large">T 大</button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <div class="k">界面动效</div>
+            <div class="seg" id="segAnim">
+              <button data-v="auto">跟随系统</button>
+              <button data-v="full">完整</button>
+              <button data-v="off">关闭</button>
+            </div>
+          </div>
+        </div>
+        <div class="hintline" id="animHint"></div>
+        <div class="hintline" id="langHint"></div>
+      </div>
+
+        <!-- 关闭窗口行为 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="x" data-size="17"></i></span><div class="htxt">
+            <h2>关闭窗口行为</h2>
+            <div class="d">点窗口左上角的关闭按钮（或 Cmd+W）时做什么。之前在关闭弹窗里勾过「记住我的选择」的，可在这里随时改回。</div>
+          </div>
+        </div>
+        <div class="row stack">
+          <div class="k">关闭时</div>
+          <div class="seg" id="segClose">
+            <button data-v="ask">每次询问</button>
+            <button data-v="tray">最小化到菜单栏</button>
+            <button data-v="quit">直接退出</button>
+          </div>
+          <div class="hintline" id="closeHint"></div>
+        </div>
+      </div>
+
+      </section>
+
+      <section class="sec" id="sec-data">
+        <div class="sechd">数据与安全</div>
+
+        <!-- 配置备份 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="save" data-size="17"></i></span><div class="htxt">
+            <h2>配置备份</h2>
+            <div class="d">备份索引记录、设置、回收站与缓存配置；不会复制原始资产文件。</div>
+          </div>
+        </div>
+        <div class="acts">
+          <button class="btn primary" onclick="exportCfg()"><i class="icn" data-icon="download" data-size="14"></i><span>导出配置</span></button>
+          <button class="btn" onclick="document.getElementById('impFile').click()"><i class="icn" data-icon="upload" data-size="14"></i><span>恢复配置</span></button>
+          <input type="file" id="impFile" accept=".json" style="display:none" onchange="importCfg(event)">
+        </div>
+      </div>
+
+      <!-- 本地优先 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="shield" data-size="17"></i></span><div class="htxt">
+            <h2>本地优先</h2>
+            <div class="d">当前版本不上传任何资产、路径、文件名或标签。只有你主动导出的配置备份会写入所选位置。</div>
+          </div>
+        </div>
+        <div class="stat" id="localStat"></div>
+        <div class="hintline">所有向量计算均在本机 Apple Silicon 上完成，无网络请求。</div>
+      </div>
+
+      <!-- 数据存储 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="database" data-size="17"></i></span><div class="htxt">
+            <h2>数据存储位置</h2>
+            <div class="d">向量库、指纹库、设置与预览缓存都保存在这里，和程序本身分开；升级或重装应用不会影响你的数据。</div>
+          </div>
+        </div>
+        <div class="stat" id="dataStat">读取中…</div>
+        <div class="acts">
+          <button class="btn" onclick="gcCheck()"><i class="icn" data-icon="search" data-size="14"></i><span>检查失效记录</span></button>
+          <button class="btn danger" onclick="gcClean()"><i class="icn" data-icon="trash" data-size="14"></i><span>立即清理失效记录</span></button>
+        </div>
+        <div class="hintline" id="gcHint">「失效记录」指索引过、但文件已经被删除或移走的条目。应用启动时会自动清理一次；不属于任何索引源的条目只报告、不自动删除。</div>
+      </div>
+
+      <!-- 操作日志 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="list" data-size="17"></i></span><div class="htxt">
+            <h2>操作日志</h2>
+            <div class="d">记录索引、检索、删除等关键操作，便于排查问题；仅保留最近 200 条。</div>
+          </div>
+        </div>
+        <div class="acts">
+          <button class="btn" onclick="loadLogs()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
+          <button class="btn danger" onclick="clearLogs()"><i class="icn" data-icon="trash" data-size="14"></i><span>清空日志</span></button>
+        </div>
+        <div class="logview" id="logView" data-i18n-ok><div class="tempty">暂无日志</div></div>
+      </div>
+      </section>
+
+      <section class="sec" id="sec-ai">
+        <div class="sechd">智能服务</div>
+
+        <!-- AI 描述生成 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="cpu" data-size="17"></i></span><div class="htxt">
+            <h2>AI 描述生成</h2>
+            <div class="d">给图片生成文字描述与标签写进索引 —— 之后用文字就能搜到画面。</div>
+          </div>
+          <div class="seg" id="segAI" style="margin-left:auto">
+            <button data-v="off">关闭</button>
+            <button data-v="on">开启</button>
+          </div>
+        </div>
+
+        <div class="fgrid">
+          <div class="fgroup">
+            <div class="k">服务商<span class="sub" id="aiProvSub">选中后自动带出地址与推荐模型</span></div>
+            <select id="aiProvider"></select>
+          </div>
+          <div class="fgroup" id="aiBaseRow">
+            <div class="k">API 地址<span class="sub">本地 / 自建服务的地址，以 <code>/v1</code> 结尾</span></div>
+            <input type="text" id="aiBase" placeholder="http://127.0.0.1:9977/v1">
+          </div>
+          <div class="fgroup">
+            <div class="k">API Key<span class="sub">服务商后台生成；本地服务留空</span></div>
+            <div class="keywrap">
+              <input type="password" id="aiKey" placeholder="本地服务可留空" autocomplete="off" spellcheck="false">
+              <button type="button" class="eye" data-for="aiKey" onclick="toggleKey('aiKey', this)"
+                      title="显示 / 隐藏密钥" aria-label="显示或隐藏密钥"></button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <div class="k">模型<span class="sub">必须是<b>能看图</b>的模型，名字里常带 vl / vision / 4v</span></div>
+            <div class="fld">
+              <select id="aiModel"></select>
+              <button class="btn" onclick="loadAIModels()" title="从服务商拉取全部模型"><i class="icn" data-icon="refresh" data-size="14"></i><span>获取列表</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="acts">
+          <button class="btn primary" onclick="saveAI()">保存配置</button>
+          <button class="btn" onclick="testAI()"><i class="icn" data-icon="link" data-size="14"></i><span>测试连接</span></button>
+        </div>
+        <div class="stat" id="aiStatus"></div>
+
+        <details class="fold">
+          <summary><i class="icn" data-icon="sparkles" data-size="14"></i>打标偏好<span class="fbadge"></span></summary>
+          <div class="foldbody">
+            <div class="row top">
+              <div class="k">图片提示词<span class="sub">单张图片打标用；决定模型输出哪些字段，清空即恢复默认</span></div>
+              <textarea id="aiPrompt" rows="3"></textarea>
+            </div>
+            <div class="row top">
+              <div class="k">视频提示词<span class="sub">视频抽帧拼成九宫格后打标用；清空即恢复默认</span></div>
+              <textarea id="aiPromptVideo" rows="3"></textarea>
+            </div>
+            <div class="row">
+              <div class="k">标签上限<span class="sub">每个素材最多取几个标签</span></div>
+              <input type="number" id="aiMaxTags" min="3" max="30" value="12">
+            </div>
+          </div>
+        </details>
+
+        <details class="fold">
+          <summary><i class="icn" data-icon="clock" data-size="14"></i>后台补全<span class="fbadge" id="idleBadge"></span></summary>
+          <div class="foldbody">
+            <div class="row">
+              <div class="k">闲置时打标签<span class="sub">你不用电脑的间隙，后台一次补一个</span></div>
+              <div class="seg" id="segIdleTag">
+                <button data-v="on">开启</button>
+                <button data-v="off">关闭</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="k">闲置时转写音频<span class="sub">闲时逐个转写音频与视频里的说话/歌词</span></div>
+              <div class="seg" id="segIdleAsr">
+                <button data-v="on">开启</button>
+                <button data-v="off">关闭</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="k">闲置门槛<span class="sub">连续多少分钟没操作才动手</span></div>
+              <input type="number" id="idleMinutes" min="1" max="240" value="5">
+            </div>
+            <div class="row">
+              <div class="k">每轮上限<span class="sub">一段空闲里最多处理几个（0 = 不限）</span></div>
+              <input type="number" id="idleBatch" min="0" max="10000" value="10">
+            </div>
+            <div id="idleHint" class="hintline"></div>
+          </div>
+        </details>
+
+        <!-- 「待处理素材」与「等不及空闲」故意都留在折叠块**外面**：
+             先看还剩多少（观察）→ 再决定要不要立刻动手（动作），这两步都不该藏在两层里。 -->
+        <div class="row" style="padding-top:4px">
+          <div class="k">待处理素材<span class="sub">还没有描述/标签的图片视频，与还没转写的音频</span></div>
+          <div class="acts" style="margin-top:0">
+            <span id="idleStat" style="font-size:0.8125rem;color:var(--text-2)">—</span>
+            <button class="btn" onclick="loadIdleStatus()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">等不及空闲<span class="sub">立刻逐个补完，不用等上面那个门槛</span></div>
+          <div class="acts" style="margin-top:0">
+            <button class="btn accent" id="bfTagBtn" onclick="aiBackfill('start','tag')">
+              <i class="icn" data-icon="sparkles" data-size="14"></i><span>补全标签</span></button>
+            <button class="btn accent" id="bfAsrBtn" onclick="aiBackfill('start','asr')">
+              <i class="icn" data-icon="mic" data-size="14"></i><span>补全转写</span></button>
+            <button class="btn" id="bfStopBtn" onclick="aiBackfill('stop')" style="display:none">
+              <i class="icn" data-icon="close" data-size="14"></i><span>停止</span></button>
+          </div>
+        </div>
+        <div id="bfHint" class="hintline"></div>
+
+        <div class="hintline">
+          <i class="icn" data-icon="info" data-size="13"></i> 官方服务商：选好服务商 → 只粘 API Key。本机 oMLX：服务商选「自定义 / 本地」，
+          地址 <code>http://127.0.0.1:9977/v1</code>，再点「获取列表」挑一个能看图的模型。
+        </div>
+      </div>
+
+      <!-- 音频转写（ASR） -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="audio" data-size="17"></i></span><div class="htxt">
+            <h2>音频转写（ASR）</h2>
+            <div class="d">把音频里说的话 / 唱的歌词转成文字写进索引 —— 之后按内容就能搜到。</div>
+          </div>
+          <div class="seg" id="segASR" style="margin-left:auto">
+            <button data-v="off">关闭</button>
+            <button data-v="on">开启</button>
+          </div>
+        </div>
+
+        <div class="fgrid">
+          <div class="fgroup">
+            <div class="k">服务商<span class="sub" id="asrProvSub">选中后自动带出地址与推荐模型</span></div>
+            <select id="asrProvider"></select>
+          </div>
+          <div class="fgroup" id="asrBaseRow">
+            <div class="k">API 地址<span class="sub">本地 / 自建服务的地址，以 <code>/v1</code> 结尾</span></div>
+            <input type="text" id="asrBase" placeholder="http://127.0.0.1:9977/v1">
+          </div>
+          <div class="fgroup">
+            <div class="k">API Key<span class="sub">服务商后台生成；本地服务留空</span></div>
+            <div class="keywrap">
+              <input type="password" id="asrKey" placeholder="本地服务可留空" autocomplete="off" spellcheck="false">
+              <button type="button" class="eye" data-for="asrKey" onclick="toggleKey('asrKey', this)"
+                      title="显示 / 隐藏密钥" aria-label="显示或隐藏密钥"></button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <div class="k">模型<span class="sub">需支持 OpenAI 的 <code>/audio/transcriptions</code></span></div>
+            <div class="fld">
+              <select id="asrModel"></select>
+              <button class="btn" onclick="loadASRModels()" title="从服务商拉取全部模型"><i class="icn" data-icon="refresh" data-size="14"></i><span>获取列表</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="acts">
+          <button class="btn primary" onclick="saveASR()">保存配置</button>
+          <button class="btn" onclick="testASR()"><i class="icn" data-icon="link" data-size="14"></i><span>测试连接</span></button>
+        </div>
+        <div class="stat" id="asrStatus"></div>
+
+        <details class="fold">
+          <summary><i class="icn" data-icon="sparkles" data-size="14"></i>高级<span class="fbadge"></span></summary>
+          <div class="foldbody">
+            <div class="row">
+              <div class="k">语言<span class="sub">留空 = 自动检测</span></div>
+              <input type="text" id="asrLang" class="w-sm" placeholder="自动检测">
+            </div>
+            <div class="row">
+              <div class="k">时长上限<span class="sub">超过该秒数的音频跳过（0 = 不限）</span></div>
+              <input type="number" id="asrMaxDur" min="0" max="36000" value="600">
+            </div>
+          </div>
+        </details>
+
+        <div class="hintline">
+          <i class="icn" data-icon="info" data-size="13"></i> 用官方服务商：选「服务商」→ 只粘 API Key 就行。
+          用本机 oMLX：服务商选「自定义 / 本地」，地址填 <code>http://127.0.0.1:9977/v1</code>，
+          模型点右侧「获取列表」选一个即可，只要是支持转写的 ASR 模型都行（如 <code>Qwen3-ASR</code> 系列）。
+        </div>
+      </div>
+
+      </section>
+
+      <section class="sec" id="sec-mcp">
+        <div class="sechd">MCP 服务</div>
+
+        <!-- 总开关 -->
+        <div class="card">
+          <div class="cardhead">
+            <span class="icobox"><i class="icn" data-icon="link" data-size="17"></i></span><div class="htxt">
+              <h2>把媒体库接入本机 AI Agent</h2>
+              <div class="d">开启后，编码助手（DSH、Codex、Claude Code 等）就能用自然语言直接检索你的素材，拿到文件路径后自行打开、整理或加工。检索仍在本机完成，数据不出门。</div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="rl">
+              <div class="rt">MCP 服务</div>
+              <div class="rd">关闭时会从各 Agent 的配置里摘掉接入条目（改动前都会备份）。</div>
+            </div>
+            <div class="seg" id="segMcp">
+              <button data-v="on" onclick="setMcp(true)"><i class="icn" data-icon="check" data-size="12"></i>开启</button>
+              <button data-v="off" onclick="setMcp(false)">关闭</button>
+            </div>
+          </div>
+          <div class="stat" id="mcpStat">读取中…</div>
+        </div>
+
+        <!-- Agent 列表 -->
+        <div class="card">
+          <div class="cardhead">
+            <span class="icobox"><i class="icn" data-icon="cpu" data-size="17"></i></span><div class="htxt">
+              <h2>本机检测到的 Agent</h2>
+              <div class="d">自动扫描常见 Agent 的配置目录。已接入的会亮起来，未安装的会标灰。</div>
+            </div>
+          </div>
+          <div class="mcplist" id="mcpList"><div class="tempty">检测中…</div></div>
+          <div class="acts">
+            <button class="btn" onclick="loadMcp()"><i class="icn" data-icon="refresh" data-size="14"></i><span>重新检测</span></button>
+            <button class="btn primary" onclick="setMcpAll()"><i class="icn" data-icon="link" data-size="14"></i><span>全部接入</span></button>
+            <button class="btn" onclick="setMcpNone()"><i class="icn" data-icon="close" data-size="14"></i><span>全部断开</span></button>
+            <button class="btn" onclick="injectSkills(false)"><i class="icn" data-icon="sparkles" data-size="14"></i><span>重新注入技能</span></button>
+          </div>
+          <div class="hintline" id="mcpHint">
+            💡 MCP 走 stdio：每个 Agent 自己拉起一个轻量子进程，它再回连本服务取结果，
+            所以这里不需要额外的网络端口，也不用常驻。
+          </div>
+          <div class="hintline" id="skillHint">
+            📘 光有 MCP，Agent 只知道「有这么几个工具」，不知道<b>什么时候该用</b>。
+            所以接入时会顺手把配套技能（<code>fxseek-media</code>）写进各家的 skills 目录 ——
+            那份说明书写清了使用时机、查询怎么写、结果怎么读。<b>已存在的技能不会被覆盖</b>
+            （你可能自己改过），关掉 MCP 也不会删它。
+          </div>
+        </div>
+
+        <!-- 可用工具 -->
+        <div class="card">
+          <div class="cardhead">
+            <span class="icobox"><i class="icn" data-icon="search" data-size="17"></i></span><div class="htxt">
+              <h2>Agent 能用到的能力</h2>
+              <div class="d">全部是只读操作。删除、导入、改设置这些都不会开放给 Agent。</div>
+            </div>
+          </div>
+          <div class="mcptools" id="mcpTools"></div>
+        </div>
+      </section>
+
+      <section class="sec" id="sec-perf">
+        <div class="sechd">性能与环境</div>
+
+        <!-- 检索性能 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="cpu" data-size="17"></i></span><div class="htxt">
+            <h2>检索性能</h2>
+            <div class="d">三级递进检索，够用即止：简单查询不调用向量模型，大幅降低 CPU/GPU 占用。</div>
+          </div>
+        </div>
+
+        <div class="row stack">
+          <div class="k">默认模式</div>
+          <div class="seg" id="segTier">
+            <button data-v="auto">自动（推荐）</button>
+            <button data-v="fast">文件名</button>
+            <button data-v="vector">向量</button>
+            <button data-v="deep">深度语义</button>
+          </div>
+          <div class="hintline">
+            <b>自动</b>：文件名命中直接返回（&lt;1ms），否则向量检索，必要时才加载 WeMM 深度模型。<br>
+            <b>文件名</b>：只按名称匹配，零模型调用（最省资源）。<br>
+            <b>向量</b>：复用缓存的查询向量做矩阵检索，不重新编码。<br>
+            <b>深度语义</b>：查询扩展 + 多指令融合，精度最高但最耗资源。
+          </div>
+        </div>
+
+        <div class="row stack">
+          <div class="k">匹配门槛</div>
+          <div class="seg" id="segMatch">
+            <button data-v="off">关闭</button>
+            <button data-v="loose">宽松</button>
+            <button data-v="balanced">平衡（推荐）</button>
+            <button data-v="strict">严格</button>
+            <button data-v="strictest">最严</button>
+          </div>
+          <div class="hintline" id="matchHint"></div>
+        </div>
+
+        <div class="row stack">
+          <div class="k">视频抽帧</div>
+          <div class="seg" id="segDensity">
+            <button data-v="dense">密集</button>
+            <button data-v="auto">自动（推荐）</button>
+            <button data-v="sparse">稀疏</button>
+          </div>
+          <div class="hintline" id="densityHint"></div>
+        </div>
+        <div class="row">
+          <div class="k">帧数上限<span class="sub">单个视频最多抽多少帧（控制索引体积）</span></div>
+          <input type="number" id="videoMaxFrames" min="3" max="200" value="32">
+        </div>
+
+        <div class="acts">
+          <button class="btn primary" onclick="savePerf()">保存性能设置</button>
+          <button class="btn" onclick="showCacheStats()"><i class="icn" data-icon="database" data-size="14"></i><span>查看缓存状态</span></button>
+        </div>
+        <div class="stat" id="perfStatus"></div>
+        <div class="hintline">
+          <i class="icn" data-icon="cpu" data-size="13"></i> 模型只在首次需要时加载，并常驻复用；文件名类查询完全不会触发模型加载。
+        </div>
+      </div>
+
+      <!-- 预览缓存 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="image" data-size="17"></i></span><div class="htxt">
+            <h2>预览缓存</h2>
+            <div class="d">缩略图、视频首帧和音频波形保存在本机，用于加快再次浏览。清理后会按需重新生成，不影响原始资产。</div>
+          </div>
+        </div>
+        <div class="stat" id="cacheStat">缓存：计算中…</div>
+        <div class="bar"><i id="cacheBar" style="width:0%"></i></div>
+        <div class="hintline" id="cacheHint"></div>
+        <div class="acts">
+          <button class="btn" onclick="loadAll()">↻ 重新统计</button>
+          <button class="btn danger" onclick="clearCache()"><i class="icn" data-icon="trash" data-size="14"></i><span>清理缓存</span></button>
+        </div>
+      </div>
+
+      <!-- 运行环境 -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="cpu" data-size="17"></i></span><div class="htxt">
+            <h2>运行环境</h2>
+            <div class="d">本应用内置模型、推理运行时与 ffmpeg，目标机器无需额外安装任何依赖。</div>
+          </div>
+        </div>
+        <div class="stat" id="envStat">检测中…</div>
+      </div>
+      </section>
+
+      <section class="sec" id="sec-about">
+        <div class="sechd">关于</div>
+
+        <!-- 关于本应用 -->
+        <div class="card" id="aboutCard">
+          <div class="cardhead abthead">
+            <span class="ablogo"><img src="assets/baboon_white.png" alt=""></span>
+            <div class="htxt">
+              <h2>FXseek 媒体库<span class="abver" id="abVer">v1.0.0</span></h2>
+              <div class="d">本地多模态语义素材库 —— 用自然语言按画面内容找到本机的图片、视频、音频和文档。检索全程在本机完成，不联网。</div>
+            </div>
+          </div>
+
+          <div class="abgrid">
+            <div class="abcell"><b>推理引擎</b><i id="abEngine">读取中…</i></div>
+            <div class="abcell"><b>运行平台</b><i id="abPlat">读取中…</i></div>
+            <div class="abcell"><b>本地规模</b><i id="abScale">读取中…</i></div>
+            <div class="abcell"><b>构建时间</b><i id="abBuilt">读取中…</i></div>
+          </div>
+
+          <div class="privline">
+            <i class="icn" data-icon="shield" data-size="13"></i>
+            <span><b>隐私</b>：资产、路径、文件名和标签都不会离开这台机器。只有你主动导出的配置备份会写到你选的位置。</span>
+          </div>
+
+          <div class="acts">
+            <button class="btn primary" onclick="checkUpdate()"><i class="icn" data-icon="refresh" data-size="14"></i><span>检查更新</span></button>
+            <button class="btn" onclick="copyDiag()"><i class="icn" data-icon="save" data-size="14"></i><span>复制诊断信息</span></button>
+            <button class="btn" onclick="openDataDirHint()"><i class="icn" data-icon="folder" data-size="14"></i><span>数据目录</span></button>
+          </div>
+          <div class="stat" id="aboutStatus"></div>
+        </div>
+
+        <!-- 赞赏 -->
+        <div class="card">
+          <div class="cardhead">
+            <span class="icobox"><i class="icn" data-icon="sparkles" data-size="17"></i></span><div class="htxt">
+              <h2>赞赏支持</h2>
+              <div class="d">如果这个项目对你有帮助，欢迎扫码请作者喝杯咖啡。完全自愿，不影响任何功能，也不影响更新。</div>
+            </div>
+          </div>
+
+          <div class="donrow">
+            <div class="doncard">
+              <div class="donimg"><img src="/assets/donate-wechat.jpg?v=2" data-asset="donate-wechat.jpg" alt="微信赞赏码" loading="lazy"></div>
+              <div class="donmeta"><b>微信赞赏</b><i>Buy me a coffee</i></div>
+            </div>
+            <div class="doncard">
+              <div class="donimg"><img src="/assets/donate-alipay.jpg?v=2" data-asset="donate-alipay.jpg" alt="支付宝赞赏码" loading="lazy"></div>
+              <div class="donmeta"><b>支付宝赞赏</b><i>Buy me a coffee</i></div>
+            </div>
+            <!-- ★ 项目地址：只有这一处 href 要改。 -->
+            <a class="doncard starcard" href="https://github.com/FRr688?tab=projects"
+               target="_blank" rel="noopener noreferrer" title="在 GitHub 上打开项目页">
+              <div class="starimg">
+                <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                <span class="starbtn"><i class="icn" data-icon="star" data-size="14"></i>去点个 Star</span>
+              </div>
+              <div class="donmeta"><b>在 GitHub 上 Star</b><i>开源不易，一颗星就是最大的鼓励</i></div>
+            </a>
+          </div>
+
+          <div class="hintline">
+            <i class="icn" data-icon="shield" data-size="13"></i> 二维码是随应用一起打包的本地图片，打开这一页不会产生任何网络请求。
+          </div>
+        </div>
+      </section>
+   </div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* 静态占位图标渲染(data-icon -> SVG) */
+function renderStaticIcons(root){
+  root = root || document;
+  root.querySelectorAll('.icn').forEach(el => {
+    const name = el.dataset.icon, size = parseInt(el.dataset.size || '16', 10);
+    const d = window.icon ? window.icon(name, size) : '';
+    if(d){ el.outerHTML = d; }
+  });
+}
+
+/* ---------- 密钥的显示 / 隐藏（小眼睛） ---------- */
+// 只需要换图标，类型仍旧在 password/text 之间切 —— 不改任何取值逻辑，
+// 所以 saveAI()/saveASR() 读到的还是同一个 $('#…Key').value。
+function paintEye(btn, shown){
+  btn.classList.toggle('on', !!shown);
+  btn.innerHTML = `<i class="icn" data-icon="${shown ? 'eyeOff' : 'eye'}" data-size="15"></i>`;
+  renderStaticIcons(btn);
+  btn.title = shown ? '隐藏密钥' : '显示密钥';
+  btn.setAttribute('aria-pressed', shown ? 'true' : 'false');
+}
+function toggleKey(id, btn){
+  const inp = document.getElementById(id);
+  if(!inp) return;
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  paintEye(btn, show);
+  // 显示时把光标落到末尾，方便直接改
+  if(show){ try{ inp.focus({preventScroll:true}); inp.setSelectionRange(inp.value.length, inp.value.length); }catch(e){} }
+}
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let SETTINGS = {};
+
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2400);}
+
+/* 标题栏跟随主题：WebKit 内容跟 body[data-theme]，但系统标题栏是 AppKit 画的，
+   要显式告诉原生层。js_api 桥不在（纯浏览器打开）时静默跳过。 */
+function syncTitlebarTheme(){
+  try{
+    const t = document.body.dataset.theme;
+    const api = window.pywebview && window.pywebview.api;
+    if(api && api.set_titlebar_theme) api.set_titlebar_theme(t);
+  }catch(e){}
+}
+function applyTheme(s){
+  let th = s.theme || 'auto';
+  if(th === 'auto'){
+    const h = new Date().getHours();
+    th = (h >= 7 && h < 19) ? 'light' : 'dark';
+  }
+  document.body.dataset.theme = th;
+  document.documentElement.dataset.font = s.font_size || 'medium';
+  document.documentElement.dataset.anim = s.ui_anim || 'auto';
+  applyLang(s.lang);
+  syncTitlebarTheme();
+}
+/* 界面语言。翻译本身在 i18n.js 里（词典 + DOM 翻译器），这里只负责
+   把语言交给它，并更新下面那行说明。
+   ★ i18n.js 没就位时**不能**静默跳过：语言明明存进服务端了，可这一页会
+     一直是中文（用户报的「设置页存不住英文」就是这条静默 if 造成的）。
+     现在 head 里已经先加载它，正常路径一定命中；这里再兜一层 —— 万一它
+     被挪回底部、或者磁盘/网络慢，就轮询等它到齐补一次。 */
+function applyLang(v){
+  v = (v === 'en') ? 'en' : 'zh';
+  document.documentElement.dataset.lang = v;
+  if(window.I18N){
+    I18N.setLang(v);
+    /* 这一页的数字卡片、日志、状态行都是 JS 先 innerHTML 再回填的：
+       setLang 那一刻它们往往还没渲染出来，等一拍再全页补翻一次。 */
+    if(v === 'en') setTimeout(function(){ if(I18N.refresh) I18N.refresh(document.body); }, 0);
+    return;
+  }
+  let tries = 0;
+  (function waitI18N(){
+    if(window.I18N){
+      I18N.setLang(v);
+      if(v === 'en') setTimeout(function(){ if(I18N.refresh) I18N.refresh(document.body); }, 0);
+      return;
+    }
+    if(++tries > 40) return;      // 2 秒还没来就算了，宁可中文也不要卡着
+    setTimeout(waitI18N, 50);
+  })();
+}
+const LANG_HINT = {
+  zh: '<i class="icn" data-icon="check" data-size="13"></i> 简体中文：界面文案按中文显示。',
+  en: '<i class="icn" data-icon="check" data-size="13"></i> English: interface copy is shown in English. Code comments and logs stay as-is.',
+};
+function updateLangHint(){
+  const v = ($('#segLang button.on') || {dataset:{v:'zh'}}).dataset.v;
+  const el = $('#langHint');
+  if(!el) return;
+  el.innerHTML = LANG_HINT[v] || '';
+  renderStaticIcons(el);
+}
+function markSeg(id, val){
+  document.querySelectorAll('#'+id+' button').forEach(b=>{
+    b.classList.toggle('on', b.dataset.v === val);
+  });
+}
+
+async function loadSettings(){
+  SETTINGS = await (await fetch('/v1/settings')).json();
+  applyTheme(SETTINGS);
+  markSeg('segTheme', SETTINGS.theme);
+  markSeg('segFont', SETTINGS.font_size);
+  markSeg('segAnim', SETTINGS.ui_anim || 'auto'); updateAnimHint();
+  markSeg('segLang', SETTINGS.lang || 'zh'); updateLangHint();
+  markSeg('segClose', SETTINGS.close_action || 'ask'); updateCloseHint();
+  $('#ver').textContent = SETTINGS.version || '1.0.0';
+  loadAIFields();
+}
+
+/* ---------- 服务商预设 ----------
+   官方服务商：选中后接口地址与推荐模型自动带出，用户只填一个 API Key。
+   自定义：给 oMLX / Ollama / LM Studio / 自建网关用，地址自己填、Key 可留空。
+   provider 不单独存盘 —— 每次加载拿已存的 base_url 反查预设，对不上就是「自定义」，
+   所以老配置（本机 oMLX）会自然落在「自定义」上，不会被改写。          */
+const AI_PROVIDERS = [
+  {id:'openai',    name:'OpenAI',
+   url:'https://api.openai.com/v1',                                 model:'gpt-4o-mini',
+   note:'platform.openai.com 申请 Key · gpt-4o-mini 能看图又便宜'},
+  {id:'gemini',    name:'Google Gemini',
+   url:'https://generativelanguage.googleapis.com/v1beta/openai',   model:'gemini-2.0-flash',
+   note:'aistudio.google.com 申请 Key · gemini-2.0-flash 有免费额度'},
+  {id:'dashscope', name:'阿里云百炼 · 通义千问',
+   url:'https://dashscope.aliyuncs.com/compatible-mode/v1',         model:'qwen-vl-max-latest',
+   note:'bailian.console.aliyun.com 申请 Key · 通义千问 VL 系列能看图'},
+  {id:'zhipu',     name:'智谱 GLM',
+   url:'https://open.bigmodel.cn/api/paas/v4',                      model:'glm-4v-flash',
+   note:'bigmodel.cn 申请 Key · glm-4v-flash 免费档就够用'},
+  {id:'moonshot',  name:'月之暗面 Kimi',
+   url:'https://api.moonshot.cn/v1',                                model:'moonshot-v1-8k-vision-preview',
+   note:'platform.moonshot.cn 申请 Key · 选带 vision 的型号'},
+  {id:'silicon',   name:'硅基流动 SiliconFlow',
+   url:'https://api.siliconflow.cn/v1',                             model:'Qwen/Qwen2.5-VL-72B-Instruct',
+   note:'siliconflow.cn 申请 Key · 聚合了不少开源视觉模型'},
+  {id:'xai',       name:'xAI Grok',
+   url:'https://api.x.ai/v1',                                       model:'grok-2-vision-1212',
+   note:'console.x.ai 申请 Key · 选带 vision 的型号'},
+  {id:'custom',    name:'自定义 / 本地（oMLX、Ollama、LM Studio…）',
+   url:'', model:'',
+   note:'自己填接口地址，本地服务一般不用 Key（地址要以 /v1 结尾）'},
+];
+const ASR_PROVIDERS = [
+  {id:'openai',  name:'OpenAI',
+   url:'https://api.openai.com/v1',      model:'whisper-1',
+   note:'platform.openai.com 申请 Key · whisper-1'},
+  {id:'groq',    name:'Groq',
+   url:'https://api.groq.com/openai/v1', model:'whisper-large-v3',
+   note:'console.groq.com 申请 Key · whisper-large-v3，速度很快'},
+  {id:'silicon', name:'硅基流动 SiliconFlow',
+   url:'https://api.siliconflow.cn/v1',  model:'FunAudioLLM/SenseVoiceSmall',
+   note:'siliconflow.cn 申请 Key · SenseVoiceSmall 便宜'},
+  {id:'custom',  name:'自定义 / 本地（oMLX、Ollama、LM Studio…）',
+   url:'', model:'',
+   note:'自己填接口地址，本地服务一般不用 Key（地址要以 /v1 结尾）'},
+];
+
+function fillProviderSelect(sel, list){
+  sel.innerHTML = list.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+}
+/** 地址跟哪个预设对得上？对不上（含空）就算「自定义」。 */
+function detectProvider(list, url){
+  const u = String(url || '').trim().replace(/\/+$/, '');
+  if(!u) return 'custom';
+  const hit = list.find(p => p.url && p.url.replace(/\/+$/, '') === u);
+  return hit ? hit.id : 'custom';
+}
+/**
+ * 把「当前已存的值」与「刚拉到的模型列表」合成下拉的选项。
+ * current 永远排在第一位并保持选中，这样即使拉取失败或模型下架，
+ * 用户原来存着的模型名也不会凭空消失。
+ */
+function setModelOptions(selId, current, models){
+  const sel = $('#' + selId); if(!sel) return;
+  const cur = String(current || '').trim();
+  const list = [];
+  if(cur) list.push(cur);
+  (models || []).forEach(m => {
+    const id = String((m && m.id) || m || '').trim();
+    if(id && !list.includes(id)) list.push(id);
+  });
+  if(!list.length) list.push('');
+  sel.innerHTML = list.map(v =>
+    `<option value="${esc(v)}">${esc(v || '— 点右侧「获取列表」 —')}</option>`).join('');
+  sel.value = cur || (list[0] || '');
+}
+/** 切换服务商：非自定义时带出地址与推荐模型，并收起「API 地址」那一行。 */
+function bindProvider(selId, list, urlId, modelId, rowId, subId, keyId){
+  const sel = $('#' + selId);
+  fillProviderSelect(sel, list);
+  const apply = (id, fill) => {
+    const p = list.find(x => x.id === id) || list[list.length - 1];
+    sel.value = p.id;
+    const custom = p.id === 'custom';
+    $('#' + rowId).style.display = custom ? '' : 'none';
+    $('#' + subId).textContent = p.note;
+    if(keyId) $('#' + keyId).placeholder = custom ? '本地服务可留空' : 'sk-…（粘贴服务商给的密钥）';
+    if(!custom && fill){
+      $('#' + urlId).value = p.url;
+      setModelOptions(modelId, p.model, []);
+    }
+    return p;
+  };
+  sel.onchange = () => { apply(sel.value, true); };
+  return apply;
+}
+
+/* ---------- AI 描述生成配置 ---------- */
+let applyAiProvider  = () => {};
+let applyAsrProvider = () => {};
+
+function loadAIFields(){
+  applyAiProvider  = bindProvider('aiProvider',  AI_PROVIDERS,  'aiBase',  'aiModel',  'aiBaseRow',  'aiProvSub',  'aiKey');
+  applyAsrProvider = bindProvider('asrProvider', ASR_PROVIDERS, 'asrBase', 'asrModel', 'asrBaseRow', 'asrProvSub', 'asrKey');
+  // 先按已存地址反查服务商（对不上就是「自定义」，不覆盖用户原来的地址）
+  applyAiProvider (detectProvider(AI_PROVIDERS,  SETTINGS.ai_base_url),  false);
+  applyAsrProvider(detectProvider(ASR_PROVIDERS, SETTINGS.asr_base_url), false);
+  // 字段值放在后面填，免得被预设覆盖掉
+  $('#aiBase').value = SETTINGS.ai_base_url || '';
+  $('#aiKey').value = SETTINGS.ai_api_key || '';
+  $('#aiPrompt').value = SETTINGS.ai_prompt || '';
+  $('#aiPromptVideo').value = SETTINGS.ai_prompt_video || '';
+  $('#aiMaxTags').value = SETTINGS.ai_max_tags || 12;
+  setModelOptions('aiModel',  SETTINGS.ai_model,  []);
+  markSeg('segAI', SETTINGS.ai_enabled ? 'on' : 'off');
+  // ASR 字段
+  $('#asrBase').value = SETTINGS.asr_base_url || '';
+  $('#asrKey').value = SETTINGS.asr_api_key || '';
+  setModelOptions('asrModel', SETTINGS.asr_model, []);
+  $('#asrLang').value = SETTINGS.asr_language || '';
+  $('#asrMaxDur').value = SETTINGS.asr_max_duration != null ? SETTINGS.asr_max_duration : 600;
+  markSeg('segASR', SETTINGS.asr_enabled ? 'on' : 'off');
+  markSeg('segIdleTag', SETTINGS.idle_tag === false ? 'off' : 'on');
+  markSeg('segIdleAsr', SETTINGS.idle_asr === false ? 'off' : 'on');
+  $('#idleMinutes').value = SETTINGS.idle_minutes != null ? SETTINGS.idle_minutes : 5;
+  $('#idleBatch').value = SETTINGS.idle_batch != null ? SETTINGS.idle_batch : 10;
+  updateIdleHint();
+  // 性能设置
+  markSeg('segTier', SETTINGS.search_tier || 'auto');
+  markSeg('segMatch', SETTINGS.match_level || 'balanced');
+  updateMatchHint();
+  markSeg('segDensity', SETTINGS.video_density || 'auto');
+  $('#videoMaxFrames').value = SETTINGS.video_max_frames || 32;
+  updateDensityHint();
+}
+
+const MATCH_HINT = {
+  off: '<i class="icn" data-icon="check" data-size="13"></i> 关闭：不隐藏任何命中结果，显示全部（最宽泛，可能混入低相关内容）。',
+  loose: '<i class="icn" data-icon="list" data-size="13"></i> 宽松：门槛 = max(30%, 最高分×50%) —— 结果最多，含一些边缘匹配。',
+  balanced: '<i class="icn" data-icon="sparkles" data-size="13"></i> 平衡：门槛 = max(46%, 最高分×60%) —— 过滤明显不相关条目，兼顾查全与查准。',
+  strict: '<i class="icn" data-icon="clock" data-size="13"></i> 严格：门槛 = max(58%, 最高分×75%) —— 结果更少更精准，适合素材多的库。',
+  strictest: '<i class="icn" data-icon="close" data-size="13"></i> 最严：门槛 = max(70%, 最高分×85%) —— 只留最精准的结果。',
+};
+// 兜底说明：全部被过滤时，只有在最高分本身还像样（>= 46%）的情况下才保留最高分，
+// 否则说明库里根本没有相关素材，宁可给空页（见 ui.html 的 MIN_RELEVANT）。
+const MATCH_FALLBACK = '全部被过滤时：最高分 ≥ 46% 才保留兜底结果（宽松/平衡 3 条，严格/最严 1 条）；连最高分都低于 46%，说明库里没有相关素材，直接显示「没有找到相关素材」。';
+function updateMatchHint(){
+  const v = ($('#segMatch button.on') || {dataset:{v:'balanced'}}).dataset.v;
+  const el = $('#matchHint');
+  el.innerHTML = (MATCH_HINT[v] || '') + '<br>' + MATCH_FALLBACK;
+  renderStaticIcons(el);
+}
+
+const DENSITY_HINT = {
+  dense: '<i class="icn" data-icon="grid" data-size="13"></i> 密集：间隔减半（如 8 秒视频抽 36 帧）——以图搜图最精准，但索引更大。',
+  auto: '<i class="icn" data-icon="clock" data-size="13"></i> 自动：按时长分段（≤10s 每 0.5s、≤30s 每 1s、≤2min 每 2s、更长更稀疏）——精度与资源平衡。',
+  sparse: '<i class="icn" data-icon="list" data-size="13"></i> 稀疏：间隔翻倍（如 8 秒视频抽 9 帧）——索引最小，适合海量视频。',
+};
+function updateDensityHint(){
+  const v = ($('#segDensity button.on') || {dataset:{v:'auto'}}).dataset.v;
+  const el = $('#densityHint');
+  el.innerHTML = DENSITY_HINT[v] || '';
+  renderStaticIcons(el);
+}
+
+async function savePerf(){
+  const cfg = {
+    search_tier: ($('#segTier button.on') || {dataset:{v:'auto'}}).dataset.v,
+    match_level: ($('#segMatch button.on') || {dataset:{v:'balanced'}}).dataset.v,
+    video_density: ($('#segDensity button.on') || {dataset:{v:'auto'}}).dataset.v,
+    video_max_frames: parseInt($('#videoMaxFrames').value || '32', 10),
+  };
+  await saveSettings(cfg);
+  toast('性能设置已保存');
+}
+
+async function showCacheStats(){
+  try{
+    const r = await (await fetch('/v1/cache/stats')).json();
+    const q = r.query_cache || {};
+    $('#perfStatus').innerHTML =
+      `<i class="icn" data-icon="brain" data-size="14"></i> 查询向量缓存：<b>${q.entries||0}</b> / ${q.max||0} 条 &nbsp;·&nbsp; ` +
+      `<i class="icn" data-icon="database" data-size="14"></i> 索引向量：<b>${r.vectors||0}</b> 条 &nbsp;·&nbsp; ` +
+      `<i class="icn" data-icon="image" data-size="14"></i> 缩略图缓存：<b>${r.thumb_files||0}</b> 个 / ${r.thumb_mb||0} MB`;
+  }catch(e){
+    $('#perfStatus').innerHTML = `<span style="color:#dc2626">获取失败：${esc(e.message)}</span>`;
+  }
+}
+
+function aiCfgFromForm(){
+  return {
+    ai_enabled: $('#segAI button.on') && $('#segAI button.on').dataset.v === 'on',
+    ai_base_url: $('#aiBase').value.trim(),
+    ai_api_key: $('#aiKey').value,
+    ai_model: $('#aiModel').value.trim(),
+    ai_prompt: $('#aiPrompt').value.trim(),
+    ai_prompt_video: $('#aiPromptVideo').value.trim(),
+    ai_max_tags: parseInt($('#aiMaxTags').value || '12', 10),
+    idle_tag: ($('#segIdleTag button.on') || {dataset:{v:'on'}}).dataset.v === 'on',
+    idle_asr: ($('#segIdleAsr button.on') || {dataset:{v:'on'}}).dataset.v === 'on',
+    idle_minutes: parseInt($('#idleMinutes').value || '5', 10),
+    idle_batch: parseInt($('#idleBatch').value || '10', 10),
+  };
+}
+
+const IDLE_HINT = {
+  on: '<i class="icn" data-icon="sparkles" data-size="13"></i> 开着的时候：后台每 20 秒看一眼，空闲够久就补一个（一次只跑一个，随时会被你的搜索/索引打断，中断后下次接着来）。打标签与转写轮流取，不会互相饿着。',
+  off: '<i class="icn" data-icon="close" data-size="13"></i> 两个都关了：索引不会自动补标签/转写，只能去素材详情页手动点「立即打标签」「立即转写」。',
+};
+function updateIdleHint(){
+  const tag = ($('#segIdleTag button.on') || {dataset:{v:'on'}}).dataset.v === 'on';
+  const asr = ($('#segIdleAsr button.on') || {dataset:{v:'on'}}).dataset.v === 'on';
+  const el = $('#idleHint');
+  if(!el) return;
+  el.innerHTML = IDLE_HINT[(tag || asr) ? 'on' : 'off'] || '';
+  renderStaticIcons(el);
+}
+
+let _idleLast = null;
+async function loadIdleStatus(){
+  const el = $('#idleStat');
+  if(!el) return;
+  el.textContent = '读取中…';
+  try{
+    const [r, a] = await Promise.all([
+      (await fetch('/v1/ai/status')).json(),
+      (await fetch('/v1/asr/status')).json(),
+    ]);
+    const parts = [`打标 <b>${r.tagged}</b>/${r.total}`];
+    parts.push(r.pending ? `待打标 <b>${r.pending}</b>` : '标签齐了');
+    parts.push(`转写 <b>${a.done}</b>/${a.total}`);
+    parts.push(a.pending ? `待转写 <b>${a.pending}</b>` : '转写齐了');
+    const busy = _idleLast ? ` 最后处理「${esc(_idleLast)}」` : '';
+    if(r.running) parts.push(`正在${r.last_kind === 'asr' ? '转写' : '打标'}${busy}`);
+    else if((r.idle_tag || r.idle_asr) && (r.pending || a.pending))
+      parts.push(`本轮已补 ${(r.run_tagged || 0) + (r.run_asr || 0)}/${r.idle_batch || '∞'} · 空闲 ${Math.round(r.idle_for)}s / ${r.idle_minutes * 60}s`);
+    el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+    if(r.last_error) el.innerHTML += `<br><span style="color:#dc2626">上次失败：${esc(r.last_error)}</span>`;
+    _idleLast = r.last_path ? r.last_path.split('/').pop() : null;
+    renderBackfill(r.backfill, r, a);
+    renderIdleBadge(r, a);
+    relabel(el);
+    // 只在「确实有活在干」时继续轮询；否则 setTimeout(fn,0) 会变成死循环猛刷接口
+    if(r.running || (r.backfill && r.backfill.active) ||
+       ((r.idle_tag || r.idle_asr) && (r.pending || a.pending)))
+      setTimeout(loadIdleStatus, 8000);
+  }catch(e){
+    el.innerHTML = `<span style="color:#dc2626">读取失败：${esc(e.message)}</span>`;
+  }
+}
+
+/**
+ * 折叠着也能一眼看到「有没有活在等着」——这就是把它做成 details 的意义：
+ * 卡片默认只留四行，需要时展开。正在跑时顺手把面板摊开，省一次点击。
+ */
+function renderIdleBadge(r, a){
+  const b = $('#idleBadge');
+  if(!b) return;
+  const active = !!(r.backfill && r.backfill.active);
+  const n = (r.pending || 0) + (a.pending || 0);
+  b.textContent = active ? '正在补全…' : (n ? `${n} 个待补` : '全部就绪');
+  relabel(b);
+  b.className = 'fbadge' + (active || n ? ' hot' : '');
+  // 这里**故意不自动摊开**折叠块：进度在「等不及空闲」下面那行 #bfHint 里，
+  // 点个按钮就把用户手动收好的面板弹开会很烦。
+}
+
+// 「立即补全」的按钮态与进度。后端不让两路并发，所以一条 active 就够。
+function renderBackfill(bf, r, a){
+  const hint = $('#bfHint');
+  const stop = $('#bfStopBtn');
+  const tagBtn = $('#bfTagBtn'), asrBtn = $('#bfAsrBtn');
+  if(!hint) return;
+  const active = !!(bf && bf.active);
+  if(tagBtn) tagBtn.disabled = active;
+  if(asrBtn) asrBtn.disabled = active;
+  if(stop) stop.style.display = active ? '' : 'none';
+  if(hint) hint.className = 'hintline' + (active ? ' hot' : '');
+  if(active){
+    const what = bf.what === 'asr' ? '转写' : '标签';
+    const left = bf.what === 'asr' ? (a && a.pending) : (r && r.pending);
+    // 只有真在跑的时候才说「正在处理谁」——last_path 是上一次留下的，会误导。
+    const cur = (r && r.running && r.last_path)
+      ? ` 正在处理「${esc(r.last_path.split('/').pop())}」` : '';
+    hint.innerHTML = `<b>正在补${what}</b> · 已完成 ${bf.done}${bf.failed ? ` · 失败 ${bf.failed}` : ''}` +
+                     (left != null ? ` · 还剩 ${left}` : '') + cur +
+                     `<br>不占着的话可以关掉这个页面，它在后台继续；也可以随时点「停止」。`;
+  } else if(bf && bf.finished){
+    hint.innerHTML = `上次补全：完成 <b>${bf.done}</b> 个` +
+                     (bf.failed ? `，失败 <b style="color:#dc2626">${bf.failed}</b> 个` : '，全部成功') + '。';
+  } else {
+    hint.innerHTML = '';
+  }
+}
+
+// 立即补全：不等空闲，立刻逐个处理完。
+async function aiBackfill(action, what){
+  try{
+    const res = await fetch('/v1/ai/backfill', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action, what: what || 'tag'})
+    });
+    const r = await res.json();
+    if(r.ok === false){ toast(r.message || '启动失败'); return; }
+    if(action === 'start'){
+      toast(r.pending ? `开始补全，待处理 ${r.pending} 个` : '没有待处理的素材');
+    } else if(action === 'stop'){
+      toast('已停止');
+    }
+    loadIdleStatus();
+  }catch(e){ toast('请求失败：' + e.message); }
+}
+
+async function saveAI(){
+  const cfg = aiCfgFromForm();
+  if(cfg.ai_enabled && !cfg.ai_base_url){ toast('请先填写 API 地址'); return; }
+  if(cfg.ai_enabled && !cfg.ai_model){ toast('请先选择或填写模型名'); return; }
+  await saveSettings(cfg);
+  toast('AI 配置已保存');
+}
+
+async function saveASR(){
+  const cfg = {
+    asr_enabled: ($('#segASR button.on') || {dataset:{v:'off'}}).dataset.v === 'on',
+    asr_base_url: $('#asrBase').value.trim(),
+    asr_api_key: $('#asrKey').value,
+    asr_model: $('#asrModel').value.trim(),
+    asr_language: $('#asrLang').value.trim(),
+    asr_max_duration: parseInt($('#asrMaxDur').value || '600', 10),
+  };
+  if(cfg.asr_enabled && !cfg.asr_base_url){ toast('请先填写 API 地址'); return; }
+  if(cfg.asr_enabled && !cfg.asr_model){ toast('请先填写模型名'); return; }
+  await saveSettings(cfg);
+  toast('音频转写配置已保存');
+}
+
+async function loadASRModels(){
+  const base = $('#asrBase').value.trim();
+  const key = $('#asrKey').value;
+  if(!base){ toast('请先填写 API 地址'); return; }
+  const custom = detectProvider(ASR_PROVIDERS, base) === 'custom';
+  $('#asrStatus').textContent = '正在获取模型列表…';
+  try{
+    const r = await (await fetch('/v1/ai/models',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base_url:base, api_key:key, kind: custom ? '' : 'asr'})})).json();
+    if(!r.ok){ $('#asrStatus').innerHTML = `<span style="color:#dc2626">${esc(r.message||'获取失败')}</span>`; return; }
+    if(!r.models.length){ $('#asrStatus').innerHTML = `<span style="color:#dc2626">${custom ? '没有获取到任何模型。' : '该地址没有发现语音转写类模型（whisper / sensevoice / asr 等）。若用本地服务，请确认已加载 ASR 模型。'}</span>`; return; }
+    setModelOptions('asrModel', $('#asrModel').value.trim() || r.models[0].id, r.models);
+    $('#asrStatus').innerHTML = ` 发现 <b>${r.models.length}</b> 个${custom ? '' : '语音转写'}模型，已列出：选一个再点「保存配置」`;
+    relabel($('#asrStatus'));
+  }catch(e){
+    $('#asrStatus').innerHTML = `<span style="color:#dc2626">请求失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function testASR(){
+  const base = $('#asrBase').value.trim();
+  const key = $('#asrKey').value;
+  const model = $('#asrModel').value.trim();
+  if(!base || !model){ toast('请先填写 API 地址与模型'); return; }
+  $('#asrStatus').textContent = '正在测试连接…';
+  try{
+    const r = await (await fetch('/v1/asr/test',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base_url:base, api_key:key, model:model})})).json();
+    const color = r.ok ? '#16a34a' : '#dc2626';
+    $('#asrStatus').innerHTML = `<span style="color:${color}">${r.ok?'✅ ':'❌ '}${esc(r.message||'')}</span>`;
+  }catch(e){
+    $('#asrStatus').innerHTML = `<span style="color:#dc2626">请求失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function loadAIModels(){
+  const base = $('#aiBase').value.trim();
+  const key = $('#aiKey').value;
+  if(!base){ toast('请先填写 API 地址'); return; }
+  const custom = detectProvider(AI_PROVIDERS, base) === 'custom';
+  $('#aiStatus').textContent = '正在获取模型列表…';
+  try{
+    const r = await (await fetch('/v1/ai/models',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base_url:base, api_key:key, kind: custom ? '' : 'vision'})})).json();
+    if(!r.ok){ $('#aiStatus').innerHTML = `<span style="color:#dc2626">${esc(r.message||'获取失败')}</span>`; return; }
+    if(!r.models.length){ $('#aiStatus').innerHTML = `<span style="color:#dc2626">${custom ? '没有获取到任何模型。' : '该地址没有发现能看图的模型（vl / vision / 4v 等）。若用本地服务，请确认已加载视觉模型。'}</span>`; return; }
+    // 已存的模型名排第一并保持选中，拉到的全部模型接在后面供挑
+    setModelOptions('aiModel', $('#aiModel').value.trim() || r.models[0].id, r.models);
+    $('#aiStatus').innerHTML = ` 发现 <b>${r.models.length}</b> 个${custom ? '' : '能看图的'}模型，已列出：选一个再点「保存配置」`;
+    relabel($('#aiStatus'));
+  }catch(e){
+    $('#aiStatus').innerHTML = `<span style="color:#dc2626">请求失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function testAI(){
+  const cfg = aiCfgFromForm();
+  if(!cfg.ai_base_url){ toast('请先填写 API 地址'); return; }
+  $('#aiStatus').textContent = '正在测试连接…';
+  try{
+    const r = await (await fetch('/v1/ai/test',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base_url:cfg.ai_base_url, api_key:cfg.ai_api_key, model:cfg.ai_model})})).json();
+    const color = r.ok ? '#16a34a' : '#dc2626';
+    $('#aiStatus').innerHTML = `<span style="color:${color}">${r.ok?'✅ ':'❌ '}${esc(r.message||'')}</span>`;
+    if(r.ok && r.models && r.models.length){
+      setModelOptions('aiModel', $('#aiModel').value.trim() || r.models[0].id, r.models);
+    }
+  }catch(e){
+    $('#aiStatus').innerHTML = `<span style="color:#dc2626">请求失败：${esc(e.message)}</span>`;
+  }
+}
+
+document.querySelectorAll('#segAI button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segAI', b.dataset.v); });
+document.querySelectorAll('#segASR button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segASR', b.dataset.v); });
+document.querySelectorAll('#segTier button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segTier', b.dataset.v); });
+document.querySelectorAll('#segMatch button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segMatch', b.dataset.v); updateMatchHint(); });
+document.querySelectorAll('#segDensity button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segDensity', b.dataset.v); updateDensityHint(); });
+['segIdleTag','segIdleAsr'].forEach(id=>
+  document.querySelectorAll('#'+id+' button').forEach(b=>
+    b.onclick = ()=>{ markSeg(id, b.dataset.v); updateIdleHint(); }));
+['idleMinutes','idleBatch'].forEach(id=>document.getElementById(id)
+  .addEventListener('input', updateIdleHint));
+async function saveSettings(patch){
+  SETTINGS = await (await fetch('/v1/settings',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch)})).json();
+  applyTheme(SETTINGS);
+  markSeg('segTheme', SETTINGS.theme); markSeg('segFont', SETTINGS.font_size);
+  markSeg('segAnim', SETTINGS.ui_anim || 'auto'); updateAnimHint();
+  markSeg('segLang', SETTINGS.lang || 'zh'); updateLangHint();
+  markSeg('segClose', SETTINGS.close_action || 'ask'); updateCloseHint();
+  toast('设置已保存');
+}
+
+document.querySelectorAll('#segTheme button').forEach(b=>
+  b.onclick = ()=> saveSettings({theme:b.dataset.v}));
+document.querySelectorAll('#segFont button').forEach(b=>
+  b.onclick = ()=> saveSettings({font_size:b.dataset.v}));
+
+const ANIM_HINT = {
+  auto: '<i class="icn" data-icon="clock" data-size="13"></i> 跟随系统：系统开启「减弱动态效果」时，按钮动效降级为轻微的淡入缩放；否则播放完整动画。',
+  full: '<i class="icn" data-icon="sparkles" data-size="13"></i> 完整：无论系统设置如何，始终播放完整动画（旋转、脉冲、光晕扩散）。',
+  off:  '<i class="icn" data-icon="x" data-size="13"></i> 关闭：不播放任何按钮动效。',
+};
+function updateAnimHint(){
+  const v = ($('#segAnim button.on') || {dataset:{v:'auto'}}).dataset.v;
+  const el = $('#animHint');
+  if(!el) return;
+  el.innerHTML = ANIM_HINT[v] || '';
+  renderStaticIcons(el);
+}
+document.querySelectorAll('#segAnim button').forEach(b=>
+  b.onclick = ()=> saveSettings({ui_anim:b.dataset.v}));
+
+const CLOSE_HINT = {
+  ask:  '<i class="icn" data-icon="x" data-size="13"></i> 每次询问：点关闭时弹窗，让你选「退出」还是「最小化到菜单栏」。',
+  tray: '<i class="icn" data-icon="x" data-size="13"></i> 最小化到菜单栏：点关闭直接收起，后台继续待命，菜单栏图标随时唤回。',
+  quit: '<i class="icn" data-icon="x" data-size="13"></i> 直接退出：点关闭立刻结束程序与后台服务。',
+};
+function updateCloseHint(){
+  const v = ($('#segClose button.on') || {dataset:{v:'ask'}}).dataset.v;
+  const el = $('#closeHint');
+  if(!el) return;
+  el.innerHTML = CLOSE_HINT[v] || '';
+  renderStaticIcons(el);
+}
+document.querySelectorAll('#segClose button').forEach(b=>
+  b.onclick = ()=> saveSettings({close_action:b.dataset.v}));
+
+/* 切换语言：存盘后走 saveSettings 的同一条路（applyTheme 里会调 applyLang），
+   保证「存了但没生效」和「生效但没存」两种半吊子状态都不会出现。 */
+document.querySelectorAll('#segLang button').forEach(b=>
+  b.onclick = ()=> saveSettings({lang:b.dataset.v}));
+
+async function loadCache(){
+  const c = await (await fetch('/v1/cache')).json();
+  const lim = c.limit_mb || 1024;
+  const pct = Math.min(100, (c.mb / lim) * 100);
+  $('#cacheStat').innerHTML = `缓存：<b>${c.files}</b> 个文件 · <b>${c.mb} MB</b> / 上限 ${lim} MB`;
+  $('#cacheBar').style.width = pct.toFixed(1) + '%';
+  $('#cacheHint').textContent = `占用 ${pct.toFixed(1)}%，超过上限后会自动按需重建。`;
+}
+async function clearCache(){
+  if(!confirm('确定清理全部预览缓存？清理后缩略图会按需重新生成。')) return;
+  const r = await (await fetch('/v1/cache/clear',{method:'POST'})).json();
+  toast(`已清理 ${r.removed} 个缓存文件`);
+  loadCache();
+}
+
+function fmtBytes(n){
+  n = Number(n) || 0;
+  if(n < 1024) return n + ' B';
+  if(n < 1048576) return (n/1024).toFixed(0) + ' KB';
+  if(n < 1073741824) return (n/1048576).toFixed(1) + ' MB';
+  return (n/1073741824).toFixed(2) + ' GB';
+}
+
+async function loadDataPath(){
+  try{
+    const d = await (await fetch('/v1/paths')).json();
+    const b = d.bytes || {};
+    /* 搜索记录 / 最近上传也存在这个目录里（history.json），顺手把条数一起报出来：
+       只给个文件大小，用户看不出里面到底存了多少条记录。 */
+    const h = d.hist || {};
+    const histNote = (h.search != null && h.uploads != null)
+      ? `（${h.search} 条搜索 · ${h.uploads} 条上传）` : '';
+    const parts = [
+      ['向量库', b['index.db']],
+      ['指纹库', b['fingerprints.db']],
+      ['预览缓存', b['thumbs']],
+      ['搜索记录', b['history.json'], histNote],
+    ].filter(x => x[1] !== undefined)
+     .map(([k,v,note]) => `${k} <b>${fmtBytes(v)}</b>${note || ''}`).join(' · ');
+    const where = d.custom ? '自定义位置（环境变量 FXSEEK_DATA_DIR）'
+                           : (d.legacy_in_use ? '程序目录（旧位置）' : '用户数据目录');
+    $('#dataStat').innerHTML =
+      `<i class="icn" data-icon="folder" data-size="14"></i> 位置：<b>${esc(d.data_dir)}</b><br>` +
+      `<span style="opacity:.75">${esc(where)}</span>` +
+      (parts ? `<br>${parts}` : '') +
+      (d.legacy_in_use && d.legacy_exists
+        ? `<br><i class="icn" data-icon="info" data-size="13"></i> 老位置还有一份备份：${esc(d.legacy_dir)}`
+        : '');
+    renderStaticIcons($('#dataStat'));
+  }catch(e){ $('#dataStat').textContent = '读取失败：' + e.message; }
+}
+
+async function gcCheck(){
+  const el = $('#gcHint');
+  el.textContent = '正在检查…';
+  try{
+    const r = await (await fetch('/v1/gc')).json();
+    if(r.error){ el.textContent = r.error; return; }
+    const miss = Number(r.missing)||0, orph = Number(r.orphan)||0;
+    const fpOnly = Number(r.fp_only)||0;
+    const T = (window.I18N && I18N.T) ? I18N.T : (a) => a;
+    el.innerHTML = T(
+      `共 <b>${r.known}</b> 条索引记录：文件已删除 <b>${miss}</b> 条`
+      + `，不属于任何索引源 <b>${orph}</b> 条。`
+      + (fpOnly
+          ? ` 另有 <b>${fpOnly}</b> 条只残留在<b>指纹库</b>里（文件夹改名或移动后留下的老路径）`
+            + `——它们会让「以音搜素材」多冒出一条标着「文件已移动」的结果。`
+          : '')
+      + ((miss || fpOnly) ? ' 点「立即清理失效记录」可一并删除。' : ' 没有需要清理的失效记录。'),
+      `Total <b>${r.known}</b> index records: <b>${miss}</b> files deleted, `
+      + `<b>${orph}</b> not in any source.`
+      + (fpOnly
+          ? ` Also <b>${fpOnly}</b> only left in the <b>fingerprint store</b> (old paths after folders were renamed or moved)`
+            + ` — they add a “file moved” hit to “search by audio”.`
+          : '')
+      + ((miss || fpOnly) ? ' Click “Clear stale records now” to remove them all.' : ' No stale records to clean.'));
+  }catch(e){ el.textContent = '检查失败：' + e.message; }
+}
+
+async function gcClean(){
+  const T = (window.I18N && I18N.T) ? I18N.T : (a) => a;
+  if(!confirm(T('确定清理所有「文件已不存在」的索引记录？\n\n这不影响原始文件，只是把数据库里指向已删除文件的条目删掉（索引库和指纹库都会清）。不属于任何索引源的条目会被保留。',
+                'Delete all index records whose files no longer exist?\n\nThis does not touch the original files — it only removes DB entries pointing at deleted files (both the index and fingerprint stores are cleaned). Entries not belonging to any index source are kept.'))) return;
+  const el = $('#gcHint');
+  el.textContent = '正在清理…';
+  try{
+    const r = await (await fetch('/v1/gc',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({orphans:false})})).json();
+    if(r.error){ el.textContent = r.error; return; }
+    el.innerHTML = T(
+      `已删除 <b>${r.removed}</b> 条失效记录`
+      + (r.fp_removed ? `（其中指纹 <b>${r.fp_removed}</b> 条）` : '')
+      + `，剩余 <b>${r.kept}</b> 条`
+      + (r.vacuumed ? '（已压缩数据库）' : '') + '。',
+      `Removed <b>${r.removed}</b> stale records`
+      + (r.fp_removed ? ` (<b>${r.fp_removed}</b> from fingerprints)` : '')
+      + `, <b>${r.kept}</b> remaining`
+      + (r.vacuumed ? ', database vacuumed' : '') + '.');
+    toast(r.removed ? `已清理 ${r.removed} 条失效记录` : '没有需要清理的记录');
+    loadCache(); loadEnv();
+  }catch(e){ el.textContent = '清理失败：' + e.message; }
+}
+
+async function loadLogs(){
+  try{
+    const d = await (await fetch('/v1/logs')).json();
+    const el = document.getElementById('logView');
+    if(!el) return;
+    if(!d.count){ el.innerHTML = '<div class="tempty">暂无日志</div>'; }
+    else{
+      el.innerHTML = d.items.map(l =>
+        `<div class="lrow ${l.level==='info'?'':l.level}">
+           <span class="lt">${l.time}</span>
+           <span class="la">${esc(l.action)}</span>
+           <span class="ld">${esc(l.detail||'')}</span>
+         </div>`).join('');
+    }
+    /* 拼完必须补翻：.logview 有 data-i18n-ok 豁免（SKIP_SEL 会整块跳过日志区），
+       action 列是固定词表要翻译。detail 列以前挂过 data-no-i18n 挡用户文件名，
+       可它同时把系统文案（「9 项相似结果」「文件名 · 12 个标签」）也挡死了——
+       而 translate() 本就只认词典整串和 RULES 规则，纯文件名根本匹配不上、
+       原样返回，i18n.js:830 那几条规则也正是按 detail 格式写的。
+       文件名混在系统句子里的（「小狗.png · 12 个标签」）由规则保底不翻文件名段。 */
+    if(window.I18N && I18N.refresh) I18N.refresh(el);
+  }catch(e){
+    const el = document.getElementById('logView');
+    if(el) el.innerHTML = '<div class="tempty">加载失败</div>';
+  }
+}
+async function clearLogs(){
+  await fetch('/v1/logs/clear',{method:'POST'});
+  toast('日志已清空');
+  loadLogs();
+}
+
+async function exportCfg(){
+  try{
+    const d = await (await fetch('/v1/export')).json();
+    if(d.cancelled){ /* 用户取消，不打扰 */ return; }
+    if(d.ok){ toast('配置已导出：' + (d.path||'')); }
+    else toast('导出失败：' + (d.error || '未知错误'));
+  }catch(e){ toast('导出失败：' + e.message); }
+}
+async function importCfg(ev){
+  const f = ev.target.files[0]; if(!f) return;
+  try{
+    const txt = await f.text();
+    const r = await (await fetch('/v1/import',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:txt})).json();
+    if(r.applied){ await loadSettings(); toast('配置已恢复'); }
+    else toast('恢复失败：'+(r.error||'未知错误'));
+  }catch(e){ toast('恢复失败：'+e.message); }
+  ev.target.value = '';
+}
+
+async function loadEnv(){
+  const h = await (await fetch('/health')).json();
+  const f = h.ffmpeg || {};
+  const s = await (await fetch('/v1/stats')).json();
+  const bk = s.by_kind || {};
+  const parts = Object.entries(bk).map(([k,v])=>`${k} ${v}`).join(' · ') || '空';
+  $('#envStat').innerHTML =
+    ` 模型：<b>WeMM-Embedding-2B (MLX, 混合精度)</b><br>` +
+    `<i class="icn" data-icon="video" data-size="14"></i> ffmpeg：<b>${f.using_builtin ? '内置' : '系统'}</b> · ${f.ok ? '可用' : '不可用'}<br>` +
+    `<i class="icn" data-icon="database" data-size="14"></i> 索引：<b>${s.files}</b> 个文件 / <b>${s.vectors}</b> 个向量 (${parts})<br>` +
+    `<i class="icn" data-icon="shield" data-size="14"></i> 全部计算在本机完成，无网络请求`;
+  $('#localStat').innerHTML =
+    `本地资产：<b>${s.files}</b> 个文件 · 向量 <b>${s.vectors}</b> 条<br>` +
+    `索引来源：<b>${Object.keys(bk).length}</b> 种类型`;
+  renderStaticIcons();
+}
+
+function relabel(root){
+  /* 这一页的每块内容都是 JS 拼完再塞进 DOM 的，拼的时候可能还没到 setLang，
+     所以每次渲染完顺手补翻一次；中英切换来回都不会叠加（i18n.js 存了原文）。 */
+  if(window.I18N && I18N.lang() === 'en' && I18N.refresh) I18N.refresh(root || document.body);
+}
+
+async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadMcp(); loadAbout(); relabel(); }
+
+/* ── 关于 ──────────────────────────────────────────────────── */
+let AB_INFO = null;
+const fmtTime = ts => { if(!ts) return '未知';
+  const d = new Date(ts*1000), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+async function loadAbout(){
+  try{
+    AB_INFO = await (await fetch('/v1/about')).json();
+  }catch(e){ AB_INFO = null; }
+  const i = AB_INFO;
+  if(!i){ $('#abEngine').textContent = '读取失败'; return; }
+  $('#abVer').textContent     = 'v' + (i.version || '1.0.0');
+  // 「推理引擎」显示用户配置的 AI 打标模型；没配置时回退到内置嵌入模型。
+  if(i.ai_model){
+    $('#abEngine').textContent  = i.ai_enabled ? i.ai_model : (i.ai_model + '（未启用）');
+    $('#abEngine').title        = i.ai_model;
+  } else {
+    $('#abEngine').textContent  = i.engine || '—';
+    $('#abEngine').title        = i.engine_path || '';
+  }
+  $('#abPlat').textContent    = i.platform || '—';
+  $('#abPlat').title          = 'Python ' + (i.python || '?');
+  $('#abScale').textContent   = `${i.files} 个资产 · ${i.vectors} 条向量`;
+  $('#abBuilt').textContent   = fmtTime(i.built_at);
+  const el = $('#ver'); if(el) el.textContent = i.version || '1.0.0';
+  applyAssetVer(i.asset_ver);
+  /* loadAll() 里同样没 await 它，「9 个资产 · 57 条向量」和「Qwen3.5 · 4bit 量化」
+     拼完就没再补翻，英文模式下留中文。 */
+  relabel($('#aboutCard') || document.body);
+}
+
+/* 给 /assets/ 的图片挂上 ?v=<资源最新 mtime>。
+   为什么要这么绕：用户浏览器里可能已经存了一份「还很新鲜」的旧图缓存
+   （我们早先发过 max-age=604800），那份缓存压根不会回服务器问，
+   所以后来把响应头改成 no-cache 它也看不见。只有换 URL 才能强制重取。 */
+function applyAssetVer(ver){
+  if(!ver) return;
+  document.querySelectorAll('#sec-about img[data-asset]').forEach(img => {
+    const base = '/assets/' + img.dataset.asset;
+    const want = base + '?v=' + ver;
+    if(img.getAttribute('src') !== want) img.setAttribute('src', want);
+  });
+}
+
+/* 这个应用没有在线更新源，所以这里只能如实回答「你跑的就是当前这份本地构建」，
+   不能假装联网比对过远端。真要说价值，是顺手把版本/构建时间摆给用户看。 */
+async function checkUpdate(){
+  const s = $('#aboutStatus');
+  await loadAbout();
+  if(!AB_INFO){ s.textContent = '检查失败：读不到版本信息。'; relabel(s); return; }
+  s.innerHTML = `当前 <b>v${AB_INFO.version}</b> · 本机构建于 ${fmtTime(AB_INFO.built_at)}`
+              + `　—　这是本地构建版本，未接入在线更新源，没有更新的版本可下载。`;
+  /* innerHTML 里夹了 <b>，整行规则要走 applyHtml；观察器只处理新增节点、
+     不会替容器跑 applyHtml，所以这里必须像 loadAbout 那样显式补一刀。 */
+  relabel(s);
+}
+
+async function copyDiag(){
+  const s = $('#aboutStatus');
+  await loadAbout();
+  if(!AB_INFO){ s.textContent = '复制失败：读不到版本信息。'; relabel(s); return; }
+  const i = AB_INFO;
+  let cache = {};
+  try{ cache = await (await fetch('/v1/cache')).json(); }catch(e){}
+  /* 诊断文本也按当前语言出双语（贴给作者看的内容跟界面语言保持一致） */
+  const DT = (window.I18N && I18N.T) ? I18N.T : (a) => a;
+  const txt = [
+    DT('FXseek 媒体库 · 诊断信息', 'FXseek Media Library · Diagnostics'),
+    DT('版本：', 'Version: ') + 'v' + i.version,
+    DT('构建时间：', 'Built: ') + fmtTime(i.built_at),
+    DT('推理引擎：', 'Engine: ') + i.engine + (i.engine_path ? '（' + i.engine_path + '）' : ''),
+    DT('运行平台：', 'Platform: ') + i.platform + ' · Python ' + i.python,
+    DT('数据目录：', 'Data dir: ') + i.data_dir,
+    DT('本地规模：', 'Local scale: ') + i.files + DT(' 个资产 / ', ' assets / ') + i.vectors + DT(' 条向量', ' vectors'),
+    DT('预览缓存：', 'Preview cache: ') + (cache.mb != null ? cache.mb + ' MB / ' + cache.files + DT(' 个文件', ' files') : DT('未知', 'unknown')),
+  ].join('\n');
+  try{
+    await navigator.clipboard.writeText(txt);
+    s.textContent = '诊断信息已复制到剪贴板。';
+  }catch(e){
+    // 非安全上下文（http 访问 ip）里 clipboard 会被浏览器拒掉，退回到选中让用户自己复制
+    prompt((window.I18N && I18N.T) ? I18N.T('自动复制被浏览器拒绝，请手动复制：',
+                                             'Auto-copy was blocked by the browser — copy manually:') : '自动复制被浏览器拒绝，请手动复制：', txt);
+    s.textContent = '已弹出诊断信息，请手动复制。';
+  }
+  relabel(s);
+}
+
+function openDataDirHint(){
+  const s = $('#aboutStatus');
+  s.textContent = AB_INFO
+    ? `数据目录（请手动打开）：${AB_INFO.data_dir}`
+    : '数据目录读取中…';
+  relabel(s);
+  if(AB_INFO) loadDataPath().catch(()=>{});
+}
+
+/* ── 侧栏：分区导航 + 设置搜索 ─────────────────────────────── */
+function initSideNav(){
+  const main = document.querySelector('.main');
+  const links = [...document.querySelectorAll('#secNav a')];
+  if(!main || !links.length) return;
+  const secs = links.map(a => document.getElementById(a.dataset.sec));
+  const topOf = el => el.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+
+  links.forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    const el = document.getElementById(a.dataset.sec);
+    if(el) main.scrollTo({top: Math.max(0, topOf(el) - 16), behavior:'smooth'});
+  }));
+
+  let ticking = false;
+  main.addEventListener('scroll', () => {
+    if(ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const y = main.scrollTop + 96;
+      let cur = secs[0];
+      secs.forEach(s => { if(s && topOf(s) <= y) cur = s; });
+      links.forEach(a => a.classList.toggle('active', !!cur && a.dataset.sec === cur.id));
+    });
+  });
+}
+
+function initSetSearch(){
+  const box = $('#setSearch');
+  if(!box) return;
+  const wrap = document.querySelector('.wrap');
+  const secs = [...document.querySelectorAll('.sec')];
+  const empty = document.createElement('div');
+  empty.className = 'tempty';
+  empty.textContent = '没有找到匹配的设置项';
+  empty.style.display = 'none';
+  wrap.appendChild(empty);
+
+  const norm = s => (s || '').toLowerCase();
+  const textOf = el => norm(el ? el.textContent : '');
+
+  function apply(){
+    const q = norm(box.value).trim();
+    if(!q){
+      secs.forEach(sec => {
+        sec.style.display = '';
+        sec.querySelectorAll('.card').forEach(c => {
+          c.style.display = '';
+          c.querySelectorAll('.row').forEach(r => { r.style.display = ''; r.style.borderTop = ''; });
+        });
+      });
+      empty.style.display = 'none';
+      return;
+    }
+    let total = 0;
+    secs.forEach(sec => {
+      let secHits = 0;
+      [...sec.querySelectorAll(':scope > .card')].forEach(card => {
+        // 标题命中 → 整张卡片全展开；仅描述命中 → 只留卡片头（说明为什么它被匹配到）
+        const titleHit = textOf(card.querySelector('h2')).includes(q);
+        const descHit  = textOf(card.querySelector('.d')).includes(q);
+        let cardHits = 0;
+        card.querySelectorAll('.row').forEach(row => {
+          const ph = [...row.querySelectorAll('input,textarea')].map(i => norm(i.placeholder)).join(' ');
+          const hit = titleHit || textOf(row).includes(q) || ph.includes(q);
+          row.style.display = hit ? '' : 'none';
+          if(hit) cardHits++;
+        });
+        const show = titleHit || cardHits > 0 || descHit;
+        card.style.display = show ? '' : 'none';
+        if(show) secHits++;
+      });
+      sec.style.display = secHits ? '' : 'none';
+      total += secHits;
+    });
+    // 折叠掉被隐藏的行之后，可见的第一行不该再顶着一根分割线
+    secs.forEach(sec => sec.querySelectorAll('.card').forEach(card => {
+      const vis = [...card.querySelectorAll('.row')].filter(r => r.style.display !== 'none');
+      vis.forEach((r, i) => { r.style.borderTop = i === 0 ? 'none' : ''; });
+    }));
+    empty.style.display = total ? 'none' : '';
+  }
+  box.addEventListener('input', apply);
+  box.addEventListener('keydown', e => { if(e.key === 'Escape'){ box.value = ''; apply(); } });
+}
+/* ===================== MCP 服务 ===================== */
+// 留给「取不到官方 logo」时的兜底文案；正常情况走 agent_logos.js 的官方图标
+const MCP_ROLE = {
+  dsh:       {tag:'DSH', desc:'DeepSeek Harness'},
+  opencode:  {tag:'OC',  desc:'opencode CLI'},
+  workbuddy: {tag:'WB',  desc:'WorkBuddy'},
+  hermes:    {tag:'HM',  desc:'Hermes Agent'},
+  codex:     {tag:'CX',  desc:'Codex CLI'},
+  claude:    {tag:'CC',  desc:'Claude Code'},
+};
+let _mcpData = null;
+
+// 官方 logo（agent_logos.js）。脚本没加载成功时退回首字母方块，不至于开天窗。
+function mcpLogoHTML(id){
+  if(typeof agentLogoHTML === 'function'){
+    try { return agentLogoHTML(id, 30); } catch(e){}
+  }
+  const r = MCP_ROLE[id] || {tag:'?'};
+  return `<span class="mi">${esc(r.tag)}</span>`;
+}
+
+// 这 7 个工具与 mcp_server.py 里注册的一一对应，写在这里只是给用户看的说明书
+const MCP_TOOLS = [
+  ['search_media',      '用一句话描述找素材。中文自然语言即可，例如「有气球的画面」。'],
+  ['search_by_image',   '给一张图，找库里长得像的。'],
+  ['search_by_audio',   '给一段音频，找同一首歌或相似的声音。'],
+  ['get_media_info',    '按路径查一个文件的详细信息（标签、时长、尺寸等）。'],
+  ['list_sources',      '列出当前所有索引源目录。'],
+  ['list_recent',       '最近上传的素材。'],
+  ['library_stats',     '媒体库总览：多少文件、多少向量、按类型分布。'],
+];
+
+function loadMcpTools(){
+  const el = $('#mcpTools');
+  if(!el) return;
+  el.innerHTML = MCP_TOOLS.map(([n, d]) =>
+    `<div class="mcptool"><b>${esc(n)}</b><span>${esc(d)}</span></div>`).join('');
+}
+
+async function loadMcp(){
+  const list = $('#mcpList'), stat = $('#mcpStat');
+  if(!list) return;
+  list.innerHTML = '<div class="tempty">检测中…</div>';
+  try{
+    const d = await (await fetch('/v1/mcp/status')).json();
+    _mcpData = d;
+    if(!d.available){
+      stat.innerHTML = `<span style="color:#dc2626">MCP 模块不可用：${esc(d.error || '未知')}</span>`;
+      list.innerHTML = '<div class="tempty">无法检测</div>';
+      return;
+    }
+    // 总开关按钮态（复用站内统一的 markSeg，与其它分段开关表现一致）
+    markSeg('segMcp', d.enabled ? 'on' : 'off');
+    // 概览
+    const conn = d.agents.filter(a => a.connected).length;
+    const inst = d.agents.filter(a => a.installed).length;
+    if(conn) stat.innerHTML = `已接入 <b>${conn}</b> 个 Agent（本机共检测到 ${inst} 个）。` +
+      `去对话里说「帮我找有气球的图片」就能用上。`;
+    else if(inst) stat.innerHTML = `本机检测到 <b>${inst}</b> 个 Agent，目前都未接入。` +
+      `点亮右边开关即可，随时可以再关掉。`;
+    else stat.innerHTML = '本机没有检测到支持的 Agent。装好之后再点「重新检测」。';
+
+    // 卡片
+    list.innerHTML = d.agents.map(a => {
+      const r = MCP_ROLE[a.id] || {tag:'?', desc:a.full || a.id};
+      let st, sw = '';
+      if(!a.installed){
+        st = `<span class="st noinstall">未安装</span>`;
+      }else if(a.connected){
+        st = `<span class="st ok"><span class="dot"></span>已接入</span>`;
+        sw = `<button class="sw off" onclick="toggleOne('${a.id}',false)" title="断开这个 Agent">断开</button>`;
+      }else{
+        st = `<span class="st no">未接入</span>`;
+        sw = `<button class="sw on" onclick="toggleOne('${a.id}',true)" title="接入这个 Agent">接入</button>`;
+      }      // 技能状态。已经接入了却没有技能，就是「本该有却没有」——只有这种才值得提醒；
+      // 没接入的 Agent 没有技能是正常的，不必打扰用户。
+      let sk = '';
+      if(a.installed && a.skill){
+        sk = `<span class="skok" title="技能已就位：${esc(a.skill_path)}">📘 技能</span>`;
+      }else if(a.installed && a.connected){
+        sk = `<span class="skmiss" title="MCP 已经接入了，但说明书不在：${esc(a.skill_path)}　点下面「重新注入技能」补上">技能缺失</span>`;
+      }
+      return `<div class="mcprow ${a.connected ? 'on' : (a.installed ? '' : 'off')}">
+        ${mcpLogoHTML(a.id)}
+        <span class="mt"><b>${esc(a.name)}</b><span>${esc(a.note || r.desc)}</span></span>
+        ${sk}${st}${sw}
+      </div>`;
+    }).join('');
+    /* loadAll() 里没 await 这个函数，relabel() 早跑完了；卡片是这里才拼出来的，
+       必须自己补一刀，否则「技能 / 已接入 / 接入 / 断开」和整段说明都留在中文。 */
+    relabel(list); relabel(stat);
+  }catch(e){
+    stat.innerHTML = `<span style="color:#dc2626">读取失败：${esc(e.message)}</span>`;
+    list.innerHTML = '<div class="tempty">读取失败</div>';
+  }
+}
+
+async function _mcpToggle(enabled, ids, label){
+  const list = $('#mcpList');
+  if(list) list.style.opacity = '.5';
+  try{
+    const r = await (await fetch('/v1/mcp/toggle', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({enabled, ids}),
+    })).json();
+    const bad = (r.results || []).filter(x => !x.ok);
+    if(bad.length){
+      toast(`${label}：${bad.length} 个未成功 · ${bad[0].error || ''}`);
+    }else{
+      const n = (r.results || []).filter(x => x.ok).length;
+      let msg = enabled ? `已接入 ${n} 个 Agent` : `已断开 ${n} 个 Agent`;
+      if(enabled && (r.skill_created || []).length){
+        msg += `，并补上了 ${r.skill_created.length} 个技能`;
+      }else if(!enabled && r.skill_kept){
+        msg += `（技能保留，没删）`;
+      }
+      toast(msg);
+    }
+    await loadMcp();
+    if(window.refreshMcpBadge) window.refreshMcpBadge();
+  }catch(e){
+    toast(`${label}失败：${e.message}`);
+  }finally{
+    if(list) list.style.opacity = '';
+  }
+}
+
+function setMcp(on){ _mcpToggle(on, null, on ? '接入' : '断开'); }
+function setMcpAll(){
+  const ids = (_mcpData?.agents || []).filter(a => a.installed).map(a => a.id);
+  if(!ids.length) return toast('本机没有检测到可接入的 Agent');
+  _mcpToggle(true, ids, '接入');
+}
+function setMcpNone(){ setMcp(false); }
+function toggleOne(id, on){ _mcpToggle(on, [id], on ? '接入' : '断开'); }
+
+// 手动补技能。force=false 只补缺失的，不碰已存在的（你可能改过那份说明书）。
+async function injectSkills(force){
+  const list = $('#mcpList');
+  if(list) list.style.opacity = '.5';
+  try{
+    const r = await (await fetch('/v1/mcp/skill', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({force: !!force}),
+    })).json();
+    const bad = (r.results || []).filter(x => !x.ok);
+    if(bad.length){
+      toast(`技能注入：${bad.length} 个失败 · ${bad[0].error || ''}`);
+    }else if(r.created){
+      toast(`已补上 ${r.created} 个 Agent 的技能`);
+    }else{
+      toast(`技能都已就位（${r.kept} 个），没有需要补的`);
+    }
+    await loadMcp();
+  }catch(e){
+    toast(`技能注入失败：${e.message}`);
+  }finally{
+    if(list) list.style.opacity = '';
+  }
+}
+
+initSideNav();
+initSetSearch();
+loadMcpTools();
+loadSettings().then(loadAll);
+</script>
+<script src="/agent_logos.js"></script>
+<script src="/icons.js"></script>
+<script>
+  renderStaticIcons();
+  // 眼睛按钮初始是空的（HTML 里故意不写死图标），等 icons.js 到位再画
+  document.querySelectorAll('.keywrap > .eye').forEach(b => paintEye(b, false));
+
+  /* 菜单栏那条「设置… / MCP 设置」会带 ?sec=sec-mcp 过来，直接翻到对应那一节。
+     等 load（布局稳定）之后再动手，点一下左侧那一节 —— 滚动逻辑本来就在它身上。 */
+  (function(){
+    const m = /[?&]sec=([\w-]+)/.exec(location.search);
+    if(!m) return;
+    const jump = () => {
+      const a = document.querySelector('#secNav a[data-sec="' + m[1] + '"]');
+      if(a){ a.click(); return; }
+      const el = document.getElementById(m[1]);
+      if(el) el.scrollIntoView({block:'start'});
+    };
+    setTimeout(jump, 80);
+  })();
+</script>
+</body>
+</html>

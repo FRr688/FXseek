@@ -1,0 +1,13 @@
+{
+  "_comment": "首次启动时注入的演示记录。searchHistory 是搜索框下拉里的「最近搜索」，内容对应 seed/assets/ 里的示例素材；recentUploads 是侧栏「最近上传」，文件名对应 seed/tryme/ 里的体验素材 —— 用户点一下，前端就去 /v1/seed/bytes 取原始文件、当场跑一次真实的以图搜图 / 以音搜素材。这两类文件名都要和磁盘上的实际文件对得上，改了名字记得同步这里。",
+  "searchHistory": [
+    { "t": "狗",     "k": "text" },
+    { "t": "夕阳",   "k": "text" },
+    { "t": "财报",   "k": "text" },
+    { "t": "针织衫", "k": "text" }
+  ],
+  "recentUploads": [
+    { "type": "image", "name": "测试用图像.png" },
+    { "type": "audio", "name": "测试用音频.mp3" }
+  ]
+}

@@ -1,0 +1,43 @@
+# WeMM 本地语义库 —— 依赖清单
+#
+# 说明：
+#   本应用是「自包含目录」，venv/cpython-3.11/ 已内置 Python 3.11 运行时与全部依赖，
+#   正常分发时直接拷贝整个目录即可，无需执行 pip install。
+#   本文件用于：① 记录依赖与版本，便于重建环境；② 换机/升级时对照。
+#
+# 重建方式（仅在需要重建运行时时）：
+#   ./venv/cpython-3.11/bin/python3.11 -m pip install -r requirements.txt
+
+# ---------- 核心：模型推理 ----------
+mlx==0.32.2
+mlx-vlm==0.7.1
+
+# ---------- 图像处理 ----------
+pillow==12.3.0
+numpy==2.3.5
+
+# ---------- 文档解析 ----------
+pdfplumber==0.11.10        # PDF 文本提取（扫描版 PDF 仍需 OCR，暂不支持）
+openpyxl==3.1.5            # .xlsx / .xlsm 表格；传递依赖 et-xmlfile
+xlrd==2.0.2                # 老式 BIFF 表格（.xls，以及 WPS .et 的 OLE2 格式）
+python-pptx==1.0.2         # .pptx 幻灯片
+olefile==0.47              # OLE2 复合文档容器解析（识别 .et / 老 .dps）
+# 注：.doc / .docx / .rtf / .wps 走系统自带的 /usr/bin/textutil，无需 Python 依赖。
+# python-docx 仅供生成测试文档使用，运行时不需要，故不列入。
+
+# ---------- 前端渲染库（已本地化，离线可用，非 pip 包）----------
+# vendor/jszip.min.js         docx-preview 的依赖（解压 .docx 的 zip 容器）
+# vendor/docx-preview.min.js  .docx 浏览器内渲染（全局 window.docx）
+# vendor/xlsx.full.min.js     .xlsx / .xlsm 浏览器内渲染（全局 XLSX）
+# 由 /vendor/* 路由以白名单方式提供；页面按需懒加载，不影响首屏。
+
+# ---------- 以下为上述包的传递依赖，通常无需手动指定 ----------
+# et-xmlfile              ← openpyxl
+# pdfminer.six, pypdfium2 ← pdfplumber
+# lxml, XlsxWriter, typing-extensions ← python-pptx
+# transformers, jinja2, sentencepiece, miniaudio, tqdm ← mlx-vlm
+
+# ---------- 外部可执行文件（已内置于 bin/，无需安装）----------
+# bin/ffmpeg    视频抽帧
+# bin/ffprobe   媒体时长探测
+# bin/fpcalc    Chromaprint 音频指纹
