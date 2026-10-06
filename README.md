@@ -14,6 +14,34 @@
 
 ---
 
+![FXseek 主界面 · 夜间主题（简体中文）](docs/demo/01-night-zh.jpg)
+
+## 三段演示
+
+**① 打字就能搜画面** —— 输入「狗」「针织衫」，结果带**匹配度角标**；搜索框里双击还能唤出搜索历史：
+![文字检索画面演示](docs/demo/search.gif)
+
+▶ [完整演示 · 45 秒（有声，1600×900）](../../releases/download/v1.0.0/FXseek-search-demo.mp4)
+
+**② 界面随你** —— 白天 / 夜间主题、简体中文 / English，点一下就换；缩略图墙、列表视图、详情区随意切换：
+![界面展示](docs/demo/ui-tour.gif)
+
+▶ [完整演示 · 22 秒（有声）](../../releases/download/v1.0.0/FXseek-ui-tour.mp4)
+
+**③ 漫步时光** —— 只留图片与视频，按列交错缓缓滚动；点任意一张，它会优雅地淡出：
+![漫步时光 · 回忆长廊](docs/demo/memory-lane.gif)
+
+▶ [完整演示 · 30 秒（有声）](../../releases/download/v1.0.0/FXseek-memory-lane.mp4)
+
+> 完整演示视频（有声 · 1600×900）与安装包一起放在 [Releases](../../releases)；
+> 动图为了加载速度压到 620px，看细节请点上面的完整视频或下面的原图。
+
+### 静态截图（看得更清楚）
+
+| 白天主题 · English | 漫步时光 · 回忆长廊 |
+|---|---|
+| ![白天主题（English）](docs/demo/02-daylight-en.jpg) | ![漫步时光](docs/demo/03-memory-lane.jpg) |
+
 ## 能做什么
 
 | | 能力 |
@@ -71,7 +99,7 @@ hdiutil verify dist/FXseek-1.0.0.dmg     # 必须打印 VALID
 | `launcher.py` / `tray_helper.py` | 原生启动器（Mach-O，保证麦克风权限归属正确）、菜单栏 |
 | `ui.html` / `settings.html` / `i18n.js` / `icons.js` | 前端（零构建、原生 JS） |
 | `tools/` | 打包脚本、依赖体检、原生启动器源码、示例素材生成 |
-| `docs/` | [工程手册](docs/手册.md)（设计取舍与踩坑）、[运行时与二进制](docs/运行时与二进制.md) |
+| `docs/` | [工程手册](docs/手册.md)（设计取舍与踩坑）、[运行时与二进制](docs/运行时与二进制.md）、[演示素材](docs/demo/)（README 里的截图与动图） |
 
 ## 许可（重要）
 
