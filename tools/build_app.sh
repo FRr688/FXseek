@@ -153,7 +153,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSCameraUsageDescription</key><string>用于拍照或按画面检索素材。</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
-  <key>NSHumanReadableCopyright</key><string>FXseek</string>
+  <key>NSHumanReadableCopyright</key><string>FR</string>
 </dict>
 </plist>
 PLIST

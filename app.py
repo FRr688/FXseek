@@ -1101,6 +1101,27 @@ def open_folder(path: str) -> dict:
     return {"ok": True}
 
 
+# 外链白名单：页面上的「去点个 Star」是唯一的站外链接，就只开这一个口子。
+# 前端本来就是本机页面，但没必要让这个接口变成「任意 URL 都能叫系统打开」的通用开关。
+_URL_ALLOW = ("github.com", "www.github.com")
+
+
+def open_url(url: str) -> dict:
+    """用系统默认浏览器打开外链（走 /usr/bin/open，交给用户的默认浏览器）。"""
+    import subprocess
+    from urllib.parse import urlparse
+    u = (url or "").strip()
+    try:
+        p = urlparse(u)
+    except Exception:
+        return {"error": "链接不合法"}
+    if p.scheme not in ("http", "https") or (p.hostname or "") not in _URL_ALLOW:
+        return {"error": "不支持的链接"}
+    subprocess.Popen(["/usr/bin/open", u],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"ok": True}
+
+
 def trash_purge() -> dict:
     items = _load_trash()
     items = _purge_expired(items)
@@ -3678,6 +3699,8 @@ class Handler(BaseHTTPRequestHandler):
                 res = reveal_in_folder(body.get("path", ""))
             elif u.path == "/v1/ui/history":
                 res = ui_history_put(body)
+            elif u.path == "/v1/open-url":
+                res = open_url(body.get("url", ""))
             elif u.path == "/v1/open-folder":
                 res = open_folder(body.get("path", ""))
             elif u.path == "/v1/import":
