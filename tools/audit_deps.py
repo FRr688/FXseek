@@ -21,6 +21,18 @@ import importlib
 import os
 import sys
 
+# 这个脚本最常被拿来体检「打包好的 .app」，而那份 bundle 是**签过名**的：
+# 在里面跑 Python 会顺手写出 __pycache__/*.pyc，等于往封印好的资源里塞文件，
+# `codesign --verify` 立刻报 "a sealed resource is missing or invalid"。
+# 所以这里强制不落字节码。（真踩过：16 个 .pyc 就把整个 app 的封印弄脏了。）
+sys.dont_write_bytecode = True
+
+# 光设上面那行还不够：解释器**启动阶段**导入的 stdlib 已经落盘了。
+# 所以如果发现自己在签名过的 .app 里跑，就直接用 -B 重启自己 —— 只有
+# 进程一开始就带 -B，才能做到一个 .pyc 都不写。
+if not sys.flags.dont_write_bytecode and '.app/Contents/' in (sys.executable or ''):
+    os.execv(sys.executable, [sys.executable, '-B'] + sys.argv)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
@@ -34,6 +46,21 @@ THIRD = ["webview", "AppKit", "Foundation", "AVFoundation", "PyObjCTools",
          "transformers", "tokenizers", "safetensors", "huggingface_hub",
          "openpyxl", "xlrd", "olefile", "pptx", "pdfplumber", "pdfminer",
          "jinja2", "cryptography", "bs4", "lxml", "yaml"]
+
+
+# 构建时会**故意**删掉的包（见 tools/build_app.sh 的「2d 瘦身」段）。
+# 它们的 .dist-info 会剩在 site-packages 里 —— 这不是"代码被误删"，是预期行为，
+# 所以体检时要把它们排除，否则每次打包后都会误报。
+# 注意：真正的误删（比如当年 pdfminer 连代码被删、只留 pdfminer_six-*.dist-info）
+# 名字不在这个名单里，仍然会被抓出来 —— 那才是这个检查存在的意义。
+EXPECTED_REMOVED = ("pip", "setuptools", "wheel", "pkg_resources", "ensurepip",
+                    "idlelib", "lib2to3", "turtledemo", "tkinter", "_distutils_hack",
+                    "distutils-precedence")
+
+
+def _expected_hollow(distinfo_name):
+    base = distinfo_name.split("-")[0].lower()
+    return any(base == e.split("-")[0].lower() for e in EXPECTED_REMOVED)
 
 
 def import_check(mods, label):
@@ -57,7 +84,7 @@ def hollow_metadata():
         return []
     out = []
     for d in sorted(os.listdir(sp)):
-        if not d.endswith(".dist-info"):
+        if not d.endswith(".dist-info") or _expected_hollow(d):
             continue
         rec = os.path.join(sp, d, "RECORD")
         tops, present = set(), set()
@@ -81,6 +108,10 @@ def hollow_metadata():
 
 def main():
     print("== 依赖体检 ==")
+    if ".app/Contents/" in (sys.executable or ""):
+        print("  ⚠️ 正在**打包好的 .app 内部**运行：即使加了 -B，解释器启动阶段仍可能")
+        print("     写下少量 __pycache__，那会弄脏 app 的资源封印（codesign --verify 报错）。")
+        print("     稳妥做法：对 bundle 的**副本**体检，或加 PYTHONDONTWRITEBYTECODE=1 运行。")
     bad = import_check(BUSINESS, "业务模块")
     bad += import_check(THIRD, "三方包")
     hb = hollow_metadata()
