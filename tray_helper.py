@@ -91,8 +91,8 @@ def _res_dir():
 
 def _baboon_frame(idx):
     """取第 idx 帧狒狒图标（NSImage，template 模式）。
-    优先连续帧 assets/baboon_strip_f{0..5}.png；缺哪个文件就回落到老三样
-    （baboon_menu_template.png / baboon_scratch1/2.png），全缺再退系统符号。"""
+    优先连续帧 assets/baboon_strip_f{0..17}.png；缺文件时回落到静态的
+    baboon_menu_template.png，全缺再退系统符号（图标不能没有）。"""
     import AppKit
     p = os.path.join(_res_dir(), "baboon_strip_f%d.png" % (idx % STRIP_N))
     if os.path.exists(p):
@@ -109,7 +109,7 @@ def _baboon_frame(idx):
                 return img
         except Exception:
             pass
-    names = ["baboon_menu_template.png", "baboon_scratch1.png", "baboon_scratch2.png"]
+    names = ["baboon_menu_template.png"]
     name = names[idx % len(names)]
     if name in _FRAME_CACHE:
         return _FRAME_CACHE[name]
@@ -134,8 +134,8 @@ def _baboon_frame(idx):
     return img
 
 
-def _baboon_scratch_frames():
-    """动效帧：连续帧 strip（6 帧）；缺文件时回落老三样（等于降级成慢速动效）。"""
+def _baboon_anim_frames():
+    """动效帧：连续帧 strip（STRIP_N 帧）；缺文件时回落成单帧静态图标。"""
     frames = []
     for idx in range(STRIP_N):
         f = _baboon_frame(idx)
@@ -840,7 +840,7 @@ def main():
             return
         fr = _SCRATCH["frames"]
         if not fr:
-            fr = _baboon_scratch_frames()
+            fr = _baboon_anim_frames()
             _SCRATCH["frames"] = fr
         if len(fr) < 2:
             return
