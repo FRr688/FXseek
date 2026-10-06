@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
-# Copyright (c) 2026 FXseek. All rights reserved.
+# Copyright (c) 2026 FR. All rights reserved.
 # 本文件是 FXseek 的一部分：非商业用途免费，商业用途需取得授权（见仓库根目录 COMMERCIAL.md）。
 
 """FXseek MCP server —— 把本地媒体库的检索能力开放给 agent。
