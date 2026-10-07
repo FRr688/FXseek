@@ -23,4 +23,4 @@
 3. 需要 macOS 13 及以上 + Apple Silicon（M 系列芯片）
 4. 首次启动会下载约 1.8 GB 模型，之后**完全离线**可用
 
-非商业用途免费（PolyForm Noncommercial 1.0.0）；**商业用途需授权**，见 [COMMERCIAL.md](../blob/main/COMMERCIAL.md)。
+非商业用途免费（PolyForm Noncommercial 1.0.0）；**商业用途需授权**，见 [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md)。
