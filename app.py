@@ -102,7 +102,7 @@ DEFAULT_SETTINGS = {
     "theme": "auto",          # auto | light | dark
     "font_size": "medium",    # small | medium | large
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
-    "version": "1.0.2",
+    "version": "1.0.3",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -472,6 +472,30 @@ def _clear_fail(path: str) -> None:
     _IDLE.get("fail", {}).pop(_fail_key(path), None)
 
 
+# 这些错误说明「服务整体不可用」，而不是「这个文件有问题」：
+#   · 连接被拒 / 服务没起 → 每个文件都会失败，但不是文件的错
+#   · 504 / 超时 → macOS 系统代理（DevSidecar）自己带 60 秒超时
+# 如果照样把账算在单个文件头上，200 个待办会被**逐个**冷藏 3 次，
+# 最后全部进冷藏 → 界面表现就是「整批一直终止，再也不动了」。
+# 所以这类失败只做全局退避，不写入单文件黑名单。
+_SYSTEMIC_PAT = (
+    "无法连接", "connection refused", "econnrefused", "connection reset",
+    "timed out", "timeout", "operation timed out", "device not configured",
+    "no response from upstream", "upstream", "http 500", "http 502",
+    "http 503", "http 504", "service unavailable", "bad gateway",
+    "gateway timeout", "urlerror", "not reachable", "network is unreachable",
+    # SQLite 写锁竞争：影响的是「当下每一次写」，与具体哪个文件无关。
+    # 若按单文件记账，200 个待办会各自连败 3 次再全进冷藏 → 整批停摆。
+    "database is locked", "database table is locked",
+)
+
+
+def _is_systemic_fail(msg: str) -> bool:
+    """这个失败是「服务整体挂了」还是「单个文件坏了」？"""
+    m = (msg or "").lower()
+    return any(p in m for p in _SYSTEMIC_PAT)
+
+
 def _pick_pending(pend: list):
     """从待办列表里挑第一个「没在冷藏中」的路径；全在冷藏里就返回 None。"""
     for it in pend[:_FAIL_LOOKAHEAD]:
@@ -576,8 +600,9 @@ def _idle_loop():
                     n = _cooled_count()
                     _IDLE["last_error"] = (f"{n} 个素材连续失败，已冷藏 "
                                            f"{_FAIL_COOL // 60} 分钟后再试")
-                    if manual_on:
-                        man["finished"] = time.time()
+                    # ★ 不要把「立即补全」标记为完成 —— 那会让用户点了补全却
+                    # 看到它「结束了」，而 187 个待办一个没动。冷藏到期会自动
+                    # 接着跑，这里只是继续等（外圈 20 秒一轮）。
                     print(f"[闲置处理] 待办全部处于失败冷藏中（{n} 个），等冷藏过期再试")
                     continue
                 if manual_on:
@@ -624,16 +649,23 @@ def _idle_loop():
             else:
                 msg = r.get("message") or "未知错误"
                 _IDLE["last_error"] = msg
-                n = _note_fail(path, msg)
                 _IDLE["run_fail"] = _IDLE.get("run_fail", 0) + 1
                 _IDLE["consec_fail"] = _IDLE.get("consec_fail", 0) + 1
                 if manual_on:
                     man["failed"] = man.get("failed", 0) + 1
-                if n >= _FAIL_MAX:
-                    print(f"[{tag}] 失败 {os.path.basename(path)}"
-                          f"（已连败 {n} 次，冷藏 {_FAIL_COOL // 60} 分钟再试）: {msg}")
+                # ★ 分开记账：服务整体不可用（连接失败/504/超时）**不写单文件黑名单**。
+                # 否则 200 个待办会被逐个冷藏 3 次，最后全进冷藏 → 「整批再也不动」。
+                if _is_systemic_fail(msg):
+                    _IDLE["skip_count"] = _IDLE.get("skip_count", 0) + 1
+                    _IDLE["last_error"] = f"{msg}（服务不可用，稍后整体重试）"
+                    print(f"[{tag}] 服务不可用，跳过 {os.path.basename(path)}: {msg}")
                 else:
-                    print(f"[{tag}] 失败 {os.path.basename(path)}: {msg}")
+                    n = _note_fail(path, msg)
+                    if n >= _FAIL_MAX:
+                        print(f"[{tag}] 失败 {os.path.basename(path)}"
+                              f"（已连败 {n} 次，冷藏 {_FAIL_COOL // 60} 分钟再试）: {msg}")
+                    else:
+                        print(f"[{tag}] 失败 {os.path.basename(path)}: {msg}")
                 # 只对「服务整个没起」这种连续失败做全局退避；
                 # 单个坏文件不再连累整批陪等 2 分钟。
                 if _IDLE.get("consec_fail", 0) >= 3:

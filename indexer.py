@@ -569,12 +569,35 @@ def _has_audio_stream(path: str) -> bool:
         return True     # 探测不出来就按「有」处理，让 ASR 服务自己去报错
 
 
+def asr_bad_ratio(text: str, duration: float) -> bool:
+    """判断已入库的转写文本是不是「复读退化」产物。
+
+    历史包袱：1.0.2 之前的版本把整首音频一次性丢给 ASR（oMLX 默认
+    chunk_duration=1200 秒 = 不切），Qwen3-ASR 因此退化成复读机并写进了
+    index.db（实测全库 123 首里 29 首中招）。这些记录以前被当成「已转写」
+    永远不会重跑，用户看到的就是「同一首歌在 oMLX 能转、在 FXseek 不行」。
+
+    ★ 判定逻辑**只在 asr_desc._looks_degenerate 里有一份**，这里直接调用，
+    别再抄一遍 —— 旧版这里和 asr_desc 各写了一份「字/秒 > 8」，而那个阈值
+    既漏判韩文/俄文（字数被正则剥成 0），又会误杀正常英文歌。两处一起改才
+    不会出现「转写时放行、入库时丢弃」的自相矛盾。
+
+    `duration` 保留在签名里只为兼容调用方，新判定不依赖时长。
+    """
+    try:
+        import asr_desc as _asr
+        return _asr._looks_degenerate(text, duration)
+    except Exception:
+        return False
+
+
 def asr_status(db_path=None):
     """音频/视频里，哪些已经转写过、哪些还没有。
 
-    返回 {total, done, pending: [{path, kind, name}]}。
+    返回 {total, done, pending: [{path, kind, name, bad?}]}。
     「已转写」的判据是 meta 里有非空 asr_text；已经确认过「没有内容」(`asr_none`) 或
     「超过时长上限」(`asr_skip`) 的也算处理过 —— 它们不该反复重试。
+    **但复读退化的旧记录要重新排队**（见 asr_bad_ratio），否则永远修不回来。
     """
     db = db_path or DB_PATH
     con = sqlite3.connect(db)
@@ -593,7 +616,24 @@ def asr_status(db_path=None):
             m = json.loads(mstr or "{}")
         except Exception:
             m = {}
-        if (m.get("asr_text") or "").strip():
+        txt = (m.get("asr_text") or "").strip()
+        if txt:
+            # 老版本写的复读产物：重新排队重转（不计入 done）。
+            # 先按字数粗筛，避免给每一首都跑一次 ffprobe（退化样本都几千字）。
+            # ★ 粗筛用 asr_desc._plain_len（认所有语种的字母/数字）而不是
+            # `[^\u4e00-\u9fffA-Za-z0-9]` 白名单正则 —— 后者会把韩文/俄文/日文
+            # 假名整段剥空成 0 字，那些语种的复读产物会永远筛不出来。
+            try:
+                import asr_desc as _asr
+                plain = _asr._plain_len(txt)
+            except Exception:
+                import re as _re
+                plain = len(_re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", txt))
+            if plain >= 100:
+                dur = float(m.get("duration") or 0) or _probe_duration(p)
+                if asr_bad_ratio(txt, dur):
+                    pend.append({"path": p, "kind": k,
+                                 "name": os.path.basename(p), "bad": True})
             continue
         if m.get("asr_none") or m.get("asr_skip"):
             continue
@@ -660,6 +700,14 @@ def transcribe_file(path, asr_cfg, model=None, processor=None, db_path=None):
                             asr_cfg["model"], path,
                             language=asr_cfg.get("language", ""))
         txt = (r.get("text") or "").strip()
+        # 最后一道闸：即便分窗后仍然复读（极端音频），也**绝不能把它写进索引**——
+        # 一旦落库就会被当成「已转写」，复读文本会污染关键词路和向量，且永不重跑。
+        # 宁可报失败让它下次重试。
+        dur_chk = _probe_duration(path)
+        if txt and asr_bad_ratio(txt, dur_chk):
+            return {"ok": False,
+                    "message": f"转写结果异常（{len(txt)} 字 / {dur_chk:.0f} 秒，"
+                               f"疑似模型复读），已丢弃，稍后重试"}
         asr_meta = ({"asr_text": txt, "asr_model": asr_cfg["model"]} if txt
                     else {"asr_none": True})
         _merge_meta(con, path, asr_meta)
