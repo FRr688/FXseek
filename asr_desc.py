@@ -64,6 +64,33 @@ ASR_BITRATE = "48k"
 ASR_CHUNK_SEC = 60.0        # 单窗时长（实测 60 秒质量最好：唯一率 68~87%）
 ASR_CHUNK_MIN = 20.0        # 退化重试时的最小窗
 
+# ---- 输出 token 上限（★ 关键，别改掉）---------------------------------------
+# oMLX 的 STT 里 max_tokens 默认 8192（engine/stt.py: `max_tokens = int(kwargs.get
+# ("max_tokens") or 8192)`），而**退化时模型不会自己停**，会一路生成到上限才返回 ——
+# 实测单窗输出 24564~32758 字、耗时 130~220 秒。这就是用户看到的
+# 「有的音频特别快，有的卡死，一首歌几分钟都没转录出来」。
+# 好在 oMLX 的 /v1/audio/transcriptions 收 `max_tokens` 表单字段（非 OpenAI 标准，
+# 属 oMLX 扩展），所以按「每秒音频给多少 token」给它封顶即可。同一退化窗实测：
+#     不设上限        216.0s / 28664 字
+#     cap = 秒数×10    17.4s /  2085 字   ← 12.4 倍
+#     cap = 秒数×20    25.6s /  4185 字
+#     cap = 秒数×40    53.0s /  8385 字
+# 取 20/s：正常中英文 speech 实测 ≤8 token/秒，留了 2.5 倍余量，不会截断正常内容；
+# 退化窗被截断后照样判为退化，照旧触发下面的 20 秒重切并恢复干净文本
+# （实测「say yeah」退化窗重切后 688 字、整体判退化 False）。
+# 不认识这个字段的服务端会报 4xx —— 那时自动退回「不带 max_tokens」重试一次，
+# 并永久记住（_NO_MAX_TOKENS），不再打扰。
+ASR_TOKEN_RATE = 20.0       # 每秒音频允许的最大输出 token
+ASR_TOKEN_MIN = 60          # 再短的窗也至少给这么多 token
+_NO_MAX_TOKENS = False      # 服务端不支持 max_tokens 时置 True（自动降级）
+
+
+def _token_cap(seconds: float) -> int:
+    """按音频秒数算输出 token 上限（见 ASR_TOKEN_RATE 注释）。"""
+    if seconds <= 0:
+        return ASR_TOKEN_MIN
+    return max(ASR_TOKEN_MIN, int(seconds * ASR_TOKEN_RATE))
+
 # ---- 复读退化判定（★ 2026-10 重做，别退回「字/秒」）--------------------------
 # 旧实现用「非标点字数 ÷ 秒数 > 8」判复读，两个致命缺陷：
 #   ① `_plain_len` 只认 CJK+ASCII，韩文/俄文/日文假名会被整段剥空 → 恒为 0 字/秒，
@@ -78,9 +105,23 @@ ASR_CHUNK_MIN = 20.0        # 退化重试时的最小窗
 #   B. **句子唯一率**：复读 4000 句里唯一句只有 11 个（0.3%），正常歌副歌再狠
 #      也在 20% 以上。这一条不需要时长，正好补压缩比在短文本上的短板。
 # 两条都命不中才放行 —— 宁可漏判（重试一次而已），也绝不误杀正常内容。
+# C. **字/秒**（2026-10 补，专治上面两条的漏网之鱼）：
+#      压缩比和唯一率都怕同一种文本 —— **几乎全用逗号连写的复读**。
+#      `_sentences` 按句末标点切，逗号连写只能切出几句（< 8 就停用唯一率判据），
+#      而短文本本身又压不动（实测某退化窗 2854 字 / 41.2 秒：压缩比 0.0687 > 阈值
+#      下限 0.05、唯一率判据因只切出 7 句而不启用 → 两条都放行）。
+#      于是补一条最朴素的物理约束：**人说话/唱歌的字数速度有上限**。
+#      全库实测（按 60 秒比例切片模拟分窗）：
+#          98 首干净歌的 419 个窗口 → 最大 11.00/s，P99=9.90、P95=7.60
+#          29 首复读歌的 123 个窗口 → 最小 22.75/s
+#      中间有干净的 2 倍空档；阈值取 12~20 任意值都是 0 误杀 0 漏判，取中间 15。
+#      ★ 只对「够长的窗口」启用（秒数 ≥ ASR_CPS_MIN_SEC）：几秒的尾窗字数样本
+#      太少，稍有波动就会越线，没必要拿它冒险 —— 那种短窗交给上面两条判据。
 ASR_REPEAT_RATIO = 0.088    # 整段压缩比下限（600 字基准）
 ASR_REPEAT_UNIQ = 0.15      # 句子唯一率下限
 ASR_REPEAT_MIN_SENT = 8     # 句数少于此不启用唯一率判据（样本太少不可靠）
+ASR_CPS_MAX = 15.0          # 字/秒 上限（超它即复读）
+ASR_CPS_MIN_SEC = 10.0      # 短于此的窗口不启用字/秒判据
 
 
 def _segment_for_asr(path: str, chunk_sec: float = ASR_CHUNK_SEC):
@@ -178,13 +219,16 @@ def _repeat_ratio_threshold(n_chars: int) -> float:
 
 
 def _looks_degenerate(text: str, seconds: float = 0.0) -> bool:
-    """复读退化判定：压缩比过低 或 句子唯一率过低。
+    """复读退化判定：压缩比过低 或 句子唯一率过低 或 字/秒过高。
 
-    `seconds` 保留在签名里只为兼容旧调用点，判定本身**不再依赖时长**
-    （时长只影响音频、不影响文本是否复读，而缺 duration 时旧实现直接放行）。
+    三条判据互为补位，**任一命中即判退化**（详见常量区 A/B/C 三段注释）：
+      A 压缩比   —— 复读是同一串刷屏，压得极狠；短文本自动放宽阈值。
+      B 句子唯一率 —— 不需要时长，正好补 A 在短文本上的短板。
+      C 字/秒    —— 专治「逗号连写」：A 压不动、B 又切不出 8 句，只有物理
+                   语速上限能兜住。只对 ≥ ASR_CPS_MIN_SEC 的窗口启用。
 
     误判代价不对称：**漏判**只是多转一次（或入库后被 asr_status 挑出来重排），
-    **误杀**却会把正常歌词丢掉并报「疑似复读」。所以两条判据都偏保守。
+    **误杀**却会把正常歌词丢掉并报「疑似复读」。所以三条判据都偏保守。
     """
     t = (text or "").strip()
     if not t:
@@ -200,6 +244,11 @@ def _looks_degenerate(text: str, seconds: float = 0.0) -> bool:
     sents = _sentences(t)
     if len(sents) >= ASR_REPEAT_MIN_SENT:
         if len(set(sents)) / len(sents) < ASR_REPEAT_UNIQ:
+            return True
+    # C. 字/秒（见常量区 C 段注释）：逗号连写的复读既压不动也切不出句子，
+    #    只有这条能兜住。窗口太短时不启用（样本少，波动大）。
+    if seconds and seconds >= ASR_CPS_MIN_SEC:
+        if _plain_len(t) / seconds > ASR_CPS_MAX:
             return True
     return False
 
@@ -236,39 +285,53 @@ def _ctype_for(filename: str) -> str:
 
 def _transcribe_audio_file(base_url: str, api_key: str, model: str,
                            audio_bytes: bytes, filename: str,
-                           language: str = "", timeout: int = 300) -> str:
-    """调用 /v1/audio/transcriptions，返回转写文本。"""
+                           language: str = "", timeout: int = 300,
+                           max_tokens: int = 0) -> str:
+    """调用 /v1/audio/transcriptions，返回转写文本。
+
+    max_tokens > 0 时带上该字段（oMLX 扩展，防退化窗跑满 8192 上限，见
+    ASR_TOKEN_RATE 注释）；若服务端不认这个字段（4xx），自动去掉重试一次
+    并置 _NO_MAX_TOKENS，后续不再尝试。
+    """
+    global _NO_MAX_TOKENS
+    if _NO_MAX_TOKENS:
+        max_tokens = 0
     base = base_url.rstrip("/")
     url = (base + "/audio/transcriptions") if base.endswith("/v1") \
         else (base + "/v1/audio/transcriptions")
 
-    boundary = "----dshAsr" + uuid.uuid4().hex
-    # 构造 multipart/form-data
-    buf = io.BytesIO()
-    def field(name, value):
-        buf.write(f"--{boundary}\r\n".encode())
-        buf.write(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
-        buf.write(f"{value}\r\n".encode())
-    def file_field(name, fname, data, ctype):
-        buf.write(f"--{boundary}\r\n".encode())
-        buf.write(f'Content-Disposition: form-data; name="{name}"; filename="{fname}"\r\n'.encode())
-        buf.write(f"Content-Type: {ctype}\r\n\r\n".encode())
-        buf.write(data)
-        buf.write(b"\r\n")
+    def _build(with_cap: bool) -> bytes:
+        boundary = "----dshAsr" + uuid.uuid4().hex
+        buf = io.BytesIO()
 
-    field("model", model)
-    if language:
-        field("language", language)
-    field("response_format", "json")
-    file_field("file", filename, audio_bytes, _ctype_for(filename))
-    buf.write(f"--{boundary}--\r\n".encode())
+        def field(name, value):
+            buf.write(f"--{boundary}\r\n".encode())
+            buf.write(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            buf.write(f"{value}\r\n".encode())
 
-    body = buf.getvalue()
-    req = urllib.request.Request(url, data=body, method="POST")
-    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
-    if api_key:
-        req.add_header("Authorization", f"Bearer {api_key}")
-    try:
+        def file_field(name, fname, data, ctype):
+            buf.write(f"--{boundary}\r\n".encode())
+            buf.write(f'Content-Disposition: form-data; name="{name}"; filename="{fname}"\r\n'.encode())
+            buf.write(f"Content-Type: {ctype}\r\n\r\n".encode())
+            buf.write(data)
+            buf.write(b"\r\n")
+
+        field("model", model)
+        if language:
+            field("language", language)
+        field("response_format", "json")
+        if with_cap and max_tokens > 0:
+            field("max_tokens", str(int(max_tokens)))
+        file_field("file", filename, audio_bytes, _ctype_for(filename))
+        buf.write(f"--{boundary}--\r\n".encode())
+        return boundary, buf.getvalue()
+
+    def _post(with_cap: bool):
+        boundary, body = _build(with_cap)
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
         with urlopen_smart(req, timeout=timeout) as r:
             d = json.loads(r.read().decode("utf-8", errors="replace"))
             txt = d.get("text") or ""
@@ -276,6 +339,16 @@ def _transcribe_audio_file(base_url: str, api_key: str, model: str,
             if not txt and d.get("segments"):
                 txt = " ".join(s.get("text", "") for s in d["segments"] if s.get("text"))
             return txt.strip()
+
+    try:
+        try:
+            return _post(True)
+        except urllib.error.HTTPError as e:
+            # 400/422 常意味着服务端不认 max_tokens：降级重试一次并记住
+            if max_tokens > 0 and e.code in (400, 404, 405, 422):
+                _NO_MAX_TOKENS = True
+                return _post(False)
+            raise
     except urllib.error.HTTPError as e:
         detail = ""
         try:
@@ -309,13 +382,18 @@ def transcribe(base_url: str, api_key: str, model: str, audio_path: str,
     try:
         if segs:
             parts, retried = [], 0
-            for sp in segs:
+            for si, sp in enumerate(segs):
                 with open(sp, "rb") as f:
                     data = f.read()
                 upload_bytes += len(data)
                 sec = _seg_seconds(sp)
+                # ★ 首窗要替后面所有窗「预热」oMLX 的 ASR 模型：实测首窗 31.5s、
+                # 之后每窗 4~5s（模型加载/编译摊在第一个请求上）。给首窗放宽
+                # 超时，别让本来正常的它被 timeout 掐掉。
+                to = timeout if si else max(timeout, 600)
                 txt = _transcribe_audio_file(base_url, api_key, model, data,
-                                             "audio.mp3", language, timeout=timeout)
+                                             "audio.mp3", language, timeout=to,
+                                             max_tokens=_token_cap(sec))
                 # 单窗退化 → 把这一窗切细重试一次（只重试一次，避免放大失败）
                 if _looks_degenerate(txt, sec) and sec > ASR_CHUNK_MIN * 1.5:
                     sub, sub_td = _segment_for_asr(sp, ASR_CHUNK_MIN)
@@ -327,12 +405,19 @@ def transcribe(base_url: str, api_key: str, model: str, audio_path: str,
                                 with open(ss, "rb") as f:
                                     d2 = f.read()
                                 upload_bytes += len(d2)
+                                s2 = _seg_seconds(ss)
                                 fixed.append(_transcribe_audio_file(
                                     base_url, api_key, model, d2, "audio.mp3",
-                                    language, timeout=timeout))
+                                    language, timeout=timeout,
+                                    max_tokens=_token_cap(s2)))
                             cand = _join_texts(fixed)
-                            if not _looks_degenerate(cand, sec):
-                                txt = cand
+                            # ★ 重切后仍退化 → 两版都是垃圾（原版是被 max_tokens
+                            # 截断的复读刷屏，重切版也没救回来），**丢弃这一窗**，
+                            # 不要把它拼进全文：否则几千字的「Yeah. Yeah. Yeah.」
+                            # 会污染关键词与向量，还会让 indexer 的入库闸门把整首
+                            # （含正常窗）一起丢掉。少一窗最多少一段歌词，比留一坨
+                            # 复读好；保住其余正常窗才有意义。
+                            txt = cand if not _looks_degenerate(cand, sec) else ""
                     finally:
                         if sub_td:
                             shutil.rmtree(sub_td, ignore_errors=True)
@@ -357,7 +442,8 @@ def transcribe(base_url: str, api_key: str, model: str, audio_path: str,
                 raise ASRError("音频文件为空")
             upload_bytes = len(data)
             txt = _transcribe_audio_file(base_url, api_key, model, data, fname,
-                                         language, timeout=timeout)
+                                         language, timeout=max(timeout, 600),
+                                         max_tokens=_token_cap(_seg_seconds(audio_path)))
             segs = []
     finally:
         if td:
