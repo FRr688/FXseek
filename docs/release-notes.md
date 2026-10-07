@@ -1,111 +1,190 @@
 ## FXseek 1.0.3
 
-> 说明：`1.0.3` / `1.0.4` 这两个版本号只在开发期间用过、**从未发布**，所以这一版统一收成 **1.0.3**，下面把它俩的内容合并进来。
+> Note: `1.0.3` and `1.0.4` existed only during development and were **never released**, so everything
+> since 1.0.2 is consolidated into **1.0.3** — the notes for both are merged below.
 
-这次修的都是**真实用户踩出来的坑**：本地模型的转写要么卡死要么复读、批处理被一次服务抖动全灭、菜单栏图标过一阵子就消失、界面显示的版本号还一直对不上。
+This release is a run of fixes for problems **real users actually hit**: transcription that either hung
+or looped, a batch queue wiped out by a single service hiccup, a menu-bar icon that vanished after a
+while, and an About panel whose version number never matched the installer.
 
-### 新增：视频可以看字幕了
-- 播放器底部控制栏右侧新增**「字幕」开关**：打开后，已转写的台词/歌词以字幕形式贴在视频底部跟着走（开关状态会记住）。
-- **还没转写**的视频，开关会自动变成**「立即转写这段视频」**，视频下方同时给出和音频面板一致的提示；点一下就能开转，转完自动把字幕打开。
-- 和音频歌词页同源：转写是整段文本、没有逐句时间戳，所以字幕按「行数均分时长」做近似同步 —— 看着跟得上，但不假装精确。
+### New: subtitles for video
+- A **Subtitles** toggle now sits at the right of the player's control bar. With a transcript, it shows
+  the spoken lines or lyrics as an overlay pinned to the bottom of the video (your on/off choice is remembered).
+- For a video with **no transcript yet**, the toggle turns into **"Transcribe this video"** and the same
+  notice the audio panel shows appears below it. One click starts transcription, and subtitles come on
+  automatically when it finishes.
+- Same source as the audio lyric view: the transcript is one block of text with no per-sentence
+  timestamps, so the overlay is synced by dividing the duration evenly across lines — close enough to
+  follow, without pretending to be frame-accurate.
 
-### 修复：菜单栏图标「过一段时间就消失」
-三个独立的根因叠在一起，任何一个都足以让图标再也回不来：
-- **探活走了系统代理。** 判断「服务还活着吗」的探活请求被 `urllib` 默认套上了系统代理（装了 dev-sidecar、公司代理或各类加速器时），探活被代理吞掉 —— 日志里明明紧挨着一堆 `GET /health 200`（服务好好的），托盘却判它死了。
-  → 现在探本机一律用**直连 opener**，不走代理。
-- **自杀时退出码是 0，而重启器只认 2。** 旧逻辑探不到 3 次（约 12 秒）就自己退出，退出码 0；重启器把「非 2」一律理解成「用户要关主程序了」，于是**永远不再拉起**。
-  → 现在探活失败**只警告、不自杀**（连续 32 秒才记一条），真要换进程一律用约定的退出码；重启器改成**无条件重开**（上限 6 次），并新增「用户是不是真的在退出」的判断。
-- **上上次退出时留下的命令文件被重放（最严重）。** 菜单栏和主程序之间用一个小文件传命令，而监视器把「启动时磁盘上已有的内容」也当成了新命令 —— 上次留下的那条 `quit` 会在**下次启动后第一轮**被重新执行，主程序于是自己退出了。
-  → 现在启动时记录文件的**修改时间**当基线，只认启动之后的变更；执行完立刻把文件写回空命令，双保险。
-- 顺带把图标本身做稳：这台系统上菜单栏项**排不排得上是随机的**（按钮窗口高度会变成 0，不报错也不提示），以前「建完就当它在」，现在改成**主动体检** —— 主线程每 4 秒量一次图标窗口，掉下去就当场重建。
+### Fixed: the menu-bar icon "disappears after a while"
+Three independent root causes stacked up; any one of them was enough to lose the icon for good:
+- **Liveness probes went through the system proxy.** The "is the service still alive?" request was
+  silently proxied by `urllib` (with dev-sidecar, a corporate proxy, or any accelerator installed), so
+  the probe got swallowed — while the log right next to it was full of `GET /health 200`. The tray
+  declared the service dead when it was perfectly healthy.
+  → Local probes now use a **direct opener** that bypasses proxies.
+- **The self-exit code was 0, but the restarter only accepts 2.** The old logic exited by itself after
+  3 failed probes (~12 s) with exit code 0; the restarter reads anything other than 2 as "the user is
+  quitting the app", so it **never started the helper again**.
+  → Failed probes now **warn without exiting** (one line after 32 s), process swaps always use the
+  agreed exit code, and the restarter **restarts unconditionally** (up to 6 times) with a new
+  "is the user actually quitting?" check.
+- **A command file left over from the *previous* session was replayed (the worst one).** The menu bar and
+  the main app talk through a small file, and the watcher treated "whatever is on disk at startup" as a
+  fresh command — so a `quit` left behind last time was **re-executed on the next launch**, and the app
+  quit itself.
+  → Startup now records the file's **modification time** as the baseline and only honours later changes;
+  the file is also cleared immediately after execution, as a second line of defence.
+- The icon itself was made sturdier too: on this system, whether a menu-bar item gets placed is
+  **random** (the button window ends up 0 px high, with no error and no warning). Previously we assumed
+  a created item was a visible item; now a **main-thread heartbeat** measures the icon window every 4
+  seconds and rebuilds it on the spot if it drops.
 
-### 修复：界面显示的版本号和安装包对不上（一直显示 v1.0.0）
-- **根因**：版本号曾经跟其他设置一起落盘，而保存逻辑又从不更新它，于是用户数据目录里那份**陈旧值**在读取时把代码里的新版本号盖掉了。
-- **修法**：版本号只认代码（`app.py` 里那一行是唯一来源），读取设置时强制覆盖；`build_app.sh` / `release.sh` 也从同一个地方取版本，取不到就直接报错，不再静默用旧版本号打包。
+### Fixed: the version shown in About never matched the installer (stuck on v1.0.0)
+- **Root cause**: the version used to be persisted along with the rest of the settings, while the save
+  path never updated it — so the **stale value** in the user data directory shadowed the real version
+  when settings were read back.
+- **Fix**: the version now comes from code only (`app.py` holds the single source of truth) and is forced
+  on load; `build_app.sh` / `release.sh` read it from the same place and now **fail loudly** instead of
+  silently packaging a stale version number.
 
-### 修复：转写质量 —— 复读判定重做
-- **废掉旧的「字/秒 > 8」判据**，它有两个真 bug：白名单正则只认 CJK+ASCII，把韩文/俄文/日文假名剥成 0 字，这些语种**永远判不出复读**；而 `8.0` 是按中文标定的，正常英语 150 wpm ≈ 8.8 字母/秒就已越线，会**误杀正常英文歌**，还会连锁触发 60s→20s 的二次切细（请求数翻 3 倍）。
-- 改用与语种/语速/副歌都无关的判据：**zlib 压缩比**（阈值随文本长度平方根放宽）+ **句子唯一率**（≥8 句且唯一率 <15%），再补一条**「字/秒」**（阈值 15/s）挡住「逗号连写的复读」。全库实测 419 个干净窗 max=11.00/s、123 个复读窗 min=22.75/s，**0 误杀 0 漏判**。
-- 入库闸门不再自己抄一份判定，直接复用转写时的判定，避免「转写时放行、入库时丢弃」的自相矛盾。
+### Fixed: transcription quality — repetition detection rewritten
+- **The old "characters per second > 8" heuristic is gone.** It had two real bugs: its allow-list regex
+  only understood CJK + ASCII, so Korean, Russian and Japanese kana were stripped to zero characters and
+  those languages could **never** be detected as looping; and `8.0` was calibrated on Chinese, while
+  normal English at 150 wpm already runs ~8.8 letters/sec — so it **killed legitimate English tracks**
+  and triggered a cascading re-cut from 60 s down to 20 s windows (tripling the request count).
+- Replaced with language-, tempo- and chorus-agnostic signals: **zlib compression ratio** (threshold
+  relaxed by the square root of text length) + **sentence uniqueness** (≥ 8 sentences and uniqueness
+  < 15 %), plus a third **characters-per-second** test (threshold 15/s) to catch run-on loops that the
+  first two let through. Measured across the whole library: 419 clean windows max out at 11.00/s, 123
+  looping windows start at 22.75/s — **zero false positives, zero misses**.
+- The ingest gate no longer keeps its own copy of the heuristic; it reuses the transcription-time check,
+  so "accepted while transcribing, discarded while indexing" can't happen again.
 
-### 修复：转写不再「几分钟出不来」
-- **退化窗跑满了模型服务的默认输出上限。** 本地 ASR 在退化时**不会自己停**，一路生成到 `max_tokens` 上限：实测单窗输出 24564~32758 字、耗时 130~220 秒。现在按「每秒音频给多少 token」封顶，同一退化窗 **216.0s / 28664 字 → 25.6s / 4185 字（8.4 倍）**；服务端若不认识这个非标准字段，会自动降级重试一次并永久记住。
-- **首窗要替后面所有窗预热模型**（实测首窗 31.5s、之后 4~5s），首窗超时相应放宽，不再把正常的首窗掐掉。
-- 退化窗重切后**仍然**退化时，不再把被截断的复读原文入库（实测曾入库 4961 字垃圾，污染关键词与向量，还会被入库闸门连带丢掉整首）。
+### Fixed: transcription no longer takes "minutes and never finishes"
+- **Degenerate windows were running to the model service's default output ceiling.** A looping local ASR
+  **never stops on its own** and generates all the way to `max_tokens`: measured at 24,564–32,758
+  characters and 130–220 seconds for a single window. Output is now capped by "tokens per second of
+  audio": the same window went from **216.0 s / 28,664 chars → 25.6 s / 4,185 chars (8.4×)**. If the
+  server doesn't recognise this non-standard field it returns 4xx, we automatically retry once without
+  it, and remember that permanently.
+- **The first window warms the model up for all the others** (measured: 31.5 s for the first, 4–5 s
+  afterwards), so the first window's timeout was widened and no longer kills a perfectly normal start.
+- When a re-cut window is **still** degenerate, the truncated looping output is no longer ingested
+  (previously 4,961 characters of junk made it into the index, polluting keywords and vectors and
+  getting whole tracks dropped by the ingest gate).
 
-实测：`say yeah` 旧版 4961 字垃圾 → 现 2106 字真歌词 69.1s；正常长歌 231.9s → 12.6s。
+Measured: `say yeah` went from 4,961 characters of junk to 2,106 characters of real lyrics in 69.1 s;
+a normal long track from 231.9 s to 12.6 s.
 
-### 修复：批量任务被一次服务抖动全灭
-- 连接失败 / `504` / 超时 / `database is locked` 属于**服务整体不可用**，以前却被记在每个文件头上 —— 200 个待办逐个冷藏 3 次，最后**全进冷藏**，这就是「整批一直终止再也不动」的成因。现在这类故障只做**全局退避与跳过**，不写单文件黑名单。
-- 「立即补全」在全部待办都处于冷藏时，不再把自己标记为 finished，冷藏到期接着跑。
+### Fixed: one service hiccup no longer wipes out the whole batch queue
+- Connection failures / `504` / timeouts / `database is locked` are a **service-wide outage**, but they
+  used to be recorded against each individual file — 200 pending jobs were each blacklisted three times
+  and the entire queue froze. Such failures now only trigger **global backoff and skipping**, and never
+  write a per-file blacklist.
+- "Fill in now" no longer marks itself finished when every remaining job is on cooldown; it resumes when
+  the cooldown expires.
 
-### 安装
-1. 下载 `FXseek-1.0.3.dmg` → 双击挂载 → 把 `FXseek.app` 拖进「应用程序」
-2. **安装前先删掉旧版** `/Applications/FXseek.app`（直接覆盖会留下旧文件）
-3. **首次打开请「右键 → 打开」**（未做 Apple 公证，Gatekeeper 会拦一次）
-4. 需要 macOS 13 及以上 + Apple Silicon（M 系列芯片）
-5. 首次启动会下载约 1.8 GB 模型，之后**完全离线**可用
+### Install
+1. Download `FXseek-1.0.3.dmg`, double-click to mount, and drag `FXseek.app` into *Applications*
+2. **Delete the old copy first**: `/Applications/FXseek.app` (installing over it leaves stale files behind)
+3. **On first launch use right-click → Open** (the app is not notarised, so Gatekeeper blocks it once)
+4. Requires macOS 13 or newer + Apple Silicon (M-series)
+5. The first launch downloads a ~1.8 GB model; after that it works **fully offline**
 
-非商业用途免费（PolyForm Noncommercial 1.0.0）；**商业用途需授权**，见 [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md)。
+Free for noncommercial use (PolyForm Noncommercial 1.0.0); **commercial use requires a licence** — see [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md).
 
 ---
 
 ## FXseek 1.0.2
 
-这次修的都是**真实用户踩出来的坑**：本地模型被系统代理掐断、坏文件卡死整个队列、iPhone 照片根本进不了库。
+Another round of fixes for problems **real users actually hit**: a local model cut off by the system
+proxy, a single bad file freezing the whole queue, and iPhone photos that could not get into the library.
 
-### 修复：本地 ASR / 视觉模型被系统代理坑到转写失败
-- **症状**：后台「自动转写」跑着跑着就停住不动，日志里同一个文件反复失败：
+### Fixed: local ASR / vision models broken by the system proxy
+- **Symptom**: background transcription would stop partway through, with the same file failing over and
+  over in the log:
   `HTTP 504: DevSidecar: no response from upstream ➜ http://127.0.0.1:9977/v1/audio/transcriptions`
-- **根因**：请求走了系统代理（dev-sidecar / 公司代理 / 各类加速器），而你的本地模型服务（oMLX / Ollama / LM Studio）就在 `127.0.0.1`。短请求没事，**长音频上传会被代理自身的 60 秒超时掐断** —— 所以同一首歌在 oMLX 里能转，在 FXseek 里失败。
-- **修法**：新增 `net_util.py`，按目标地址分流 —— **本机与局域网直连，公网才走系统代理**。打标用的视觉模型走同一条路。
-- 顺带把上传体积降下来：音频先用 ffmpeg 转成 16 kHz 单声道 48 kbps mp3 再发（26.4 MB 的歌 → **1.42 MB**，转写 216.7s → **182.8s**）。实测精度与无损版只差 1 个标点（121 字 vs 121 字，相似度 99.17%）。
+- **Root cause**: the request went through the system proxy (dev-sidecar / corporate proxy / accelerators)
+  while your local model service (oMLX / Ollama / LM Studio) lives on `127.0.0.1`. Short requests are
+  fine, but **long audio uploads get cut by the proxy's own 60-second timeout** — which is why the same
+  track transcribes in oMLX but fails in FXseek.
+- **Fix**: a new `net_util.py` routes by destination — **loopback and LAN go direct; only public traffic
+  uses the system proxy.** The vision model used for tagging goes the same way.
+- Upload size came down as a bonus: audio is converted to 16 kHz mono 48 kbps mp3 first (a 26.4 MB track
+  becomes **1.42 MB**, transcription 216.7 s → **182.8 s**). Measured accuracy differs from the lossless
+  version by one punctuation mark (121 vs 121 characters, 99.17 % similarity).
 
-### 修复：一个坏文件卡死整条后台队列
-- **症状**：后台补全永远停在「本轮第 1/10」，一个文件失败就无限原地重试，剩下的待办全部饿死。
-- **修法**：每个任务独立 `try/except`，失败**自动跳到下一个**；同一个文件连败 3 次就「冷藏」15 分钟后再试；失败也计入本轮名额（不再显示 0/10）。状态栏新增「本轮失败 N」「暂时跳过 N（连败 3 次，稍后自动重试）」。
-- 另外：以前每次失败都无条件睡 120 秒，现在只有**连续** 3 次失败才整体退避。
+### Fixed: one bad file froze the entire background queue
+- **Symptom**: background fill-in sat forever at "round 1/10"; one failing file retried in place endlessly
+  and every other pending job starved.
+- **Fix**: each task gets its own `try/except` and **moves on to the next one** on failure; a file that
+  fails 3 times in a row is "cold-stored" for 15 minutes; failures still count against the round's quota
+  (no more misleading 0/10). The status bar gained "failed this round: N" and "skipped for now: N
+  (3 consecutive failures, retrying later)".
+- Also: a failure used to sleep 120 s unconditionally; now only **three consecutive** failures trigger
+  the global backoff.
 
-### 新增：HEIC / HEIF 支持（iPhone 照片）
-- `.heic` 一直在支持格式名单里，但 Pillow 默认读不了 HEIF，而索引器遇到读不开的图片只是**静默跳过** —— 于是 iPhone 拍的照片搜不到、没有缩略图、漫步时光里也看不见。
-- 现在随包内置 `pillow-heif`（含 libheif），启动时注册解码器。实测 2000×1248 的 HEIC 正常建索引、正常出缩略图。
+### New: HEIC / HEIF support (iPhone photos)
+- `.heic` had always been on the supported-formats list, but Pillow cannot read HEIF out of the box, and
+  the indexer **silently skipped** images it couldn't open — so photos taken on an iPhone could not be
+  found, had no thumbnails, and never appeared in Memory Lane.
+- `pillow-heif` (with libheif) is now bundled and registers its decoders at startup. A 2000×1248 HEIC
+  indexes and produces thumbnails correctly in testing.
 
-### 其他
-- 源码里写死的个人绝对路径全部清掉（模型回退目录改为环境变量 `FXSEEK_MODEL_DIR` + 随包 `model/`，文档示例改 `~/`）。
+### Other
+- All hard-coded personal absolute paths were removed from the source (the model fallback directory became
+  the `FXSEEK_MODEL_DIR` environment variable plus the bundled `model/`, and docs now use `~/`).
 
-### 安装
-1. 下载 `FXseek-1.0.2.dmg` → 双击挂载 → 把 `FXseek.app` 拖进「应用程序」
-2. **首次打开请「右键 → 打开」**（未做 Apple 公证，Gatekeeper 会拦一次）
-3. 需要 macOS 13 及以上 + Apple Silicon（M 系列芯片）
-4. 首次启动会下载约 1.8 GB 模型，之后**完全离线**可用
+### Install
+1. Download `FXseek-1.0.2.dmg`, double-click to mount, and drag `FXseek.app` into *Applications*
+2. **On first launch use right-click → Open** (the app is not notarised, so Gatekeeper blocks it once)
+3. Requires macOS 13 or newer + Apple Silicon (M-series)
+4. The first launch downloads a ~1.8 GB model; after that it works **fully offline**
 
-非商业用途免费（PolyForm Noncommercial 1.0.0）；**商业用途需授权**，见 [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md)。
+Free for noncommercial use (PolyForm Noncommercial 1.0.0); **commercial use requires a licence** — see [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md).
 
 ---
 
 ## FXseek 1.0.1
 
-本次更新主要解决**素材一多、打开就慢**的问题，并把「漫步时光」打磨到位。
+This release is mainly about **opening a large library being slow**, plus a pass over Memory Lane.
 
-### 性能（重点）
-- **素材列表加载：冷启动 18.8 秒 → 1.2 秒；二次打开 0.03 秒**
-  以前每次打开都要对每个文件重新探测元信息（音视频起 ffprobe 子进程、图片开 PIL），而且是一个接一个串行做。现在结果按「路径 + 修改时间 + 大小」缓存在本机（`data/media_meta_cache.json`），文件一改缓存自动失效；首次建档时 16 路并行，并把音视频的两次 ffprobe 合并成一次。
-- **前端改成分批渲染**
-  首屏只创建 48 张卡片（以前一次性铺 270 张），滑到底部前自动追加下一批（每次 24 张），底部实时显示「已显示 48 / 270 项 · 继续下滑自动加载」。缩略图依旧按需加载，滚多远取多少。
+### Performance (the headline)
+- **Asset list cold start: 18.8 s → 1.2 s; reopening: 0.03 s.**
+  Opening the library used to re-probe metadata for every single file (spawning `ffprobe` for audio and
+  video, opening PIL for images), one after another. Results are now cached on disk keyed by
+  *path + modification time + size* (`data/media_meta_cache.json`), and the cache invalidates itself when
+  a file changes. The first build runs 16 probes in parallel and merges the two `ffprobe` calls per
+  audio/video file into one.
+- **The front end now renders in batches.**
+  The first screen creates only 48 cards (it used to lay out all 270 at once) and appends the next batch
+  of 24 as you approach the bottom, showing "showing 48 / 270 · scroll for more" as it goes. Thumbnails
+  are still loaded on demand — scroll as far as you like, fetch only what you see.
 
-### 漫步时光（回忆长廊）
-- 滚动引擎重写为「逐帧位移 + 卡片回收」：位移永远不超过一张卡，**不再整列闪烁**；可视区顶边永远有内容接住，**不再出现空白缺口**。
-- 按钮加了呼吸光晕；进入场景后光晕自动静止，不干扰观看。
-- 场景内除「回到现在」按钮与缩略图外全部锁定；单击任意缩略图，它会优雅地淡出（不删文件、不影响索引）。
+### Memory Lane
+- The scroll engine was rewritten around **per-frame offsets plus card recycling**: displacement never
+  exceeds one card, so columns **no longer flicker**, and the top of the viewport always has content
+  catching it — **no more blank gaps**.
+- The button gained a breathing glow, which settles once you're inside so it doesn't distract.
+- Everything inside the scene is locked except the "back to now" button and the thumbnails; clicking any
+  thumbnail fades it out gracefully (it does not delete the file and does not touch the index).
 
-### 其他
-- 设置页「在 GitHub 上 Star」指向真实项目地址，并改用系统浏览器打开。
-- 细节修复若干：文档格式识别、缩略图宽度参数、依赖体检工具、死代码清理。
+### Other
+- The "Star on GitHub" link in Settings now points at the real repository and opens in your system browser.
+- Assorted small fixes: document format detection, thumbnail width parameter, the dependency audit tool,
+  and dead-code cleanup.
 
-### 安装
-1. 下载 `FXseek-1.0.1.dmg` → 双击挂载 → 把 `FXseek.app` 拖进「应用程序」
-2. **首次打开请「右键 → 打开」**（未做 Apple 公证，Gatekeeper 会拦一次）
-3. 需要 macOS 13 及以上 + Apple Silicon（M 系列芯片）
-4. 首次启动会下载约 1.8 GB 模型，之后**完全离线**可用
+### Install
+1. Download `FXseek-1.0.1.dmg`, double-click to mount, and drag `FXseek.app` into *Applications*
+2. **On first launch use right-click → Open** (the app is not notarised, so Gatekeeper blocks it once)
+3. Requires macOS 13 or newer + Apple Silicon (M-series)
+4. The first launch downloads a ~1.8 GB model; after that it works **fully offline**
 
-非商业用途免费（PolyForm Noncommercial 1.0.0）；**商业用途需授权**，见 [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md)。
+Free for noncommercial use (PolyForm Noncommercial 1.0.0); **commercial use requires a licence** — see [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md).
+
+---
+
+[简体中文发版说明 →](release-notes.zh-CN.md)

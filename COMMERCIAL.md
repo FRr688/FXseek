@@ -1,44 +1,65 @@
-# 商业授权（Commercial Licensing）
+# Commercial Licensing
 
-本项目的**源代码与构建产物**采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 发布：
+The **source code and build artifacts** of this project are released under the
+[PolyForm Noncommercial License 1.0.0](LICENSE):
 
-| 用途 | 是否需要商业授权 |
+| Use | Commercial licence required? |
 |---|---|
-| 个人学习、研究、实验、业余爱好、私人娱乐 | 免费，不需要 |
-| 慈善机构、教育机构、公共研究机构、公共安全/卫生机构、环保组织、政府机构 | 免费，不需要 |
-| **公司/个体经营内部使用**（含在办公电脑上装一份） | **需要** |
-| 把本软件或其修改版**打包、转售、随硬件/服务一起交付** | **需要** |
-| 基于本软件提供**付费服务**（SaaS、代建库、培训、二次开发交付） | **需要** |
-| 把本软件或其衍生作品**并入商业产品** | **需要** |
+| Personal study, research, experimentation, hobby projects, private entertainment | No — free |
+| Charities, educational institutions, public research bodies, public safety/health organisations, environmental groups, government bodies | No — free |
+| **Internal use by a company or a sole trader** (including a single install on an office machine) | **Yes** |
+| **Packaging, reselling, or shipping this software (or a modified version) with hardware or a service** | **Yes** |
+| **Offering a paid service built on this software** (SaaS, hosted libraries, training, contract development) | **Yes** |
+| **Incorporating this software or a derivative into a commercial product** | **Yes** |
 
-> 一句话：**自己玩、做研究、教学、公益 —— 免费；靠它赚钱 —— 找我拿授权。**
-> 这不是"想收钱才这么写"：PolyForm Noncommercial 是律师起草、SPDX 收录的标准非商业许可，
-> 它明确允许**非商业**的复制、修改与再分发，不需要你开源自己的改动，但商业用途必须另行取得授权。
+> In one line: **hobby, research, teaching and public-interest use are free; if you make money with it,
+> come and get a licence.**
+> This isn't a "we'd like to be paid" clause bolted on: PolyForm Noncommercial is a lawyer-drafted,
+> SPDX-recognised standard noncommercial licence. It explicitly permits **noncommercial** copying,
+> modification and redistribution, and it does **not** require you to open-source your changes — but
+> commercial use requires a separate grant.
 
-## 怎么取得授权
+## How to obtain a licence
 
-请通过仓库 Issue 或下列联系方式说明以下信息，我会给一份书面授权（含范围、期限、是否可再分发）：
+Open an issue in this repository (or use the contact details there) with the following, and I will issue
+a written licence covering scope, term and whether redistribution is allowed:
 
-1. 使用主体（公司/个人，全称）
-2. 用途（内部自用 / 随产品交付 / SaaS / 二次开发交付 …）
-3. 规模（部署台数 / 最终用户数 / 是否需要修改源码）
-4. 是否需要"修改后不再开源"的权利（标准授权默认允许保留改动）
+1. Licensee (company or individual, full legal name)
+2. Intended use (internal / shipped with a product / SaaS / contract development / …)
+3. Scale (number of deployments, number of end users, whether the source will be modified)
+4. Whether you need the right to keep your modifications closed (the standard licence already allows this)
 
-## 常见问题
+## FAQ
 
-**Q：我在公司电脑上装一份自己用，算商业吗？**
-A：算。PolyForm Noncommercial 的定义里，你在职的公司属于 "Your company"，在公司机器上使用即为商业用途 —— 这种情况需要授权。
+**Q: I install a copy on my work laptop for my own use — is that commercial?**
+A: Yes. Under PolyForm Noncommercial your employer counts as "Your company", so using it on a company
+machine is a commercial use and requires a licence.
 
-**Q：我改了一些代码，想发到自己的博客/GitHub？**
-A：可以，只要仍用于非商业目的、并保留 LICENSE 与 `Required Notice:` 声明。商业目的的再分发需要授权。
+**Q: I modified some code and want to publish it on my blog / GitHub?**
+A: That's fine, as long as it stays noncommercial and you keep the LICENSE and the `Required Notice:`
+statement. Redistribution for commercial purposes requires a licence.
 
-**Q：我要的只是"商用"，但不想公开我的改动？**
-A：可以。商业授权默认**不要求**你开源自己的改动。
+**Q: I only need commercial rights; I don't want to publish my changes.**
+A: That's fine. The commercial licence does **not** require you to open-source your modifications.
 
-**Q：报价？**
-A：按用途与规模定（个人开发者、小团队、企业内部、随产品分发各不相同）。先在 Issue 里说明用途，我给你一个明确报价。
+**Q: Pricing?**
+A: It depends on the use and the scale (individual developer, small team, internal enterprise use, and
+shipping with a product are all different). Describe your use case in an issue and I'll give you a
+straight quote.
 
 ---
 
-> 版权人：**FR**。
-> 本文档是商业授权的**说明与邀约**，具体授权条件以双方签署的授权书为准。
+## 中文说明
+
+本项目采用 **PolyForm Noncommercial License 1.0.0**：**个人学习 / 研究 / 业余爱好 / 慈善 / 教育 /
+公共研究 / 政府**等非商业用途免费，可以随意使用和修改；**任何商业用途都需要单独授权**（公司内部
+使用、随产品分发、SaaS、二次开发交付……）。需要授权时，请在仓库 Issue 里说明「使用主体 / 用途 /
+规模 / 是否需要保留改动不开源」四项，我会给一份书面授权（含范围、期限、是否可再分发）。
+
+> 一句话：**自己玩、做研究、教学、公益 —— 免费；靠它赚钱 —— 找我拿授权。**
+
+---
+
+> Copyright holder: **FR**.
+> This document is an **explanation of and invitation to** commercial licensing; the binding terms are
+> those of the licence agreement both parties sign.
