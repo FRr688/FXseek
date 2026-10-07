@@ -60,7 +60,7 @@
 
 ## 下载（普通用户）
 
-1. 到 [Releases](../../releases) 下载 `FXseek-1.0.2.dmg`
+1. 到 [Releases](../../releases) 下载 `FXseek-1.0.5.dmg`
 2. **安装前先删掉旧版**：`/Applications/FXseek.app`（直接覆盖会留下旧文件）
 3. 打开 dmg，把 `FXseek.app` 拖进"应用程序"
 4. 首次启动会**自动下载内置模型（约 1.8 GB）**，默认走国内镜像、失败自动换官方源，带进度条
@@ -77,7 +77,7 @@
 ```bash
 bash tools/build_app.sh          # 只出 .app
 bash tools/build_app.sh --dmg    # 出 .app + .dmg
-hdiutil verify dist/FXseek-1.0.2.dmg     # 必须打印 VALID
+hdiutil verify dist/FXseek-1.0.5.dmg     # 必须打印 VALID
 
 # 开发模式：直接起服务，改 ui.html / settings.html 刷新即生效
 ./venv/cpython-3.11/bin/python3.11 app.py --port 8231
@@ -100,6 +100,22 @@ hdiutil verify dist/FXseek-1.0.2.dmg     # 必须打印 VALID
 | `ui.html` / `settings.html` / `i18n.js` / `icons.js` | 前端（零构建、原生 JS） |
 | `tools/` | 打包脚本、依赖体检、原生启动器源码、示例素材生成 |
 | `docs/` | [工程手册](docs/手册.md)（设计取舍与踩坑）、[运行时与二进制](docs/运行时与二进制.md）、[演示素材](docs/demo/)（README 里的截图与动图） |
+
+## 遇到问题？
+
+最常见的几类故障与它们的根因、修复版本见下表；设计取舍与更细的排查过程在 [docs/手册.md](docs/手册.md)。
+
+| 症状 | 根因 | 从哪版修好 |
+|---|---|---|
+| 后台「自动转写」跑着跑着就停住，**一个文件失败后整批再也不动** | 服务整体不可用（连接失败 / 504 / 超时 / `database is locked`）被当成"这个文件失败"逐个拉黑，200 个待办最后全进冷藏 | **1.0.2 / 1.0.3** |
+| 本地模型（oMLX / Ollama / LM Studio）转写失败，日志里有 `504` 或超时 | 请求走了**系统代理**（dev-sidecar、公司代理、各类加速器），而模型服务就在 `127.0.0.1`；短请求没事，长音频上传会被代理自身的 60 秒超时掐断 | **1.0.2** |
+| 某首歌转写**几分钟都出不来**，或结果是一大段重复的歌词 | 本地 ASR 退化复读后不会自己停，一路生成到 `max_tokens` 上限（实测单窗 130~220 秒） | **1.0.3 / 1.0.4** |
+| 菜单栏图标**过一段时间就消失**，找不到了 | 探活走了系统代理 → 误判服务已死；自杀退出码是 0 而 keeper 只认 2 → 永不重启；磁盘上**上次会话遗留的命令文件被重放**（`quit`）→ 主程序自己退出 | **1.0.5** |
+| 从源码跑正常，**打包成 .app 后**「测试连接」报 `No such file or directory: 'ffmpeg'` | 双击启动走 LaunchServices，PATH 只有 `/usr/bin:/bin:/usr/sbin:/sbin`；裸 `subprocess.run(["ffmpeg", …])` 找不到内置 `bin/ffmpeg` | 已改为一律用 `indexer._find_bin()` 解析出的绝对路径 |
+
+> 诊断这类**间歇性**故障的通则：**先确认"日志里的因果是不是你以为的那个"**。
+> 例如 `FXseek.log` 行首没有时间戳，就得靠相邻的 HTTP 访问行来定位时序 ——
+> 我们就是这样才发现「托盘判服务已死」的那几行，上面其实紧挨着 `GET /health 200`。
 
 ## 许可（重要）
 

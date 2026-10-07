@@ -102,7 +102,7 @@ DEFAULT_SETTINGS = {
     "theme": "auto",          # auto | light | dark
     "font_size": "medium",    # small | medium | large
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
-    "version": "1.0.4",
+    "version": "1.0.5",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",

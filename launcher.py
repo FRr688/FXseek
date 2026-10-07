@@ -1270,6 +1270,18 @@ except Exception:            # 非 macOS / 没有 pyobjc：静默退化，不做
 # 情况下都排得上。所以图标交给 tray_helper.py，主程序跟它用本机 HTTP 说一句话
 # （路由在 app.py：/v1/panel/show、/v1/panel/hide、/v1/app/quit）。
 _TRAY_PIDFILE = ".tray.pid"
+# keeper 最多重开几个助手：真出事时别无限刷进程（历史上 4 次够用，这里留点余量）
+_TRAY_KEEPER_MAX = 6
+
+
+def _quit_requested():
+    """用户是不是已经决定退出了（窗口关掉那条路也会走这里）。
+
+    keeper 靠它区分「助手自己没了，重开一个」和「主程序要关了，别添乱」。
+    _QUIT["flag"] 在 _quit_now 里置位；但菜单栏那条退出路径（托盘里的
+    「退出 FXseek」）也走 _quit_now，所以一个标志就够。
+    """
+    return bool(_QUIT.get("flag"))
 
 
 def _tray_pid_path():
@@ -1340,20 +1352,33 @@ def _tray_keeper(port):
 
     为什么要有这个：这个系统里 NSStatusItem 摆不摆得上跟进程当时的状态有关，
     同一个进程里反复重建不一定能救回来，换个新进程往往就好了。
+
+    ★ 补一个保险（用户报「菜单栏图标过一段时间就消失」）：万一助手不是走
+    os._exit(2) 而是别的路径没了（比如被系统当成「异常终止」直接回收，
+    poll() 拿到的是负的信号号而不是 2），老代码 `if rc != 2: return` 就直接
+    不管了 —— 图标从此没人管，永久消失。所以：**主程序还活着**的时候，
+    助手无论以什么码消失都重开；但最多 _TRAY_KEEPER_MAX 次，免得真出事时刷屏。
+    主程序自己退出时 _QUIT["flag"] 已置位、或 _QUIT["tray_proc"] 被清成 None，
+    两条都会让这里安静地退出。
     """
     tries = 0
-    while tries < 4:
+    while tries < _TRAY_KEEPER_MAX:
         time.sleep(6.0)
         proc = _QUIT.get("tray_proc")
         if proc is None:
-            return                     # 主程序在收尾了
+            return                     # 主程序在收尾了（_kill_tray_helper 清空的）
         rc = proc.poll()
         if rc is None:
             continue                   # 助手还活着，不用管
-        if rc != 2:
-            return                     # 正常退出（主程序要关了），别再起
+        if _quit_requested():
+            return                     # 主程序要关了，别添乱
+        if rc == 2:
+            why = "没摆上图标，自己认输了"
+        else:
+            why = "意外退出（rc=%s）" % rc
         tries += 1
-        print("[launcher] 菜单栏助手没摆上图标，重开一个（第 %d 次）" % tries)
+        print("[launcher] 菜单栏助手%s，重开一个（第 %d 次）" % (why, tries))
+        sys.stdout.flush()
         _QUIT["tray_proc"] = None
         _spawn_tray_helper(port)
 
@@ -1565,7 +1590,17 @@ def _tray_cmd_watch():
     正常（服务在跑）时走 HTTP，这条路只是兜底。
     """
     path = _tray_cmd_path()
-    seen = None
+    # ★ seen 必须用「当前 mtime」当基线，不能是 None。
+    # None 意味着"还没看过"，所以启动后第一轮（sleep 1.0s 之后）就会把磁盘上
+    # **上一次会话遗留的命令文件**当成新命令执行一遍 —— 于是「上次点了退出，
+    # 这次一开 app 它自己又退出了」，而这正好是用户报「菜单栏图标有时候会在
+    # 一段时间后消失」的另一个成因：主程序自己退出了，图标跟着走。
+    try:
+        seen = os.path.getmtime(path)      # 基线 = 启动前磁盘上已有的状态
+    except OSError:
+        seen = None
+    if seen is None:
+        seen = -1.0                       # 文件不存在 → 用一个永不等于 mtime 的值
     time.sleep(1.0)
     while not _QUIT.get("flag"):
         time.sleep(0.7)
@@ -1584,6 +1619,14 @@ def _tray_cmd_watch():
             continue
         if not cmd:
             continue
+        # 执行完就把命令抹掉（写回一个空命令 + 新的 mtime）：
+        # 这样即便基线判断哪天又失灵，也不会重复执行同一条。
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"cmd": "", "at": time.time()}, f)
+            seen = os.path.getmtime(path)
+        except Exception:
+            pass
         print("[launcher] 收到菜单命令：%s" % cmd)
         import app as APP
         fn = APP.PANEL_HOOKS.get(cmd)

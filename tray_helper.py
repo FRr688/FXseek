@@ -245,6 +245,17 @@ def _t(key, *a):
     return (s % a) if a else s
 
 
+# ★ 本机请求必须绕开系统代理再发。
+#
+# 这台机器上装着 DevSidecar 这类加速工具（系统代理曾指向 127.0.0.1:31188，日志里
+# 有 94 处 DevSidecar 痕迹），而 Python 的 urllib **默认连 127.0.0.1 也套代理**
+# ——`getproxies()` 会返回它、`proxy_bypass("127.0.0.1")` 还是 False。
+# 对探活来说这是致命的：代理多一跳、还带自己的超时，偶尔拒掉本机请求，
+# /health 于是「探不到」→ _watch 判服务已死 → 图标自杀 → 菜单栏图标永久消失。
+# （net_util.py 顶部记的就是这个代理坑，那次坑的是 oMLX 转写。）
+_OPENER_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def _http(port, path, data=None, method="GET", timeout=2.5):
     body = json.dumps(data or {}).encode("utf-8")
     req = urllib.request.Request(
@@ -252,7 +263,7 @@ def _http(port, path, data=None, method="GET", timeout=2.5):
         data=(body if method == "POST" else None),
         headers=({"Content-Type": "application/json"} if method == "POST" else {}),
         method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _OPENER_DIRECT.open(req, timeout=timeout) as r:
         raw = r.read().decode("utf-8")
     return json.loads(raw or "{}")
 
@@ -721,11 +732,15 @@ def main():
     def _make_item(frame_idx=0):
         """建一个狒狒菜单栏图标（连菜单一起装好）并返回它。
 
-        ★ 踩了很久的坑：这个系统（macOS 26）上，**一个进程建的第一个
-        NSStatusItem 永远不显示** —— 按钮窗口高度 0、isVisible() 直接是 False，
-        不报错也不提示；同一进程里第二个起的就正常排上。最小 AppKit 程序验证过：
-        连建两个，第一个 vis=False、第二个 vis=True（frame=(725,930,70,30)）。
-        所以每次建之前先放一个替死鬼把「第一个」名额占掉。
+        ★ 踩了很久的坑：这个系统（macOS 26）上 NSStatusItem 排不排得上**是随机的**，
+        而且**前几个几乎必然排不上** —— 按钮窗口高度 0、isVisible() 直接是 False，
+        不报错也不提示。三个最小 AppKit 探针实测（/tmp/traytest/probe*.py）：
+          · 连建 5 个          → 只有第 4 个（下标 3）排上（高度 30）
+          · 每 2.5 秒建一个（6 个）→ 下标 3、5 排上，0/1/2/4 全是 0
+          · 每次重建前先 setVisible_(False) 旧的（8 个）→ 下标 3、5、6 排上，其余 0
+        即约 1/3 概率成功、且下标 3 三次都成功；同时**活着的 item 可能不止一个**。
+        所以策略是：每次建之前先放一个替死鬼占名额，排不上就换个 item 重试
+        （见 _ensure_icon），绝不「建完就默认它还在」（见 _icon_alive）。
 
         frame_idx：初设帧（0=静止 1=抬手 2=高抬）。动效靠「重建 item 以新帧
         初设」实现——这台系统上 setImage_ 运行期换图不触发可见刷新（见下）。
@@ -792,8 +807,9 @@ def main():
     #   **实时生效**——所以不再用「每 3 秒重建 item」的笨办法（每次重建带一个新
     #   替死鬼，透明占位越堆越多，是用户报「图标间隔不合理」的元凶）。
     #   现在只建一次 item，排上后挂 NSTimer 以 STRIP_SEC 秒/帧循环 setImage_。
-    #   NSTimer 必须在主 runloop 跑起来后加进去（_verify 经 AppHelper.callLater
-    #   在 runloop 内回调，正好满足）；定时器加 common modes，点开菜单也继续走。
+    #   NSTimer 必须在主 runloop 跑起来后加进去（_ensure_icon / _heartbeat 经
+    #   AppHelper.callLater 在 runloop 内回调，正好满足）；定时器加 common modes，
+    #   点开菜单也继续走。
     _SCRATCH = {"frames": None, "i": 0, "timer": None}
 
     def _item_laid_out(it):
@@ -855,6 +871,14 @@ def main():
 
 
     def _stop():
+        """收工：图标藏起来，进程退出。
+
+        ★ 退出码要说清楚，因为 launcher 的 _tray_keeper 靠它判断要不要重开：
+          app.terminate_() 让进程正常返回 main() → 退出码 **0**，keeper 看到
+          非 2 就当「主程序要关了」，从此不再拉起 —— 所以**凡是「不是我们自己想
+          关」的原因走到这里，都必须先置 _QUIT["going_away"]=False**（见 _watch
+          里那两条调用），让 keeper 知道该重开。
+        """
         try:
             item.setVisible_(False)          # removeStatusItem_ 在有些进程里会 SIGTRAP
         except Exception:
@@ -864,13 +888,143 @@ def main():
         except Exception:
             os._exit(0)
 
-    def _watch():
-        """主程序没了（或被强杀）就跟着走，别留个孤零零的图标点不动。
+    def _where():
+        try:
+            w = item.button().window()
+            f = w.frame() if w is not None else None
+            return "frame=%s vis=%s" % (f, item.isVisible())
+        except Exception as e:
+            return "查不到（%s）" % e
 
-        ★ 服务是我们自己停的时候，_alive 当然探不到 —— 那不算异常，接着活着，
-        用户随时能点「启动服务器」。所以这里用 STATE["running"] 区分一下。
+    # 探活容忍度：老版本是「3 次（约 12 秒）探不到就自杀」，太敏感了。
+    _WATCH_DEAD_WARN = 8      # 8 次（约 32 秒）→ 记一条警告（每次故障只记一条）
+    _BEAT_SEC = 4.0           # 主线程图标体检间隔
+    # healing：当前有没有 _ensure_icon 重试链在排队（心跳看到就别再插手，
+    #            否则两条链会各自再排一个重试 → 重建数量指数级膨胀）
+    # tries：  这一轮已经失败了几次；>0 说明图标是「重建后才排上的」，才值得报一句
+    _ICON = {"tries": 0, "healing": False, "alive": True, "dropped": 0}
+
+    def _icon_alive():
+        """图标此刻还真的挂在菜单栏上吗（按钮窗口高度 > 0）。
+
+        ★ 这台系统（macOS 26）上 NSStatusItem 的按钮窗口会**自己掉下去** ——
+        高度变 0、isVisible False，不报错也不提示。所以必须能主动查，
+        绝不能「建完就默认它还在」。
+
+        ★ 只能在主线程调（AppKit 不是线程安全的）。后台探活线程一律不碰它，
+        改读 _ICON["alive"] 这个快照；真要动 AppKit 的都走主线程心跳
+        _heartbeat（或者 AppHelper.callLater 排回主线程）。
+        """
+        try:
+            w = item.button().window()
+            ok = bool(w is not None and w.frame().size.height > 0)
+        except Exception:
+            ok = False
+        _ICON["alive"] = ok
+        return ok
+
+    def _ensure_icon(why):
+        """看一眼图标排上没有；没有就在**本进程内**重建，直到排上为止。
+
+        为什么必须重建而不是退出：这台系统上 NSStatusItem 排不排得上是随机的
+        （实测约 1/3 成功，见 _make_item 的探针数据），**换个 item 重试就能救回来**。
+        试到第 5 次还不行才 os._exit(2)，交给主程序的 keeper 换个新进程
+        （launcher.py 的 _tray_keeper 只认退出码 2，别的码一律当「主程序要关了」）。
+
+        只在主线程跑（经 callLater / 心跳进来）。
+        """
+        nonlocal item
+        _ICON["healing"] = True        # 本函数要接管重建了（心跳那边看到就不再插手）
+        if _icon_alive():
+            if _ICON["tries"]:
+                print("[tray] 图标已排上（%s）" % _where())
+                sys.stdout.flush()
+                _hide_pending_sacs()      # 真图标排稳了，把替死鬼藏掉（防透明占位）
+                try:
+                    _start_anim()          # 帧循环动画（幂等）
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+                    sys.stdout.flush()
+            _ICON["tries"] = 0
+            _ICON["healing"] = False
+            return
+        _ICON["tries"] += 1
+        if _ICON["tries"] >= 5:
+            print("[tray] 试了 %d 次都排不上，退出让主程序重开一个助手（%s）"
+                  % (_ICON["tries"], _where()))
+            sys.stdout.flush()
+            os._exit(2)
+        print("[tray] %s → 还没排上，换一个再试（第 %d 次，%s）"
+              % (why, _ICON["tries"], _where()))
+        sys.stdout.flush()
+        try:
+            item.setVisible_(False)
+        except Exception:
+            pass
+        # 替死鬼别堆太多：重建次数多了就把最早的收掉（透明占位会挤开菜单栏间隔）
+        while len(_PENDING_SACS) > 12:
+            try:
+                _PENDING_SACS.pop(0).setVisible_(False)
+            except Exception:
+                pass
+        try:
+            item = _make_item()
+        except Exception as e:
+            print("[tray] 重建失败：%s" % e)
+        AppHelper.callLater(2.5, _ensure_icon, why)
+
+    def _heartbeat():
+        """主线程图标体检：菜单栏窗口自己掉下去了就**当场**把它建回来。
+
+        ★ 这是用户报「图标过一段时间就消失」最直接的解药：NSStatusItem 的按钮
+        窗口会被系统自己回收（高度变 0、不报错），而图标一旦掉下去，这个进程
+        就再也没人管了。每 4 秒查一次，掉了就重建 —— 用户基本感觉不到。
+        排上之后不再重复打印，避免日志被刷。
+        """
+        try:
+            if _icon_alive():
+                _ICON["tries"] = 0
+                _ICON["healing"] = False
+            elif _ICON["healing"]:
+                # ★ 已经有 _ensure_icon 的重试链在排队了（2.5 秒一次），别再叠加。
+                # 心跳每 4 秒跑一次，比重试还慢：要是这里也建一个，就会同时有两条
+                # 链在飞、每次各自再排一个 2.5 秒后的重试 → 重建数量指数级膨胀，
+                # 而每个 item 都要跟系统抢菜单栏名额，越多越排不上（实测见 _make_item）。
+                pass
+            else:
+                _ICON["dropped"] += 1
+                print("[tray] 菜单栏图标掉下去了（累计第 %d 次），当场重建"
+                      % _ICON["dropped"])
+                sys.stdout.flush()
+                _ICON["healing"] = True
+                _ensure_icon("图标窗口掉下去了")
+        except Exception as e:
+            print("[tray] 图标体检异常：%s" % e)
+            sys.stdout.flush()
+        AppHelper.callLater(_BEAT_SEC, _heartbeat)
+
+    def _watch():
+        """后台心跳：主程序没了就跟着走；图标掉了就在主线程里把它救回来。
+
+        ★ 这段改过一次（用户报「菜单栏图标过一段时间就消失，找不到图标」）。
+        ~/Library/Logs/FXseek.log 里三次「[tray] 服务连着 3 次探不到，退出」的
+        **紧邻上文全是 `[app] "GET /health HTTP/1.1" 200`** —— 服务好好的，
+        托盘却判它死了。两个错叠在一起：
+          A. _http 走了系统代理（本机 127.0.0.1 也被套上代理），偶发失败 → 已修
+             （见文件里 _OPENER_DIRECT 的注释）。
+          B. 探不到就自杀，且自杀走 _stop() → 退出码 **0**，而 launcher 的
+             _tray_keeper 只认 **2**（`if rc != 2: return`）—— 于是「图标自己
+             走了就再也没人拉回来」，永久消失。
+        现在改成：
+          · 服务探不到**绝不自杀**，只打日志（老版本 3 次就自杀，是丢图标的元凶）；
+          · 图标窗口自己掉下去由**主线程心跳 _heartbeat** 每 4 秒查一次，当场重建
+            （AppKit 不是线程安全的，所以绝不在这个探活线程里碰图标）；
+          · 连续 5 次重建仍排不上才 os._exit(2)，交给 keeper 换进程 —— 这是
+            keeper 唯一认的「自己认输」退出码。
         """
         dead = 0
+        warned = False        # 这一轮「探不通」已经提醒过了吗（防止刷屏）
         while True:
             time.sleep(4.0)
             if args.parent:
@@ -884,79 +1038,43 @@ def main():
                 dead = 0
                 continue
             try:
-                _http(args.port, "/health", timeout=2.0)
+                _http(args.port, "/health", timeout=3.0)
+                if warned:
+                    # 只在「刚才确实报过警」时才记一条恢复；偶发一次探不通
+                    # 就又通了的不记 —— 否则日志会被「又活了」刷爆。
+                    print("[tray] 服务又活了（连着探了 %d 次之后）" % dead)
+                    sys.stdout.flush()
                 dead = 0
+                warned = False
                 continue
             except Exception:
                 pass
             dead += 1
-            if dead >= 3:
-                print("[tray] 服务连着 3 次探不到，退出")
-                AppHelper.callLater(0.1, _stop)
-                return
+            if not warned and dead >= _WATCH_DEAD_WARN:
+                warned = True
+                print("[tray] 服务连着 %d 次（约 %d 秒）探不到 —— 不自杀，"
+                      "老版本就是在这儿把图标弄丢的" % (dead, dead * 4))
+                sys.stdout.flush()
+            # ★ 这里**绝不自杀**。服务可能是忙：/health 每次都会跑一次
+            # `ffmpeg -version`（indexer.py 的 ffmpeg_status，timeout=15），
+            # 索引/转写时机器满载，偶尔就超时几十秒。老版本在这条路上直接
+            # _stop() → 退出码 0 → keeper 当成「主程序要关了」→ 图标永久消失。
+            # 图标自己掉下去由主线程 _heartbeat 每 4 秒查一次、当场重建。
+            continue
 
     signal.signal(signal.SIGTERM, lambda *a: AppHelper.callLater(0.1, _stop))
     threading.Thread(target=_watch, daemon=True, name="tray-watch").start()
-
-    def _where():
-        try:
-            w = item.button().window()
-            f = w.frame() if w is not None else None
-            return "frame=%s vis=%s" % (f, item.isVisible())
-        except Exception as e:
-            return "查不到（%s）" % e
 
     print("[tray] 菜单栏图标已就位（127.0.0.1:%d，pid %d，%s）"
           % (args.port, os.getpid(), _where()))
     sys.stdout.flush()
 
-    _tries = [0]
+    # 启动后先排一次图标，然后转入每 4 秒一次的主线程体检（掉了就当场重建）
+    def _boot_icon():
+        _ensure_icon("启动后首次检查")
+        AppHelper.callLater(_BEAT_SEC, _heartbeat)
 
-    def _verify():
-        """看一眼排上没有；没有就**再建一个**（每次新建的都会变成「最后一个」，
-        而系统只显示最后建的那个——这就是为什么重建能救回来）。
-
-        试到第 5 次还不行就退出，让主程序重开一个助手进程：换了进程还有一次
-        机会（这毛病看着跟进程当时的状态有关，光在同一个进程里重试不保险）。
-        """
-        nonlocal item
-        try:
-            w = item.button().window()
-            h = w.frame().size.height if w is not None else 0
-        except Exception:
-            h = 0
-        if h > 0:
-            print("[tray] 图标已排上（%s）" % _where())
-            sys.stdout.flush()
-            # 真图标排稳了，把替死鬼藏掉（防透明占位挤开间隔，见 _hide_pending_sacs）
-            _hide_pending_sacs()
-            # 图标稳定显示后启动连续帧循环动画（幂等）
-            try:
-                _start_anim()
-            except Exception:
-                import traceback
-                traceback.print_exc()
-                sys.stdout.flush()
-            return
-        _tries[0] += 1
-        if _tries[0] >= 5:
-            print("[tray] 试了 %d 次都排不上，退出让主程序重开一个助手（%s）"
-                  % (_tries[0], _where()))
-            sys.stdout.flush()
-            os._exit(2)
-        print("[tray] 还没排上，换一个再试（第 %d 次，%s）" % (_tries[0], _where()))
-        sys.stdout.flush()
-        try:
-            item.setVisible_(False)
-        except Exception:
-            pass
-        try:
-            item = _make_item()
-        except Exception as e:
-            print("[tray] 重建失败：%s" % e)
-        AppHelper.callLater(2.5, _verify)
-
-    AppHelper.callLater(2.5, _verify)
+    AppHelper.callLater(2.5, _boot_icon)
     sys.stdout.flush()
     app.run()
     return 0
