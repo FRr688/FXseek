@@ -21,7 +21,7 @@ TAG="${1:-v1.0.1}"
 NAME="${2:-FXseek ${TAG#v}}"
 REPO="${REPO:-FRr688/FXseek}"
 PROXY="${FXSEEK_PROXY-http://127.0.0.1:31188}"
-DEMO_DIR="${DEMO_DIR:-$HOME/Desktop/FXseek演示/发布用}"
+DEMO_DIR="${DEMO_DIR:-/Users/fa/Downloads/CC工作区/FXseek演示/发布用}"   # 演示视频新家（2026-10 从桌面搬走）
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API="https://api.github.com/repos/$REPO"
 
