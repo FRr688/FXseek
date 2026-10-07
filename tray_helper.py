@@ -323,7 +323,7 @@ def _about_rows():
         info = STATE.get("about")
 
     rows = []
-    version = "1.0.0"
+    version = "1.0.1"
     if info:
         version = info.get("version", "1.0.0")
         rows.append((_t("about_version"), version))

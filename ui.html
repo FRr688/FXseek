@@ -527,6 +527,10 @@ body[data-theme="dark"] .chip.on{background:rgba(61,126,255,.16)}
    列与列之间 gap 固定，卡片之间纵向 gap 也固定 —— 不再有「同一行里矮卡下方
    空一大块」的问题。`.masonry` 本身是横向 flex，各列自适应等宽。 */
 .masonry{display:flex;gap:14px;align-items:flex-start}
+/* 分批渲染的「加载进度」条：滑到底部自动追加下一批 */
+.progfoot{padding:26px 2px 30px;text-align:center;color:var(--text-3);font-size:0.75rem;
+  letter-spacing:.05em;user-select:none}
+.progfoot.done{opacity:.65}
 .masonry .mcol{display:flex;flex-direction:column;gap:14px;flex:1 1 0;min-width:0}
 .masonry .card{width:auto;margin-bottom:0;display:flex;flex-direction:column}
 .card{border-radius:11px;overflow:hidden;cursor:pointer;position:relative;
@@ -2866,11 +2870,8 @@ function render(){
   }
   STATE.view === 'list' ? renderList() : renderMasonry();
   renderStaticIcons();
-  // 静音按钮图标是内联 SVG，需在渲染后回填；音频进度条需绑定按住拖动
-  $('#content').querySelectorAll('.card,.lrow').forEach(function(c){
-    if(c.querySelector('.volbtn')) vidSyncMute(c);
-    c.querySelectorAll('.audbar').forEach(bindAudBar);
-  });
+  // 静音按钮图标回填 + 音频进度条绑定，已经改由「每批追加时」在 bindNewCards 里做，
+  // 不再每次渲染都遍历整页所有卡片（大库时这一步本身就是几百次查询）。
   // 结果区是整块重建的，补一次翻译（卡片标题/角标/空态都在这棵树里）。
   if(window.I18N && I18N.isEn && I18N.isEn() && I18N.refresh) I18N.refresh($('#content'));
 }
@@ -3051,6 +3052,96 @@ function hidHint(){
   return STATE.hiddenCount ? ` · 已隐藏 ${STATE.hiddenCount} 项低匹配` : '';
 }
 
+/* ===================== 分批渲染（大库不再一次性铺满 DOM） =====================
+   以前 renderMasonry/renderList 是把**全部**结果一次性拼成一个大 HTML 塞进
+   #content：270 项就是 270 张卡片的 DOM + 270 个缩略图请求瞬间推出去，
+   首屏要等好几秒，滚动也卡。现在改成「先填满屏幕，滑到底部再追加下一批」：
+     · 首屏只建 step*2 张（够铺满一两屏），观感上几乎立刻出来；
+     · 每次追加仍然走「最短列优先」，所以瀑布流布局跟一次性渲染完全一样；
+     · 新卡片只做自己那份收尾（图标回填/静音同步/进度条绑定/英文翻译），
+       不再每次遍历整页；
+     · 图片本来就是 loading="lazy"，所以后面批次在滚到之前不会发请求。
+   ★ 这个只解决「客户端渲染」；服务端的元数据探测瓶颈另见 indexer.py 的
+     _PROBE_MEM 缓存与 app.py browse_all 里的并行预热。 */
+const MASON = {cards:[], cols:[], colH:[], bound:[]};
+const PROG = {total:0, i:0, step:0, fn:null, foot:null, io:null};
+
+function progReset(){
+  if(PROG.io){ try{ PROG.io.disconnect(); }catch(e){} PROG.io = null; }
+  PROG.total = 0; PROG.i = 0; PROG.fn = null; PROG.foot = null;
+}
+
+function progRun(firstN, stepN, appendFn, footEl){
+  progReset();
+  PROG.total = (STATE.results || []).length;
+  PROG.step = stepN; PROG.fn = appendFn; PROG.foot = footEl || null;
+  const first = Math.min(PROG.total, firstN);
+  appendFn(0, first);
+  PROG.i = first;
+  progFoot();
+  if(PROG.i >= PROG.total) return;
+  if(window.IntersectionObserver && footEl){
+    PROG.io = new IntersectionObserver(function(es){
+      for(let i=0;i<es.length;i++) if(es[i].isIntersecting) progMore();
+    }, {rootMargin:'900px 0px'});
+    PROG.io.observe(footEl);
+  } else {
+    progMore();      // 老内核没有 IntersectionObserver：退化成一次性补齐
+  }
+}
+
+function progMore(){
+  if(!PROG.fn || PROG.i >= PROG.total) return;
+  const from = PROG.i, to = Math.min(PROG.total, from + PROG.step);
+  PROG.i = to;
+  PROG.fn(from, to);
+  progFoot();
+  if(PROG.i >= PROG.total && PROG.io){ try{ PROG.io.disconnect(); }catch(e){} PROG.io = null; }
+}
+
+function progFoot(){
+  const el = PROG.foot; if(!el) return;
+  if(PROG.i >= PROG.total){
+    el.textContent = I18N.T('已显示全部 ' + PROG.total + ' 项', 'All ' + PROG.total + ' items shown');
+    el.classList.add('done');
+  } else {
+    el.textContent = I18N.T('已显示 ' + PROG.i + ' / ' + PROG.total + ' 项 · 继续下滑自动加载',
+                            PROG.i + ' of ' + PROG.total + ' shown · scroll to load more');
+    el.classList.remove('done');
+  }
+}
+
+/* 新插入的卡片只做它自己那份收尾工作 */
+function bindNewCards(nodes){
+  for(let n=0;n<nodes.length;n++){
+    const c = nodes[n];
+    if(c.querySelector('.volbtn')) vidSyncMute(c);
+    c.querySelectorAll('.audbar').forEach(bindAudBar);
+    renderStaticIcons(c);
+    if(window.I18N && I18N.isEn && I18N.isEn() && I18N.refresh) I18N.refresh(c);
+  }
+}
+
+/* 把 [from,to) 的卡片接进各列（依然是最短列优先） */
+function masonryAppend(from, to){
+  const buf = MASON.cols.map(function(){ return ''; });
+  for(let i=from;i<to;i++){
+    const c = MASON.cards[i];
+    let k = 0;
+    for(let j=1;j<MASON.cols.length;j++) if(MASON.colH[j] < MASON.colH[k]) k = j;
+    buf[k] += c.html;
+    MASON.colH[k] += c.h + 14;
+  }
+  MASON.cols.forEach(function(el, k){
+    if(!buf[k]) return;
+    el.insertAdjacentHTML('beforeend', buf[k]);
+    const kids = el.children, add = [];
+    for(let i=MASON.bound[k]; i<kids.length; i++) add.push(kids[i]);
+    MASON.bound[k] = kids.length;
+    bindNewCards(add);
+  });
+}
+
 function renderMasonry(){
   // 先按「最短列优先」把每张卡塞进一列，再拼成横向 flex 的瀑布流。
   // 这样没有 CSS grid 那种「行高取该行最高卡 → 矮卡下方空一块」的问题，
@@ -3094,15 +3185,16 @@ function renderMasonry(){
         </div>
       </div></div>` };
   });
-  for(const c of cards){
-    // 找当前最矮的一列，把卡放进去（瀑布流底部对齐自然）
-    let k = 0;
-    for(let i=1;i<colCount;i++) if(colH[i] < colH[k]) k = i;
-    cols[k].push(c.html);
-    colH[k] += c.h + 14;   // +14 = 纵向 gap，近似即可
-  }
-  $('#content').innerHTML = `<div class="masonry">` + cols.map(col =>
-    `<div class="mcol">${col.join('')}</div>`).join('') + `</div>`;
+  /* 只建空列，卡片交给 masonryAppend 分批塞进去（布局算法不变） */
+  $('#content').innerHTML = `<div class="masonry">` +
+    Array.from({length: colCount}, () => '<div class="mcol"></div>').join('') +
+    `</div><div class="progfoot" id="progFoot"></div>`;
+  MASON.cards = cards;
+  MASON.cols = Array.from($('#content').querySelectorAll('.mcol'));
+  MASON.colH = new Array(colCount).fill(0);
+  MASON.bound = new Array(colCount).fill(0);
+  const step = Math.max(24, colCount * 4);
+  progRun(step * 2, step, masonryAppend, $('#progFoot'));
 }
 
 /* 瀑布流列数：内容区宽度 / 最小列宽 200px，向下取整到能放下的最大列数。
@@ -3117,7 +3209,7 @@ function masonryCols(){
 }
 
 function renderList(){
-  $('#content').innerHTML = `<div class="list">` + STATE.results.map(x=>{
+  const rows = STATE.results.map(x=>{
     const p = encodeURIComponent(x.path);
     const nm = esc(x.name).replace(/'/g,"&#39;");
     const m = x.meta||{};
@@ -3152,7 +3244,17 @@ function renderList(){
       </div>
       <span class="badge">${KINDNAME(x.kind)}</span>
     </div>`;
-  }).join('') + `</div>`;
+  });
+  $('#content').innerHTML = `<div class="list" id="listBox"></div><div class="progfoot" id="progFoot"></div>`;
+  const box = $('#listBox');
+  const step = 40;
+  progRun(step * 2, step, function(from, to){
+    const before = box.children.length;
+    box.insertAdjacentHTML('beforeend', rows.slice(from, to).join(''));
+    const add = [];
+    for(let i=before;i<box.children.length;i++) add.push(box.children[i]);
+    bindNewCards(add);
+  }, $('#progFoot'));
 }
 
 /* ---------- 悬停静音播放（带进度条 + 实时计时） ---------- */

@@ -71,8 +71,137 @@ FFMPEG = _find_bin("ffmpeg")
 FFPROBE = _find_bin("ffprobe")
 
 
+# ===================== 媒体元数据缓存 =====================
+# 为什么需要：probe_media_meta 对每个音视频要起一次 ffprobe 子进程（实测 50~110ms）、
+# 图片要开一次 PIL（~40ms）。272 个文件串行下来就是 ~19 秒 —— 用户看到的
+# 「加载素材…」几乎全花在这儿（实测 POST /v1/browse 18.8s，接口本身只做了一次查询）。
+# 元数据只取决于文件内容，所以用 (路径, mtime, 大小) 当 key：
+# 文件一改 key 就变，天然不会读到过期值；没动过的文件永远不用再 probe。
+_PROBE_MEM = {}          # key -> meta（本进程用过）
+_PROBE_DISK = {}         # key -> [写入时间, meta]（跨次启动复用）
+_PROBE_LOADED = False
+_PROBE_DIRTY = 0
+_PROBE_LAST_SAVE = 0.0
+_PROBE_MAX = 6000        # 磁盘缓存上限条数，超了按写入时间淘汰
+import threading as _threading
+_PROBE_LOCK = _threading.Lock()
+try:
+    _PROBE_FILE = os.path.join(P.DATA_DIR, "media_meta_cache.json")
+except Exception:
+    _PROBE_FILE = os.path.join(HERE, "media_meta_cache.json")
+
+
+def _probe_key(path):
+    """(路径, mtime, 大小) —— 拿不到 stat 就不缓存（文件可能已不在）。"""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return "%s|%d|%d" % (path, int(st.st_mtime), st.st_size)
+
+
+def _probe_load_disk():
+    global _PROBE_LOADED
+    if _PROBE_LOADED:
+        return
+    _PROBE_LOADED = True
+    try:
+        with open(_PROBE_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict):
+            _PROBE_DISK.update(d)
+    except Exception:
+        pass
+
+
+def _probe_save_disk(force=False):
+    """写盘是「攒一批再写」，避免每 probe 一个文件就落一次盘。"""
+    global _PROBE_DIRTY, _PROBE_LAST_SAVE, _PROBE_DISK, _PROBE_MEM
+    if not _PROBE_DIRTY:
+        return
+    now = time.time()
+    if not force and (now - _PROBE_LAST_SAVE) < 15:
+        return
+    with _PROBE_LOCK:
+        _PROBE_LAST_SAVE = now
+        _PROBE_DIRTY = 0
+        merged = dict(_PROBE_DISK)
+        for k, v in _PROBE_MEM.items():
+            merged[k] = [now, v]
+        if len(merged) > _PROBE_MAX:
+            keep = sorted(merged.items(), key=lambda kv: kv[1][0] if isinstance(kv[1], list) else 0)
+            merged = dict(keep[-_PROBE_MAX:])
+        try:
+            tmp = _PROBE_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(merged, f, ensure_ascii=False)
+            os.replace(tmp, _PROBE_FILE)
+        except Exception:
+            pass
+
+
+def _probe_uncached(p):
+    try:
+        return probe_media_meta(p)
+    except Exception:
+        return {}
+
+
+def warm_meta_cache(paths, workers=8):
+    """并行预热：只对「缓存里没有」的文件真的跑 probe，返回预热条数。
+
+    串行 19s → 8 线程约 2~3s（probe 基本都是等子进程，GIL 不是瓶颈），
+    且跑过一次之后同样的文件直接命中缓存（毫秒级）。
+    """
+    _probe_load_disk()
+    todo = []
+    for p in paths:
+        k = _probe_key(p)
+        if k and k not in _PROBE_MEM and k not in _PROBE_DISK:
+            todo.append(p)
+    if not todo:
+        return 0
+    workers = max(1, min(int(workers or 8), len(todo)))
+    if workers == 1:
+        for p in todo:
+            _probe_uncached(p)
+    else:
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                list(ex.map(_probe_uncached, todo))
+        except Exception:
+            for p in todo:
+                _probe_uncached(p)
+    _probe_save_disk(force=True)
+    return len(todo)
+
+
 def probe_media_meta(path: str) -> dict:
-    """探测媒体元数据：视频时长、图片尺寸、文档字数、音频时长。
+    """带缓存的探测入口（缓存逻辑见上方 _PROBE_MEM 注释）。"""
+    global _PROBE_DIRTY
+    k = _probe_key(path)
+    if k:
+        hit = _PROBE_MEM.get(k)
+        if hit is not None:
+            return hit
+    _probe_load_disk()
+    if k:
+        disk = _PROBE_DISK.get(k)
+        if disk is not None:
+            meta = disk[1] if isinstance(disk, list) and len(disk) == 2 else disk
+            _PROBE_MEM[k] = meta
+            return meta
+    meta = _probe_media_meta_raw(path)
+    if k:
+        _PROBE_MEM[k] = meta
+        _PROBE_DIRTY += 1
+        _probe_save_disk()
+    return meta
+
+
+def _probe_media_meta_raw(path: str) -> dict:
+    """探测媒体元数据：视频时长、图片尺寸、文档字数、音频时长。（无缓存版）
 
     用于 UI 卡片角标显示（如视频右下角 00:15）。
     """
@@ -80,18 +209,28 @@ def probe_media_meta(path: str) -> dict:
     meta = {}
     try:
         if ext in VIDEO_EXT or ext in AUDIO_EXT:
-            dur = _probe_duration(path)
-            if dur > 0:
-                meta["duration"] = round(dur, 1)
-                meta["duration_text"] = _fmt_duration(dur)
-            # ffprobe 完整流信息（容器/编码/码率/帧率等）
+            # ★ 只跑一次 ffprobe：-show_format 里本来就带 duration，
+            #   以前先跑 _probe_duration 再跑一次完整信息 = 每个文件两次子进程（白花一倍时间）。
+            info = {}
             try:
                 out = subprocess.run(
                     [FFPROBE, "-v", "error", "-show_format", "-show_streams",
                      "-of", "json", path],
                     capture_output=True, text=True, timeout=25)
                 info = json.loads(out.stdout or "{}")
-                fmt = info.get("format", {}) or {}
+            except Exception:
+                info = {}
+            fmt = info.get("format", {}) or {}
+            try:
+                dur = float(fmt.get("duration") or 0)
+            except Exception:
+                dur = 0.0
+            if dur <= 0:
+                dur = _probe_duration(path)      # 兜底：个别容器 format 里没有 duration
+            if dur > 0:
+                meta["duration"] = round(dur, 1)
+                meta["duration_text"] = _fmt_duration(dur)
+            try:
                 meta["container"] = (fmt.get("format_long_name")
                                      or fmt.get("format_name") or "").split(",")[0]
                 if fmt.get("bit_rate"):
