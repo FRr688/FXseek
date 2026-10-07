@@ -22,6 +22,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from net_util import urlopen_smart
+
 
 class AIError(Exception):
     """AI 调用错误（含可读原因）。"""
@@ -137,7 +139,7 @@ def _post_json(url: str, payload: dict, api_key: str = "", timeout: int = 120) -
     if api_key:
         req.add_header("Authorization", f"Bearer {api_key}")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urlopen_smart(req, timeout=timeout) as r:
             body = r.read().decode("utf-8", errors="replace")
             return json.loads(body)
     except urllib.error.HTTPError as e:
@@ -160,7 +162,7 @@ def _get_json(url: str, api_key: str = "", timeout: int = 15) -> dict:
     if api_key:
         req.add_header("Authorization", f"Bearer {api_key}")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urlopen_smart(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8", errors="replace"))
     except Exception as e:
         raise AIError(str(e))

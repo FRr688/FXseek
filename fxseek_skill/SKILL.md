@@ -104,8 +104,8 @@ find_by_name(name="2024", kind="document")
 ### 2. 用图找图 / 用音找音
 
 ```
-search_by_image(image_path="/Users/fa/Downloads/参考图.png")
-search_by_audio(audio_path="/Users/fa/Downloads/片段.mp3")
+search_by_image(image_path="~/Downloads/参考图.png")
+search_by_audio(audio_path="~/Downloads/片段.mp3")
 ```
 
 `search_by_audio` 走音频指纹，**适合同一首歌的翻录版本**，不适合哼唱找歌。
@@ -123,7 +123,7 @@ list_recent(limit=10)  # 最近上传的
 ### 4. 拿到路径后
 
 ```
-get_media_info(path="/Users/fa/Pictures/小狗.png")
+get_media_info(path="~/Pictures/小狗.png")
 ```
 
 能拿到 AI 生成的描述、标签、尺寸、时长、命中的视频帧时间等。
@@ -138,7 +138,7 @@ get_media_info(path="/Users/fa/Pictures/小狗.png")
   "results": [
     {
       "name": "小狗在操场奔跑.png",
-      "path": "/Users/fa/Pictures/小狗在操场奔跑.png",
+      "path": "~/Pictures/小狗在操场奔跑.png",
       "kind": "image",
       "score": 0.95,
       "size": 1258291,

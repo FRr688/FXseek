@@ -22,7 +22,7 @@ cd "$HERE"
 APP_NAME="FXseek"
 BUNDLE_ID="com.fxseek.media"
 VERSION="$(grep -m1 '"version"' app.py | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-VERSION="${VERSION:-1.0.1}"
+VERSION="${VERSION:-1.0.2}"
 DIST="$HERE/dist"
 APP="$DIST/$APP_NAME.app"
 PY="$HERE/venv/cpython-3.11/bin/python3.11"
@@ -53,7 +53,8 @@ mkdir -p "$RES"
 
 # 2a. Python 源码与前端资源（白名单，避免漏进杂物）
 for f in app.py launcher.py model_dl.py paths.py embed.py indexer.py fingerprint.py \
-         fastsearch.py ai_desc.py asr_desc.py voice_intent.py seed.py serve.py \
+         fastsearch.py ai_desc.py asr_desc.py voice_intent.py net_util.py heif_support.py \
+         seed.py serve.py \
          run_daemon.py mcp_server.py mcp_agents.py tray_helper.py recorder.py requirements.txt; do
   # 注：README.md 不进包 —— 运行期没人读它，仓库里留着给 GitHub 首页看就行
   [ -f "$f" ] && cp -p "$f" "$RES/"

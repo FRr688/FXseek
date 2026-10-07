@@ -33,6 +33,7 @@ from pathlib import Path
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import heif_support  # noqa: F401  注册 HEIC/HEIF 解码器（iPhone 照片），进程级生效
 import paths as P
 DB_PATH = P.DB_PATH
 

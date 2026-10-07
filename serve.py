@@ -46,6 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import embed as we  # 复用 embed.py 的 load_model / embed
+import heif_support  # noqa: F401  注册 HEIC/HEIF 解码器（图生图接口可能收到 HEIC）
 
 
 _STATE = {"model": None, "processor": None, "model_path": None}

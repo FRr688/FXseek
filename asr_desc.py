@@ -13,9 +13,14 @@
 import io
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 import uuid
+
+from net_util import urlopen_smart
 
 
 class ASRError(Exception):
@@ -35,6 +40,47 @@ def _ffmpeg_bin() -> str:
         return ix.FFMPEG
     except Exception:
         return "ffmpeg"
+
+
+# 上传前统一转成 16 kHz 单声道 mp3。实测（本机 oMLX + Qwen3-ASR-1.7B-4bit）：
+#   · 直接把 26 MB 的 FLAC 原样丢过去，一首 4 分钟的歌要十几分钟量级；
+#   · 转成 16 kHz 单声道 48 kbps mp3 后体积缩到约 1/26，服务端解码也轻得多；
+#   · 视频更是必须转 —— 原来是把整段视频（可能几百 MB）发给 ASR 服务。
+ASR_RATE = 16000
+ASR_BITRATE = "48k"
+
+
+def _transcode_for_asr(path: str):
+    """转成 16 kHz 单声道 mp3，返回临时文件路径（用完要删）。失败返回 None。"""
+    ff = _ffmpeg_bin()
+    td = tempfile.mkdtemp(prefix="fxseek_asr_")
+    out = os.path.join(td, "asr.mp3")
+    cmd = [ff, "-v", "error", "-y", "-i", path, "-vn", "-ac", "1",
+           "-ar", str(ASR_RATE), "-b:a", ASR_BITRATE, out]
+    try:
+        p = subprocess.run(cmd, capture_output=True, timeout=900)
+    except Exception:
+        shutil.rmtree(td, ignore_errors=True)
+        return None
+    if p.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) == 0:
+        shutil.rmtree(td, ignore_errors=True)
+        return None
+    return out
+
+
+def _ctype_for(filename: str) -> str:
+    low = (filename or "").lower()
+    if low.endswith(".wav"):
+        return "audio/wav"
+    if low.endswith(".m4a") or low.endswith(".mp4"):
+        return "audio/mp4"
+    if low.endswith(".flac"):
+        return "audio/flac"
+    if low.endswith(".ogg") or low.endswith(".opus"):
+        return "audio/ogg"
+    if low.endswith(".webm"):
+        return "audio/webm"
+    return "audio/mpeg"
 
 
 def _transcribe_audio_file(base_url: str, api_key: str, model: str,
@@ -63,7 +109,7 @@ def _transcribe_audio_file(base_url: str, api_key: str, model: str,
     if language:
         field("language", language)
     field("response_format", "json")
-    file_field("file", filename, audio_bytes, "audio/mpeg")
+    file_field("file", filename, audio_bytes, _ctype_for(filename))
     buf.write(f"--{boundary}--\r\n".encode())
 
     body = buf.getvalue()
@@ -72,7 +118,7 @@ def _transcribe_audio_file(base_url: str, api_key: str, model: str,
     if api_key:
         req.add_header("Authorization", f"Bearer {api_key}")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urlopen_smart(req, timeout=timeout) as r:
             d = json.loads(r.read().decode("utf-8", errors="replace"))
             txt = d.get("text") or ""
             # 有些服务返回 segments
@@ -93,17 +139,37 @@ def _transcribe_audio_file(base_url: str, api_key: str, model: str,
 
 
 def transcribe(base_url: str, api_key: str, model: str, audio_path: str,
-               language: str = "") -> dict:
-    """转写本地音频文件。返回 {text, model}。"""
+               language: str = "", timeout: int = 1800) -> dict:
+    """转写本地音频/视频。返回 {text, model, seconds, upload_bytes}。
+
+    先转成 16 kHz 单声道 mp3 再上传（见 _transcode_for_asr 的注释）；
+    转码不可用（没 ffmpeg / 转码失败）时退回原文件，行为与以前一致。
+    """
     if not os.path.exists(audio_path):
         raise ASRError("音频文件不存在")
-    with open(audio_path, "rb") as f:
-        data = f.read()
+    if not os.path.getsize(audio_path):
+        raise ASRError("音频文件为空")
+    import time as _time
+    t0 = _time.time()
+    tmp = _transcode_for_asr(audio_path)
+    try:
+        if tmp:
+            with open(tmp, "rb") as f:
+                data = f.read()
+            fname = "audio.mp3"
+        else:
+            with open(audio_path, "rb") as f:
+                data = f.read()
+            fname = os.path.basename(audio_path)
+    finally:
+        if tmp:
+            shutil.rmtree(os.path.dirname(tmp), ignore_errors=True)
     if not data:
         raise ASRError("音频文件为空")
-    txt = _transcribe_audio_file(base_url, api_key, model, data,
-                                 os.path.basename(audio_path), language)
-    return {"text": txt, "model": model}
+    txt = _transcribe_audio_file(base_url, api_key, model, data, fname,
+                                 language, timeout=timeout)
+    return {"text": txt, "model": model, "upload_bytes": len(data),
+            "seconds": round(_time.time() - t0, 1)}
 
 
 def test_connection(base_url: str, api_key: str, model: str) -> dict:

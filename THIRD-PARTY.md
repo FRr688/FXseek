@@ -24,6 +24,8 @@
 | MLX / MLX-VLM（Apple） | MIT |
 | Transformers / Tokenizers / HuggingFace Hub（Hugging Face） | Apache License 2.0 |
 | Pillow | MIT-CMU |
+| pillow-heif（HEIC/HEIF 解码，**随包内置** `libheif`） | BSD-3-Clause |
+| ⚠️ **libheif**（pillow_heif 随附的 `.dylibs/libheif*.dylib`） | **LGPL-3.0**（其内置的 libde265 为 LGPL-3.0、libx265 为 GPL-2.0；仅用于解码 iPhone 照片。商用分发前请核实并按 LGPL/GPL 履行声明与源码获取义务） |
 | NumPy | BSD-3-Clause |
 | pdfplumber / pdfminer.six | MIT |
 | openpyxl | MIT |

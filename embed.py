@@ -27,10 +27,11 @@ import argparse
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# 内置模型优先（打包分发用）；不存在时回退到本地下载目录
+# 模型位置：环境变量最高优先（便携/多实例），否则用随包内置的 model/
 _BUILTIN_MODEL = os.path.join(HERE, "model")
-_FALLBACK_MODEL = "/Users/fa/Downloads/CC工作区/ewin-reg:WeMM-Embedding-2B-Apple-Silicon-MLX"
-DEFAULT_MODEL = _BUILTIN_MODEL if os.path.isdir(_BUILTIN_MODEL) else _FALLBACK_MODEL
+DEFAULT_MODEL = os.environ.get("FXSEEK_MODEL_DIR") or _BUILTIN_MODEL
+
+import heif_support  # noqa: E402,F401  注册 HEIC/HEIF 解码器（iPhone 照片），进程级生效
 
 # 检索任务指令前缀（WeMM 是检索模型，query/doc 区分效果更优）
 QUERY_INSTRUCTION = "Instruct: Given a web search query, retrieve relevant passages.\nQuery: "

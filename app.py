@@ -45,6 +45,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import embed as we
+import heif_support  # noqa: F401  注册 HEIC/HEIF 解码器（缩略图、打标都要）
 import indexer as ix
 import model_dl
 import paths as P
@@ -66,6 +67,13 @@ _QUIET_PATHS = ("/health", "/v1/ai/status", "/v1/asr/status", "/v1/idle/status")
 # 闲置自动处理的运行状态（不落盘，重启清零）
 _IDLE = {"run_tagged": 0, "run_asr": 0, "last_path": None, "last_ts": None,
          "last_error": None, "window": None, "turn": 0, "last_kind": None,
+         # 失败账本 {realpath: {"n": 连败次数, "ts": 最后失败时间, "msg": 原因}}。
+         # 同一个文件连败 _FAIL_MAX 次就冷藏 _FAIL_COOL 秒 —— 否则它会一直
+         # 占着队首，后面的素材永远轮不到（实测：一首撞上代理超时的歌，
+         # 把 187 个待转写全卡死在「本轮第 1/10」）。
+         "fail": {},
+         # 本轮因失败而消耗的名额（见 total_run），以及跨文件连败计数
+         "run_fail": 0, "consec_fail": 0,
          # 「立即补全」的一次性任务（不受空闲门槛与本轮上限约束）。
          # 形如 {"what": "tag"|"asr"|"both", "done": 0, "failed": 0,
          #        "started": ts, "stop": False, "finished": ts|None}
@@ -94,7 +102,7 @@ DEFAULT_SETTINGS = {
     "theme": "auto",          # auto | light | dark
     "font_size": "medium",    # small | medium | large
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
-    "version": "1.0.1",
+    "version": "1.0.2",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -417,6 +425,70 @@ def gc_index(orphans: bool = False, dry_run: bool = False) -> dict:
             "kept": max(0, kept)}
 
 
+# ---------------------------------------------------------------- 失败账本
+# 闲置/立即补全跑到某个文件反复失败时，**不能**让它堵住队列：
+#   实测一例——一首 4 分钟的歌（26 MB）转写要 60 秒以上，而 macOS 的系统代理
+#   （DevSidecar）自己带 60 秒超时，于是稳定返回 504，同一个文件被无限重试，
+#   界面上「本轮第 1/10」永远不动，187 个待转写一个也轮不到。
+# 处理办法：同一个文件连败 _FAIL_MAX 次就冷藏 _FAIL_COOL 秒，期间跳过它去处理
+# 后面的素材；冷藏到期会自动再试一次（文件本身修好了就自动恢复）。
+_FAIL_MAX = 3            # 同一文件连败几次就冷藏
+_FAIL_COOL = 900         # 冷藏时长（秒）
+_FAIL_LOOKAHEAD = 200    # 选任务时最多往后看多少个候选
+
+
+def _fail_key(path: str) -> str:
+    try:
+        return os.path.realpath(path)
+    except Exception:
+        return path or ""
+
+
+def _is_cooled(path: str) -> bool:
+    """这个文件刚连败太多次？是的话本轮先跳过它。"""
+    f = _IDLE.get("fail", {}).get(_fail_key(path))
+    if not f or int(f.get("n", 0)) < _FAIL_MAX:
+        return False
+    return (time.time() - float(f.get("ts", 0))) < _FAIL_COOL
+
+
+def _note_fail(path: str, msg: str) -> int:
+    """记一次失败，返回该文件的累计连败次数。"""
+    k = _fail_key(path)
+    ban = _IDLE.setdefault("fail", {})
+    f = ban.get(k) or {"n": 0}
+    f["n"] = int(f.get("n", 0)) + 1
+    f["ts"] = time.time()
+    f["msg"] = (msg or "")[:300]
+    ban[k] = f
+    if len(ban) > 500:                       # 账本别无限长
+        for k2, _ in sorted(ban.items(), key=lambda kv: kv[1].get("ts", 0))[:100]:
+            ban.pop(k2, None)
+    return f["n"]
+
+
+def _clear_fail(path: str) -> None:
+    """成功了就把账销掉，下次它再变坏会重新计数。"""
+    _IDLE.get("fail", {}).pop(_fail_key(path), None)
+
+
+def _pick_pending(pend: list):
+    """从待办列表里挑第一个「没在冷藏中」的路径；全在冷藏里就返回 None。"""
+    for it in pend[:_FAIL_LOOKAHEAD]:
+        p = it["path"] if isinstance(it, dict) else it
+        if not _is_cooled(p):
+            return p
+    return None
+
+
+def _cooled_count() -> int:
+    n = 0
+    for p in list(_IDLE.get("fail", {})):
+        if _is_cooled(p):
+            n += 1
+    return n
+
+
 def _idle_loop():
     """闲置时自动处理：用户不用的间隙，一次补一个素材的 AI 标签或音频转写。
 
@@ -470,26 +542,44 @@ def _idle_loop():
                     _IDLE["window"] = win
                     _IDLE["run_tagged"] = 0
                     _IDLE["run_asr"] = 0
+                    _IDLE["run_fail"] = 0
                 limit = int(st.get("idle_batch", 10) or 10)
-                total_run = _IDLE.get("run_tagged", 0) + _IDLE.get("run_asr", 0)
+                # 失败也占名额：不然同一批失败文件会被无限重试、
+                # 计数永远停在 0/10（用户看到的就是「卡住不动」）
+                total_run = (_IDLE.get("run_tagged", 0) + _IDLE.get("run_asr", 0)
+                             + _IDLE.get("run_fail", 0))
                 if limit > 0 and total_run >= limit:
                     continue
 
             # 轮流取：上一次是打标签，这次就先看转写，反之亦然
             order = ["tag", "asr"] if (_IDLE.get("turn", 0) % 2 == 0) else ["asr", "tag"]
             job = None
+            all_cooled = False
             for want in order:
                 if want == "tag" and idle_tag:
-                    s = ix.ai_tag_status()
-                    if s["pending"]:
-                        job = ("tag", s["pending"][0]["path"], len(s["pending"]))
-                        break
+                    pend = ix.ai_tag_status()["pending"]
                 elif want == "asr" and idle_asr:
-                    s = ix.asr_status()
-                    if s["pending"]:
-                        job = ("asr", s["pending"][0]["path"], len(s["pending"]))
-                        break
+                    pend = ix.asr_status()["pending"]
+                else:
+                    continue
+                if not pend:
+                    continue
+                left = len(pend)
+                pick = _pick_pending(pend)
+                if pick is None:
+                    all_cooled = True        # 这一类全在冷藏里，换另一类看看
+                    continue
+                job = (want, pick, left)
+                break
             if not job:
+                if all_cooled:
+                    n = _cooled_count()
+                    _IDLE["last_error"] = (f"{n} 个素材连续失败，已冷藏 "
+                                           f"{_FAIL_COOL // 60} 分钟后再试")
+                    if manual_on:
+                        man["finished"] = time.time()
+                    print(f"[闲置处理] 待办全部处于失败冷藏中（{n} 个），等冷藏过期再试")
+                    continue
                 if manual_on:
                     man["finished"] = time.time()
                     print(f"[立即补全] 完成（成功 {man.get('done', 0)} 个"
@@ -510,9 +600,16 @@ def _idle_loop():
                 _IDLE["last_ts"] = time.time()
                 print(f"[闲置{label}] {os.path.basename(path)}"
                       f"（剩 {left} 个，本轮第 {total_run + 1}/{limit}）")
-            r = ai_tag_one(path, st) if kind == "tag" else asr_transcribe_one(path, st)
+            try:
+                r = (ai_tag_one(path, st) if kind == "tag"
+                     else asr_transcribe_one(path, st))
+            except Exception as e:
+                # 单个文件炸了不许带走整批：包装成普通失败，交给下面的账本
+                r = {"ok": False, "message": f"{type(e).__name__}: {e}"}
             _IDLE["turn"] = _IDLE.get("turn", 0) + 1
             if r.get("ok"):
+                _clear_fail(path)
+                _IDLE["consec_fail"] = 0
                 key = "run_tagged" if kind == "tag" else "run_asr"
                 _IDLE[key] = _IDLE.get(key, 0) + 1
                 _IDLE["last_error"] = None
@@ -525,11 +622,24 @@ def _idle_loop():
                     print(f"[{tag}] 完成 {os.path.basename(path)}"
                           f" · {r.get('chars')} 字 · {r.get('seconds')}s")
             else:
-                _IDLE["last_error"] = r.get("message")
+                msg = r.get("message") or "未知错误"
+                _IDLE["last_error"] = msg
+                n = _note_fail(path, msg)
+                _IDLE["run_fail"] = _IDLE.get("run_fail", 0) + 1
+                _IDLE["consec_fail"] = _IDLE.get("consec_fail", 0) + 1
                 if manual_on:
                     man["failed"] = man.get("failed", 0) + 1
-                print(f"[{tag}] 失败 {os.path.basename(path)}: {r.get('message')}")
-                time.sleep(120)     # 失败后退避，避免模型没起时每 20 秒重试一次
+                if n >= _FAIL_MAX:
+                    print(f"[{tag}] 失败 {os.path.basename(path)}"
+                          f"（已连败 {n} 次，冷藏 {_FAIL_COOL // 60} 分钟再试）: {msg}")
+                else:
+                    print(f"[{tag}] 失败 {os.path.basename(path)}: {msg}")
+                # 只对「服务整个没起」这种连续失败做全局退避；
+                # 单个坏文件不再连累整批陪等 2 分钟。
+                if _IDLE.get("consec_fail", 0) >= 3:
+                    print(f"[闲置处理] 连续失败 {_IDLE['consec_fail']} 次，退避 120 秒")
+                    time.sleep(120)
+                    _IDLE["consec_fail"] = 0
         except Exception as e:
             _IDLE["last_error"] = f"{type(e).__name__}: {e}"
             print(f"[闲置处理] 跳过：{e}")
@@ -1981,6 +2091,9 @@ def ai_tag_status() -> dict:
         "running": bool(_STATE.get("ai_tagging") or _STATE.get("asr_running")),
         "run_tagged": _IDLE.get("run_tagged", 0),
         "run_asr": _IDLE.get("run_asr", 0),
+        "run_fail": _IDLE.get("run_fail", 0),
+        "skip_count": _cooled_count(),
+        "failed_total": len(_IDLE.get("fail", {})),
         "last_path": _IDLE.get("last_path"),
         "last_kind": _IDLE.get("last_kind"),
         "last_ts": _IDLE.get("last_ts"),
@@ -2457,7 +2570,7 @@ def find_by_name(name, kind=None, limit=30, source=None):
         fz = _find_fuzzy(basename_l, q)
         if fz:
             return fz
-        if len(q) >= 2 and q in full_l:   # 单字不撞 path——/Users/fa/… 里全是 a
+        if len(q) >= 2 and q in full_l:   # 单字不撞 path——~/… 里全是 a
             return 5, 1.0
         return 9, 0.0
 

@@ -21,17 +21,17 @@
 **① 打字就能搜画面** —— 输入「狗」「针织衫」，结果带**匹配度角标**；搜索框里双击还能唤出搜索历史：
 ![文字检索画面演示](docs/demo/search.gif)
 
-▶ [完整演示 · 45 秒（有声，1600×900）](../../releases/download/v1.0.1/FXseek-search-demo.mp4)
+▶ [完整演示 · 45 秒（有声，1600×900）](../../releases/download/v1.0.2/FXseek-search-demo.mp4)
 
 **② 界面随你** —— 白天 / 夜间主题、简体中文 / English，点一下就换；缩略图墙、列表视图、详情区随意切换：
 ![界面展示](docs/demo/ui-tour.gif)
 
-▶ [完整演示 · 22 秒（有声）](../../releases/download/v1.0.1/FXseek-ui-tour.mp4)
+▶ [完整演示 · 22 秒（有声）](../../releases/download/v1.0.2/FXseek-ui-tour.mp4)
 
 **③ 漫步时光** —— 只留图片与视频，按列交错缓缓滚动；点任意一张，它会优雅地淡出：
 ![漫步时光 · 回忆长廊](docs/demo/memory-lane.gif)
 
-▶ [完整演示 · 30 秒（有声）](../../releases/download/v1.0.1/FXseek-memory-lane.mp4)
+▶ [完整演示 · 30 秒（有声）](../../releases/download/v1.0.2/FXseek-memory-lane.mp4)
 
 > 完整演示视频（有声 · 1600×900）与安装包一起放在 [Releases](../../releases)；
 > 动图为了加载速度压到 620px，看细节请点上面的完整视频或下面的原图。
@@ -60,7 +60,7 @@
 
 ## 下载（普通用户）
 
-1. 到 [Releases](../../releases) 下载 `FXseek-1.0.1.dmg`
+1. 到 [Releases](../../releases) 下载 `FXseek-1.0.2.dmg`
 2. **安装前先删掉旧版**：`/Applications/FXseek.app`（直接覆盖会留下旧文件）
 3. 打开 dmg，把 `FXseek.app` 拖进"应用程序"
 4. 首次启动会**自动下载内置模型（约 1.8 GB）**，默认走国内镜像、失败自动换官方源，带进度条
@@ -77,7 +77,7 @@
 ```bash
 bash tools/build_app.sh          # 只出 .app
 bash tools/build_app.sh --dmg    # 出 .app + .dmg
-hdiutil verify dist/FXseek-1.0.1.dmg     # 必须打印 VALID
+hdiutil verify dist/FXseek-1.0.2.dmg     # 必须打印 VALID
 
 # 开发模式：直接起服务，改 ui.html / settings.html 刷新即生效
 ./venv/cpython-3.11/bin/python3.11 app.py --port 8231

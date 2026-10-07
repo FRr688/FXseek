@@ -1350,6 +1350,12 @@ async function loadIdleStatus(){
     if(r.running) parts.push(`正在${r.last_kind === 'asr' ? '转写' : '打标'}${busy}`);
     else if((r.idle_tag || r.idle_asr) && (r.pending || a.pending))
       parts.push(`本轮已补 ${(r.run_tagged || 0) + (r.run_asr || 0)}/${r.idle_batch || '∞'} · 空闲 ${Math.round(r.idle_for)}s / ${r.idle_minutes * 60}s`);
+    // 失败/跳过要说清楚：不然「待转写 187」一直不掉，用户会以为又卡死了。
+    // 连败 3 次的素材会被冷藏 15 分钟（期间跳过它先处理后面的），到期自动再试。
+    const _T = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
+    if(r.run_fail) parts.push(_T(`本轮失败 <b>${r.run_fail}</b>`, `<b>${r.run_fail}</b> failed this round`));
+    if(r.skip_count) parts.push(_T(`暂时跳过 <b>${r.skip_count}</b>（连败 3 次，稍后自动重试）`,
+                                   `skipping <b>${r.skip_count}</b> (3 fails, retried later)`));
     el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
     if(r.last_error) el.innerHTML += `<br><span style="color:#dc2626">上次失败：${esc(r.last_error)}</span>`;
     _idleLast = r.last_path ? r.last_path.split('/').pop() : null;
