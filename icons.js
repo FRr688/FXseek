@@ -36,6 +36,7 @@
     pause:      '<path d="M9 4.5v15M15 4.5v15"/>',
     volume:     '<path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.3 6.6a8 8 0 0 1 0 10.8"/>',
     volumeOff:  '<path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="m16 10 5 4M21 10l-5 4"/>',
+    captions:   '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>',
     fullscreen: '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>',
     compress:   '<path d="M9 3v4a2 2 0 0 1-2 2H3M15 3v4a2 2 0 0 0 2 2h4M9 21v-4a2 2 0 0 0-2-2H3M15 21v-4a2 2 0 0 1 2-2h4"/>',
     rotate:     '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',

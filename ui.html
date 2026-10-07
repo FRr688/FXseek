@@ -891,6 +891,30 @@ body[data-theme="light"] #viewer{
 body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
 /* 视频 */
 .mv-video{width:100%;height:100%;display:block;background:#000;outline:none}
+/* 视频字幕层：控制栏的开关打开后，转写文字以字幕形式贴底显示。
+   和音频歌词页同源（/v1/detail 的 asr_text），只是这里一次只显示当前一行。 */
+.mv-vwrap{position:relative;width:100%;height:100%;min-height:0;display:flex}
+.mv-substage{position:absolute;left:0;right:0;bottom:0;z-index:3;
+  display:flex;flex-direction:column;align-items:center;padding:0 26px 20px;
+  pointer-events:none;transition:opacity .2s}
+.mv-subline{max-width:88%;padding:7px 16px;border-radius:12px;text-align:center;
+  color:#fff;background:rgba(0,0,0,.6);font-size:1.0625rem;line-height:1.5;font-weight:600;
+  text-shadow:0 1px 3px rgba(0,0,0,.9);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:opacity .16s}
+.mv-subline:empty{opacity:0}
+.mv-subempty{max-width:76%;padding:13px 20px;border-radius:14px;text-align:center;
+  color:#fff;background:rgba(12,14,20,.74);border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  font-size:0.7812rem;line-height:1.55}
+.mv-subempty b{display:block;color:#fff;font-size:0.9375rem;font-weight:650;margin-bottom:4px}
+.mv-subempty i{display:block;font-style:normal;color:rgba(255,255,255,.66);margin-top:2px}
+/* 控制栏的字幕开关（未转写时它自动变成「立即转写这段视频」） */
+.mv-cc{height:32px;padding:0 11px;border-radius:9px;display:inline-flex;align-items:center;
+  gap:6px;flex-shrink:0;cursor:pointer;white-space:nowrap;font-size:0.7188rem;
+  color:var(--mv-muted);background:transparent;transition:.14s;user-select:none}
+.mv-cc:hover{background:var(--mv-hover);color:var(--mv-text)}
+.mv-cc.on{background:rgba(61,126,255,.22);color:#3d7eff}
+.mv-cc.busy{opacity:.62;cursor:default;pointer-events:none}
 /* 音频：左「歌词」右「唱片」的分栏（双击音频时唱片快速右移，左边让出来给转写文字） */
 .mv-av-split{display:flex;width:100%;height:100%;min-height:0}
 .mv-lyrics{flex:1;min-width:0;overflow-y:auto;padding:30px 30px 46px;
@@ -4216,7 +4240,9 @@ function mvPaintSeek(box, ratio, bufRatio){
 function mvVideo(box, url, name, st){
   const body = box.querySelector('#mvBody');
   const foot = box.querySelector('#mvFoot');
-  body.innerHTML = `<video class="mv-video" id="mvVideo" src="${url}" playsinline preload="metadata"></video>`;
+  body.innerHTML = `<div class="mv-vwrap" id="mvVWrap">` +
+    `<video class="mv-video" id="mvVideo" src="${url}" playsinline preload="metadata"></video>` +
+    `<div class="mv-substage" id="mvSubStage"></div></div>`;
   foot.style.display = 'flex';
   foot.innerHTML = `
     <span class="mv-play" id="mvPlay" title="${I18N.T('播放 / 暂停','Play / pause')}">${icon('play',20)}</span>
@@ -4231,9 +4257,11 @@ function mvVideo(box, url, name, st){
       <span class="mv-cb" id="mvMute" title="${I18N.T('静音 / 取消静音','Mute / unmute')}">${icon('volume',16)}</span>
       <input type="range" id="mvVol" min="0" max="100" value="100" title="${I18N.T('音量','Volume')}">
     </div>
-    <span class="mv-speed" id="mvSpeed" title="${I18N.T('播放速度','Playback speed')}">1x</span>`;
+    <span class="mv-speed" id="mvSpeed" title="${I18N.T('播放速度','Playback speed')}">1x</span>
+    <span class="mv-cc" id="mvCC"></span>`;
   const full = mvStdActs(box, box.dataset.enc, { fullscreen: true, nav: 'video' });
   const v = box.querySelector('#mvVideo');
+  mvSubInit(box, v);
 
   function paintPlay(){
     const on = !v.paused && !v.ended;
@@ -4325,19 +4353,20 @@ function mvVideo(box, url, name, st){
    转写是整段文本、没有逐句时间戳，所以按「行数均分时长」做高亮同步：
    看着像歌词跟着唱，但只是近似，不假装精确。
    没有转写时给一个「立即转写」按钮，省得用户跑去详情页点。 */
-function mvLyricsSplit(txt){
+function mvLyricsSplit(txt, maxLen){
+  const W = maxLen || 26;                 // 歌词页一行 26 字；字幕更窄，传更小的值
   const raw = String(txt || '').replace(/\r\n?/g, '\n').trim();
   if(!raw) return [];
   let lines = [];
   raw.split('\n').forEach(seg => {
     const t = seg.trim();
     if(!t){ lines.push(''); return; }
-    if(t.length <= 26){ lines.push(t); return; }
-    /* 太长的句子按中英标点断句，凑成一行一句的歌词宽度 */
+    if(t.length <= W){ lines.push(t); return; }
+    /* 太长的句子按中英标点断句，凑成一行一句的宽度 */
     const parts = t.split(/(?<=[。！？；.!?;])/).map(x => x.trim()).filter(Boolean);
     let buf = '';
     parts.forEach(pp => {
-      if((buf + pp).length > 26 && buf){ lines.push(buf); buf = pp; }
+      if((buf + pp).length > W && buf){ lines.push(buf); buf = pp; }
       else buf += pp;
     });
     if(buf) lines.push(buf);
@@ -4414,14 +4443,20 @@ function mvLyricsLoad(box, a){
   }).catch(() => render('', null));
 }
 
+/* 立即转写（音频 / 视频共用）：只负责发请求，按钮文案与刷新交给调用方 */
+async function mvAsrNow(enc){
+  const r = await fetch('/v1/asr/transcribe', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({path: decodeURIComponent(enc || '')})});
+  return await r.json();
+}
+
 async function mvLyricsTranscribe(box, a, btn){
   const old = btn.textContent;
   btn.disabled = true;
   btn.textContent = I18N.T('转写中…（几秒到几十秒）','Transcribing… (may take a while)');
   try{
-    const r = await (await fetch('/v1/asr/transcribe', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({path: decodeURIComponent(box.dataset.enc || '')})})).json();
+    const r = await mvAsrNow(box.dataset.enc);
     if(!r.ok){
       btn.disabled = false; btn.textContent = old;
       toast(r.message || I18N.T('转写失败','Transcription failed'));
@@ -4437,6 +4472,123 @@ async function mvLyricsTranscribe(box, a, btn){
     btn.disabled = false; btn.textContent = old;
     toast(I18N.T('转写失败：','Transcription failed: ') + e.message);
   }
+}
+
+/* ---------- 视频字幕 ----------
+   控制栏右侧那个开关（#mvCC）控制「是否显示已转写的文字」：
+     · 有转写 → 开关，打开后转写文字以字幕形式贴在视频底部（默认开，选择记在 localStorage）
+     · 没转写 → 开关自动变成「立即转写这段视频」，点它直接开转；底部同时给一条
+                和音频面板一致的「还没有转写文字」提示
+   转写同样是整段文本、没有逐句时间戳，所以和音频歌词页一样按「行数均分时长」
+   近似同步 —— 看着跟得上，但不假装精确。 */
+const MV_SUB_KEY = 'fxseek.sub';
+function mvSubPref(){
+  try{ const v = localStorage.getItem(MV_SUB_KEY); return v === null ? true : v === '1'; }
+  catch(e){ return true; }
+}
+function mvSubSave(on){
+  try{ localStorage.setItem(MV_SUB_KEY, on ? '1' : '0'); }catch(e){}
+}
+
+function mvSubInit(box, v){
+  const stage = box.querySelector('#mvSubStage');
+  const cc = box.querySelector('#mvCC');
+  if(!stage || !cc) return;
+  let lines = [], idx = -1, on = mvSubPref(), busy = false;
+
+  const paintCC = () => {
+    cc.classList.toggle('busy', busy);
+    if(busy){                       // 转写中：别被下面的分支把文案盖回去
+      cc.classList.remove('on');
+      cc.title = I18N.T('正在转写…','Transcribing…');
+      cc.innerHTML = '<span class="spin">' + icon('spinner', 15) + '</span>' +
+        '<span>' + I18N.T('转写中…','Transcribing…') + '</span>';
+      return;
+    }
+    if(!lines.length){
+      cc.classList.remove('on');
+      cc.title = I18N.T('这段视频还没有转写文字','This video has no transcript yet');
+      cc.innerHTML = icon('captions', 15) +
+        '<span>' + I18N.T('立即转写这段视频','Transcribe this video') + '</span>';
+    }else{
+      cc.classList.toggle('on', on);
+      cc.title = on ? I18N.T('关闭字幕','Turn subtitles off')
+                    : I18N.T('显示字幕','Show subtitles');
+      cc.innerHTML = icon('captions', 15) +
+        '<span>' + I18N.T('字幕','Subtitles') + '</span>';
+    }
+  };
+
+  const paintSub = () => {
+    const el = box.querySelector('#mvSubLine');
+    if(!el) return;
+    const d = v.duration || 0, n = lines.length || 1;
+    let k = d ? Math.min(n - 1, Math.floor((v.currentTime || 0) / d * n)) : 0;
+    if(k === idx) return;
+    idx = k;
+    el.textContent = (lines[k] || '').trim();
+  };
+
+  const renderStage = () => {
+    if(!lines.length){
+      /* 还没转写：底部给一条提示（和音频面板的「还没有转写文字」一致） */
+      stage.innerHTML = `<div class="mv-subempty"><b>${I18N.T('还没有转写文字','No transcript yet')}</b>` +
+        I18N.T('转写之后，这里的文字会以字幕形式跟着视频走。',
+               'Once transcribed, the text follows the video as subtitles.') +
+        `<i>${I18N.T('点右下角「立即转写这段视频」开始。',
+                     'Click "Transcribe this video" at the bottom right to start.')}</i></div>`;
+      idx = -1;
+      return;
+    }
+    stage.innerHTML = on ? '<div class="mv-subline" id="mvSubLine"></div>' : '';
+    idx = -1;
+    if(on) paintSub();
+  };
+
+  const load = async () => {
+    try{
+      const d = await (await fetch('/v1/detail?path=' + (box.dataset.enc || ''))).json();
+      const txt = (d && (d.asr_text || (d.meta && d.meta.asr_text))) || '';
+      lines = mvLyricsSplit(txt, 20);        // 字幕一行窄一些，读着不累
+    }catch(e){ lines = []; }
+    paintCC();
+    renderStage();
+  };
+
+  cc.onclick = async () => {
+    if(busy) return;
+    if(lines.length){                        // 已有转写 → 纯开关
+      on = !on; mvSubSave(on);
+      paintCC(); renderStage();
+      return;
+    }
+    /* 没转写 → 这个按钮就是「立即转写这段视频」 */
+    busy = true;
+    paintCC();
+    try{
+      const r = await mvAsrNow(box.dataset.enc);
+      busy = false;
+      if(!r.ok){
+        paintCC();
+        toast(r.message || I18N.T('转写失败','Transcription failed'));
+        return;
+      }
+      on = true; mvSubSave(true);            // 转完直接开字幕，省得再点一次
+      await load();
+      toast(r.chars ? I18N.T('已转写 ' + r.chars + ' 字，字幕已打开，现在也能按台词搜到它',
+                             'Transcribed ' + r.chars + ' characters — subtitles on, searchable now')
+                    : I18N.T('这段视频里没有识别到语音内容','No speech detected in this video'));
+    }catch(e){
+      busy = false;
+      paintCC();
+      toast(I18N.T('转写失败：','Transcription failed: ') + e.message);
+    }
+  };
+
+  v.addEventListener('timeupdate', paintSub);
+  v.addEventListener('seeked', () => { idx = -1; paintSub(); });
+  v.addEventListener('loadedmetadata', () => { idx = -1; paintSub(); });
+  load();
 }
 
 /* ---------- 音频：唱片 + 底部完整控件 ---------- */

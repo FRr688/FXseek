@@ -321,6 +321,37 @@ def _AppKit():
     return AppKit
 
 
+def _app_version():
+    """本地取应用版本号（服务没跑时「关于」面板也得显示对）。
+
+    ★ 别再写死版本号。app.py 里那行 `"version": "x.y.z"` 是唯一来源，
+    build_app.sh / release.sh 也是 grep 它；这里按同样的办法读，读不到再退到
+    bundle 的 Info.plist（CFBundleShortVersionString）。
+    """
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "app.py"), encoding="utf-8") as f:
+            for line in f:
+                if '"version"' in line:
+                    m = re.search(r'"version"\s*:\s*"([^"]+)"', line)
+                    if m:
+                        return m.group(1)
+    except Exception:
+        pass
+    try:
+        # Contents/Resources/app/tray_helper.py → Contents/Info.plist
+        import plistlib
+        pl = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), "Info.plist")
+        with open(pl, "rb") as f:
+            v = plistlib.load(f).get("CFBundleShortVersionString")
+        if v:
+            return str(v)
+    except Exception:
+        pass
+    return ""
+
+
 def _about_rows():
     """现算「关于」面板的键值行（label, value 成对），返回 (version_str, rows)。"""
     info = None
@@ -334,9 +365,9 @@ def _about_rows():
         info = STATE.get("about")
 
     rows = []
-    version = "1.0.2"
+    version = _app_version()          # 服务探不到时用本地读到的版本，别写死
     if info:
-        version = info.get("version", "1.0.0")
+        version = info.get("version") or version
         rows.append((_t("about_version"), version))
         rows.append((_t("about_engine"), info.get("engine") or _t("about_engine_unknown")))
         if info.get("files") is not None:

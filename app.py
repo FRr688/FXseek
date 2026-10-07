@@ -102,7 +102,9 @@ DEFAULT_SETTINGS = {
     "theme": "auto",          # auto | light | dark
     "font_size": "medium",    # small | medium | large
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
-    "version": "1.0.5",
+    # ★ 版本号唯一来源：改这里就够了 —— build_app.sh / release.sh 都从这一行 grep，
+    # tray_helper 的「关于」兜底也从这里读。别在别处再写死版本号。
+    "version": "1.0.3",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -770,12 +772,19 @@ def _path_allowed(path: str) -> bool:
 
 
 def load_settings() -> dict:
+    """合并「代码默认值」与「用户已保存的设置」。"""
     s = dict(DEFAULT_SETTINGS)
     try:
         with open(SETTINGS_PATH, encoding="utf-8") as f:
             s.update(json.load(f))
     except Exception:
         pass
+    # ★ 版本号只认代码，不认用户数据目录里那份。
+    # 为什么必须强制覆盖：save_settings 从来不写 version（见下方 `k != "version"`），
+    # 但**旧版本曾经写进去过**，于是 settings.json 里冻结着一个陈旧值（实测是
+    # "1.0.0"）。它会在上面的 update() 里把 DEFAULT_SETTINGS 的新版本号盖掉，
+    # 结果就是「界面显示 v1.0.0、安装包却是新版本」——版本号看着永远不同步。
+    s["version"] = DEFAULT_SETTINGS["version"]
     return s
 
 

@@ -22,7 +22,8 @@ cd "$HERE"
 APP_NAME="FXseek"
 BUNDLE_ID="com.fxseek.media"
 VERSION="$(grep -m1 '"version"' app.py | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-VERSION="${VERSION:-1.0.2}"
+# ★ 取不到就直接报错退出 —— 以前兜底成 "1.0.2"，会静默打出一个版本号不对的包。
+[ -n "$VERSION" ] || { echo "!! 取不到版本号：app.py 里没找到 \"version\"" >&2; exit 1; }
 DIST="$HERE/dist"
 APP="$DIST/$APP_NAME.app"
 PY="$HERE/venv/cpython-3.11/bin/python3.11"

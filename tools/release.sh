@@ -5,7 +5,8 @@
 #
 # 用法：
 #   export GITHUB_TOKEN=ghp_xxxxxxxx      # 经典 PAT，勾 repo 权限（令牌只走环境变量，不写进任何文件）
-#   bash tools/release.sh v1.0.2          # 建 Release + 上传 dmg 与三段演示视频
+#   bash tools/release.sh                 # 版本号自动取 app.py 里那行 "version"
+#   bash tools/release.sh v1.0.4          # 也可以显式指定 tag
 #
 # 可选环境变量：
 #   REPO=FRr688/FXseek                    目标仓库
@@ -17,12 +18,17 @@
 # 这里逐个文件上传、已存在就跳过，失败重跑是幂等的。
 set -euo pipefail
 
-TAG="${1:-v1.0.2}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ★ 版本号唯一来源是 app.py 里那行 "version"（build_app.sh 也 grep 它）。
+# 以前这里写死 v1.0.2，发 1.0.3 时会拿旧 dmg 去传、发版正文也是旧的。
+VERSION="$(grep -m1 '"version"' "$HERE/app.py" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+[ -n "$VERSION" ] || { echo "!! 取不到版本号：$HERE/app.py 里没找到 \"version\"" >&2; exit 1; }
+
+TAG="${1:-v$VERSION}"
 NAME="${2:-FXseek ${TAG#v}}"
 REPO="${REPO:-FRr688/FXseek}"
 PROXY="${FXSEEK_PROXY-http://127.0.0.1:31188}"
 DEMO_DIR="${DEMO_DIR:-$HOME/Downloads/CC工作区/FXseek演示/发布用}"   # 演示视频新家（2026-10 从桌面搬走）
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API="https://api.github.com/repos/$REPO"
 
 DRY="${DRY_RUN:-}"
@@ -73,7 +79,7 @@ up() { # $1=文件路径
   echo "     ✅ $n"
 }
 
-up "$HERE/dist/FXseek-1.0.2.dmg"
+up "$HERE/dist/FXseek-$VERSION.dmg"
 for f in "$DEMO_DIR"/FXseek-*.mp4; do up "$f"; done
 
 echo "== 完成 → $HTML =="
