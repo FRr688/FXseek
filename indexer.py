@@ -37,6 +37,18 @@ import heif_support  # noqa: F401  注册 HEIC/HEIF 解码器（iPhone 照片）
 import paths as P
 DB_PATH = P.DB_PATH
 
+# ★ 允许解码「尾部略有截断」的图片。
+#   老唱片封面这类素材常有几十字节缺失（Pillow 报 image file is truncated），
+#   但画面本身几乎完好。直接当坏图跳过有两个坏处：
+#     ① 明明能看的图搜不到；
+#     ② 跳过后 items 里没有它的记录 → 每次刷新都被重新当成「新文件」重试，
+#        报告里就会出现「新索引 1 个文件 / 0 个向量」这种看着像 bug 的假消息。
+try:
+    from PIL import ImageFile as _PILImageFile
+    _PILImageFile.LOAD_TRUNCATED_IMAGES = True
+except Exception:
+    pass
+
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".heic"}
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".m4v", ".webm", ".flv", ".wmv"}
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aiff"}
@@ -46,6 +58,65 @@ DOC_EXT = {".txt", ".md", ".pdf", ".doc", ".docx", ".rtf", ".wps", ".csv", ".jso
            ".xlsx", ".xlsm", ".et",
            # 幻灯片（python-pptx 读文本框；.dps 见 _read_text 的降级处理）
            ".pptx", ".dps"}
+
+# 系统生成的垃圾/元数据文件，不是真素材。
+# ★ 为什么必须显式过滤：macOS 在非 HFS 卷和网络卷上会给每个文件配一个 AppleDouble
+#   伴生文件 "._原名"，它**保留原扩展名**（._03 Hurt You.m4a），于是能通过扩展名白名单
+#   被当音频索引，编码时 ffmpeg 直接报 "moov atom not found"。
+JUNK_NAMES = {".DS_Store", ".localized", "Thumbs.db", "desktop.ini", "ehthumbs.db"}
+
+
+def is_junk_file(name: str) -> bool:
+    """该文件名是否属于「不该入库」的垃圾/元数据文件（只看文件名，不看路径）。"""
+    if name.startswith("._"):   # AppleDouble 伴生文件
+        return True
+    if name.startswith("."):    # .DS_Store 等一切点文件
+        return True
+    return name in JUNK_NAMES
+
+
+def purge_stale(cur, con, roots):
+    """清理索引中已失效的记录，返回删除条数。
+
+    要删两类：
+      ① 源目录里已经不存在的文件；
+      ② 垃圾/元数据文件 —— 旧版本会把 "._03 Hurt You.m4a" 这类 AppleDouble
+         当音频索引进库（它保留了原扩展名，能通过白名单）。
+    只清理本轮 roots 覆盖范围内的记录，避免误删其他索引源的数据。
+    """
+    def norm(x):
+        try:
+            return os.path.realpath(os.path.expanduser(x)).rstrip(os.sep)
+        except Exception:
+            return None
+
+    def under(p, rs):
+        try:
+            rp = os.path.realpath(p)
+        except Exception:
+            rp = p
+        return any(rp == r or rp.startswith(r + os.sep) for r in rs)
+
+    mine = {r for r in (norm(x) for x in roots) if r}
+    # ★ 源目录整体不可达时（外接盘没插、网络盘没挂）**不能**按「文件不存在」删记录，
+    #   否则拔一次盘、再索引一次，整个源的索引就被清空了。
+    #   垃圾文件不受此限：只看文件名就能判定，删掉永远是对的。
+    reachable = {r for r in mine if os.path.exists(r)}
+
+    n_removed = 0
+    for (p,) in cur.execute("SELECT DISTINCT path FROM items").fetchall():
+        if not under(p, mine):
+            continue
+        if is_junk_file(os.path.basename(p)):
+            cur.execute("DELETE FROM items WHERE path=?", (p,))
+            n_removed += 1
+        elif under(p, reachable) and not os.path.exists(p):
+            cur.execute("DELETE FROM items WHERE path=?", (p,))
+            n_removed += 1
+    if n_removed:
+        con.commit()
+    return n_removed
+
 
 # ffmpeg / ffprobe：优先用 app 内置（bin/ 目录，随应用分发），其次环境变量，最后系统
 def _find_bin(name: str) -> str:
@@ -93,12 +164,17 @@ except Exception:
 
 
 def _probe_key(path):
-    """(路径, mtime, 大小) —— 拿不到 stat 就不缓存（文件可能已不在）。"""
+    """(路径, mtime, 大小) —— 拿不到 stat 就不缓存（文件可能已不在）。
+
+    前缀 v2：探测内容变过（新增容器标签 tags）时必须让旧缓存失效，
+    否则老缓存会一直返回「没有 tags」的旧结果，界面永远等不到歌手/专辑。
+    以后只要改 _probe_media_meta_raw 提取的字段，就把这个版本号 +1。
+    """
     try:
         st = os.stat(path)
     except OSError:
         return None
-    return "%s|%d|%d" % (path, int(st.st_mtime), st.st_size)
+    return "v2|%s|%d|%d" % (path, int(st.st_mtime), st.st_size)
 
 
 def _probe_load_disk():
@@ -179,7 +255,18 @@ def warm_meta_cache(paths, workers=8):
 
 
 def probe_media_meta(path: str) -> dict:
-    """带缓存的探测入口（缓存逻辑见上方 _PROBE_MEM 注释）。"""
+    """带缓存的探测入口（缓存逻辑见上方 _PROBE_MEM 注释）。
+
+    ★ 一律返回**副本**：缓存里那个 dict 是全局共享的，调用方（比如
+    app.file_detail 把索引里的 asr_text/ai_tags 并进去）一旦就地改它，
+    改动会永远留在缓存里 —— 之后哪怕库里的字段已经删掉，探测仍然吐旧值，
+    而且下一次 _probe_save_disk 会把这个脏数据写进磁盘缓存。
+    """
+    meta = _probe_media_meta_cached(path)
+    return dict(meta) if isinstance(meta, dict) else meta
+
+
+def _probe_media_meta_cached(path: str) -> dict:
     global _PROBE_DIRTY
     k = _probe_key(path)
     if k:
@@ -199,6 +286,30 @@ def probe_media_meta(path: str) -> dict:
         _PROBE_DIRTY += 1
         _probe_save_disk()
     return meta
+
+
+def _fix_tag_mojibake(v: str) -> str:
+    """修 ID3 里最常见的乱码：中文标签按 GBK 存、播放器却当 latin-1 解出来。
+
+    实测 `Bruno Mars - Lazy Song.mp3` 的 artist 是 `|ÆßÉ«³±ÒôÉç|in7se.com|Æâse|`，
+    其实是「七色潮音社」那类中文被错解。这类字符串**不能原样进向量**（等于往库里
+    灌噪声），也**不能原样显示**（卡片上一片乱码）。所以先试着按 GBK/BIG5 重解一次，
+    解不出中文就返回空串让调用方丢弃 —— 宁可不显示，也不要乱码。
+    """
+    if not v:
+        return ""
+    # 没有 latin-1 高位字符 = 不是这种乱码，原样返回
+    if not any("\u00c0" <= ch <= "\u00ff" for ch in v):
+        return v
+    for enc in ("gbk", "gb18030", "big5", "shift_jis"):
+        try:
+            fixed = v.encode("latin-1").decode(enc)
+        except Exception:
+            continue
+        cjk = sum(1 for ch in fixed if "\u4e00" <= ch <= "\u9fff")
+        if cjk >= 2 and not any("\u00c0" <= ch <= "\u00ff" for ch in fixed):
+            return fixed
+    return ""          # 修不好 → 丢掉，别把乱码写进向量和界面
 
 
 def _probe_media_meta_raw(path: str) -> dict:
@@ -231,6 +342,62 @@ def _probe_media_meta_raw(path: str) -> dict:
             if dur > 0:
                 meta["duration"] = round(dur, 1)
                 meta["duration_text"] = _fmt_duration(dur)
+            # ★ 音乐文件的容器标签（ID3 / Vorbis / MP4 atoms）。
+            #   ffprobe -show_format 本来就把 tags 一起返回来 —— 以前只取 duration /
+            #   bit_rate，tags 直接白扔了。而「歌手/专辑/曲名」是文件名之外**唯一**
+            #   的语义来源：别人的库里文件名常常是 01.mp3、Track 03.flac，
+            #   没有标签就等于这首歌搜不到歌手、搜不到专辑。
+            raw_tags = fmt.get("tags") or {}
+            if raw_tags:
+                tl = {str(k).lower(): v for k, v in raw_tags.items()}
+
+                def _tag(*names, limit=120):
+                    for nm in names:
+                        v = tl.get(nm)
+                        if v is None:
+                            continue
+                        v = str(v).strip()
+                        if not v or v.lower() in ("unknown", "unknown artist",
+                                                  "unknown album", "various artists",
+                                                  "n/a", "-"):
+                            continue
+                        # 盗版站常把广告塞进 album/genre/composer（实测
+                        # "www.alexak.ro" 同时占了四个字段）。带网址的一律丢掉，
+                        # 否则卡片上会显示「Dj Project feat. Giulia · www.alexak.ro」。
+                        low = v.lower()
+                        if "http" in low or "www." in low or ".ru/" in low or ".ro/" in low:
+                            continue
+                        v = _fix_tag_mojibake(v)
+                        if not v:            # 乱码修不好 → 丢弃
+                            continue
+                        # 重解之后可能又露出网址（乱码把 .com 藏起来了），再查一次
+                        low = v.lower()
+                        if "http" in low or "www." in low or ".com" in low or ".net" in low:
+                            continue
+                        return v[:limit]
+                    return ""
+
+                tg = {
+                    "title":        _tag("title"),
+                    "artist":       _tag("artist"),
+                    "album":        _tag("album"),
+                    "album_artist": _tag("album_artist", "albumartist"),
+                    "genre":        _tag("genre", limit=40),
+                    "track":        _tag("track", limit=12),
+                    "composer":     _tag("composer", limit=80),
+                    "date":         _tag("date", "year", limit=24),
+                }
+                tg = {k: v for k, v in tg.items() if v}
+                # 年份单独抽出来（只用于显示）：标签里常有脏值（实测见过 5583），
+                # 所以只认 1900–2099 的四位前缀。
+                d0 = (tg.get("date") or "")[:4]
+                if d0.isdigit() and 1900 <= int(d0) <= 2099:
+                    tg["year"] = d0
+                if tg:
+                    meta["tags"] = tg
+                # 不管有没有可用标签，都记一笔「已查过」：既是迁移标记
+                # （老记录没这个键 → 重编一次），也避免每次刷新再跑一遍 ffprobe。
+                meta["tags_checked"] = True
             try:
                 meta["container"] = (fmt.get("format_long_name")
                                      or fmt.get("format_name") or "").split(",")[0]
@@ -454,8 +621,13 @@ def ai_tag_status(db_path=None):
                         for (p, k) in pend]}
 
 
-def _merge_meta(con, path, patch):
-    """把一段 meta 并进某个文件所有「非 AI 槽位」的行（AI 标签向量行不动）。"""
+def _merge_meta(con, path, patch, clear=()):
+    """把一段 meta 并进某个文件所有「非 AI 槽位」的行（AI 标签向量行不动）。
+
+    clear：本次要**删掉**的键。dict.update 只能覆盖、不能删除，所以「重新转写」
+    这次没识别到文字时必须显式清掉上一次的 asr_text —— 否则旧歌词会永远留着，
+    用户重转一次反而还看得到老内容（本次要修的就是这个）。
+    """
     for ci, mstr in con.execute(
             "SELECT chunk_idx, meta FROM items WHERE path=? AND chunk_idx<?",
             (path, AI_TAG_BASE)).fetchall():
@@ -464,6 +636,8 @@ def _merge_meta(con, path, patch):
         except Exception:
             m = {}
         m.update(patch)
+        for k in clear:
+            m.pop(k, None)
         con.execute("UPDATE items SET meta=? WHERE path=? AND chunk_idx=?",
                     (json.dumps(m, ensure_ascii=False), path, ci))
 
@@ -708,9 +882,13 @@ def transcribe_file(path, asr_cfg, model=None, processor=None, db_path=None):
             return {"ok": False,
                     "message": f"转写结果异常（{len(txt)} 字 / {dur_chk:.0f} 秒，"
                                f"疑似模型复读），已丢弃，稍后重试"}
-        asr_meta = ({"asr_text": txt, "asr_model": asr_cfg["model"]} if txt
-                    else {"asr_none": True})
-        _merge_meta(con, path, asr_meta)
+        if txt:
+            asr_meta = {"asr_text": txt, "asr_model": asr_cfg["model"]}
+            asr_clear = ("asr_none", "asr_skip")     # 这次有字了，清掉「没内容/跳过」标记
+        else:
+            asr_meta = {"asr_none": True}
+            asr_clear = ("asr_text", "asr_model", "asr_skip")   # ★ 清掉上一次的旧文字
+        _merge_meta(con, path, asr_meta, clear=asr_clear)
 
         n_vec = 0
         if txt and kind == "audio" and model is not None:
@@ -731,6 +909,8 @@ def transcribe_file(path, asr_cfg, model=None, processor=None, db_path=None):
                 lst = vec.tolist()
                 newm = dict(m0)
                 newm.update(asr_meta)
+                for k in asr_clear:
+                    newm.pop(k, None)
                 con.execute(
                     "INSERT OR REPLACE INTO items (path,kind,chunk_idx,meta,dim,vec,mtime,indexed_at)"
                     " VALUES (?,?,?,?,?,?,?,?)",
@@ -746,6 +926,202 @@ def transcribe_file(path, asr_cfg, model=None, processor=None, db_path=None):
         return {"ok": False, "message": str(e)}
     except Exception as e:
         return {"ok": False, "message": f"{type(e).__name__}: {e}"}
+    finally:
+        con.close()
+
+
+def polish_file(path, ai_cfg, model=None, processor=None, db_path=None):
+    """用 LLM 把 ASR 原文优化一份，**另存 asr_clean，原文一个字不动**。
+
+    为什么不能覆盖原文：检索有两路 —— 关键词路（`meta LIKE '%asr_text%'`）和
+    chunk 0 的向量重编码。用户搜的时候往往**正是照着他听到的那个错字打的**，
+    把原文改掉，那些错字就永远搜不到了。所以这里是「加一份」，不是「改一份」。
+
+    音频还要把 chunk 0 重编码（原文 + 优化版一起拼进去），否则「按优化后的词搜」
+    在向量这条路上搜不到。视频的转写只走关键词路，不需要重编码。
+
+    返回 {ok, chars, kind, vectors, seconds} 或 {ok: False, message}。
+    """
+    import asr_polish as _pol
+
+    db = db_path or DB_PATH
+    if not ai_cfg or not (ai_cfg.get("base_url") and ai_cfg.get("model")):
+        return {"ok": False, "message": "请先在设置里配置智能服务的地址与模型"}
+    if not os.path.exists(path):
+        return {"ok": False, "message": "文件不存在"}
+
+    con = sqlite3.connect(db)
+    try:
+        rows = con.execute(
+            "SELECT kind, chunk_idx, meta, mtime FROM items"
+            " WHERE path=? AND chunk_idx<? ORDER BY chunk_idx",
+            (path, AI_TAG_BASE)).fetchall()
+        if not rows:
+            return {"ok": False, "message": "这个素材还没有索引，先刷新索引"}
+        kind, mtime = rows[0][0], rows[0][3]
+        try:
+            m0 = json.loads(rows[0][2] or "{}")
+        except Exception:
+            m0 = {}
+        src = m0.get("asr_text") or ""
+        if not src.strip():
+            return {"ok": False, "message": "这个素材还没有转写文字，先转写再优化"}
+
+        t0 = time.time()
+        r = _pol.polish_full(src, path, ai_cfg["base_url"],
+                             ai_cfg.get("api_key", ""), ai_cfg["model"])
+        if not r.get("ok"):
+            return {"ok": False, "message": r.get("message") or "优化失败"}
+        txt = r["text"]
+        pmeta = {"asr_clean": txt,
+                 "asr_clean_model": ai_cfg["model"],
+                 "asr_clean_kind": r.get("kind") or _pol.MONOLOGUE,
+                 "asr_clean_at": time.time()}
+        _merge_meta(con, path, pmeta)
+
+        n_vec = 0
+        if kind == "audio" and model is not None:
+            # 重编码失败不该连累已经写好的优化文字：单独兜住。
+            try:
+                import embed as we
+                import mlx.core as mx
+                name = os.path.splitext(os.path.basename(path))[0]
+                dur_v = m0.get("duration") or 0
+                dur_txt = f"，时长 {dur_v:.0f} 秒" if dur_v else ""
+                extra = ""
+                if m0.get("ai_tags"):
+                    extra = " " + " ".join(m0["ai_tags"])
+                # 原文在前、优化版在后：两边都要能被向量命中
+                body = f"{src} {txt}"
+                vec = we.embed(model, processor,
+                               text=f"音频文件 {name}{dur_txt}" + extra + " " + body,
+                               instruction=we.QUERY_INSTRUCTION)
+                mx.eval(vec)
+                lst = vec.tolist()
+                newm = dict(m0)
+                newm.update(pmeta)
+                con.execute(
+                    "INSERT OR REPLACE INTO items (path,kind,chunk_idx,meta,dim,vec,mtime,indexed_at)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (path, kind, rows[0][1], json.dumps(newm, ensure_ascii=False),
+                     len(lst), _to_blob(lst), mtime or time.time(), time.time()))
+                n_vec = 1
+            except Exception as e:
+                print(f"  [优化后重编码失败] {path}: {e}")
+        con.commit()
+        return {"ok": True, "chars": len(txt), "kind": pmeta["asr_clean_kind"],
+                "vectors": n_vec, "seconds": round(time.time() - t0, 1)}
+    except Exception as e:
+        return {"ok": False, "message": f"{type(e).__name__}: {e}"}
+    finally:
+        con.close()
+
+
+def unpolish_file(path, model=None, processor=None, db_path=None):
+    """丢掉优化版，回到只看原文。原文一直都在，所以元数据是纯删除。
+
+    但音频**光删元数据不够**：polish_file 当初把「原文 + 优化版」拼进了 chunk 0
+    的向量，不重编码的话，优化版里的词还能从向量这条路搜到这个文件 ——
+    用户点了「还原」，结果搜优化版才有的词还能搜出来，那就是还原得不干净。
+    所以音频要把 chunk 0 按**只剩原文**重编码一遍（视频的转写不走向量，无需处理）。
+    """
+    db = db_path or DB_PATH
+    con = sqlite3.connect(db)
+    try:
+        rows = con.execute(
+            "SELECT kind, chunk_idx, meta, mtime FROM items"
+            " WHERE path=? AND chunk_idx<? ORDER BY chunk_idx",
+            (path, AI_TAG_BASE)).fetchall()
+        if not rows:
+            return {"ok": False, "message": "这个素材还没有索引"}
+        kind, mtime = rows[0][0], rows[0][3]
+        try:
+            m0 = json.loads(rows[0][2] or "{}")
+        except Exception:
+            m0 = {}
+        had = bool((m0.get("asr_clean") or "").strip())
+
+        _merge_meta(con, path,
+                    {}, clear=("asr_clean", "asr_clean_model",
+                               "asr_clean_kind", "asr_clean_at"))
+
+        n_vec = 0
+        if had and kind == "audio" and model is not None:
+            try:
+                import embed as we
+                import mlx.core as mx
+                src = (m0.get("asr_text") or "").strip()
+                if src:
+                    name = os.path.splitext(os.path.basename(path))[0]
+                    dur_v = m0.get("duration") or 0
+                    dur_txt = f"，时长 {dur_v:.0f} 秒" if dur_v else ""
+                    extra = ""
+                    if m0.get("ai_tags"):
+                        extra = " " + " ".join(m0["ai_tags"])
+                    vec = we.embed(model, processor,
+                                   text=f"音频文件 {name}{dur_txt}" + extra + " " + src,
+                                   instruction=we.QUERY_INSTRUCTION)
+                    mx.eval(vec)
+                    lst = vec.tolist()
+                    newm = dict(m0)
+                    for k in ("asr_clean", "asr_clean_model",
+                              "asr_clean_kind", "asr_clean_at"):
+                        newm.pop(k, None)
+                    con.execute(
+                        "INSERT OR REPLACE INTO items (path,kind,chunk_idx,meta,dim,vec,mtime,indexed_at)"
+                        " VALUES (?,?,?,?,?,?,?,?)",
+                        (path, kind, rows[0][1], json.dumps(newm, ensure_ascii=False),
+                         len(lst), _to_blob(lst), mtime or time.time(), time.time()))
+                    n_vec = 1
+            except Exception as e:
+                # 向量没救回来不算致命：元数据已经干净了，下次刷新索引会自愈
+                print(f"  [还原后重编码失败] {path}: {e}")
+        con.commit()
+        return {"ok": True, "vectors": n_vec}
+    finally:
+        con.close()
+
+
+def polish_progress(db_path=None):
+    """统计「有转写文字」和「已优化」的条数，给「一键优化全部」显示进度用。"""
+    db = db_path or DB_PATH
+    con = sqlite3.connect(db)
+    try:
+        rows = con.execute(
+            "SELECT meta FROM items WHERE chunk_idx=0 AND kind IN ('audio','video')"
+        ).fetchall()
+        total = done = 0
+        for (ms,) in rows:
+            try:
+                m = json.loads(ms or "{}")
+            except Exception:
+                m = {}
+            if (m.get("asr_text") or "").strip():
+                total += 1
+                if (m.get("asr_clean") or "").strip():
+                    done += 1
+        return {"total": total, "done": done}
+    finally:
+        con.close()
+
+
+def polish_pending(db_path=None):
+    """还没优化过、但有转写文字可优化的素材路径。"""
+    db = db_path or DB_PATH
+    con = sqlite3.connect(db)
+    try:
+        rows = con.execute(
+            "SELECT path, meta FROM items WHERE chunk_idx=0 AND kind IN ('audio','video')"
+        ).fetchall()
+        out = []
+        for path, ms in rows:
+            try:
+                m = json.loads(ms or "{}")
+            except Exception:
+                m = {}
+            if (m.get("asr_text") or "").strip() and not (m.get("asr_clean") or "").strip():
+                out.append(path)
+        return out
     finally:
         con.close()
 
@@ -869,6 +1245,30 @@ def _asr_pending(cur, path: str, asr) -> bool:
     if (m.get("asr_text") or "").strip():
         return False
     return not (m.get("asr_none") or m.get("asr_skip"))
+
+
+def _tags_pending(cur, path: str) -> bool:
+    """音频：这一条是「标签入库」之前编的 → 需要重编一次文本侧。
+
+    判定只看库里有没有 tags_checked 标记，**不去碰文件系统**（不额外跑 ffprobe）：
+      有标记 = 已经按新模板编过（不管有没有标签），跳过；
+      没标记 = 老记录，放回正常分支重编一次 —— 这就是老库的平滑迁移通道。
+    只认 AUDIO_EXT：视频重编要重新抽帧，代价太大，不在这次迁移范围里。
+    """
+    if os.path.splitext(path)[1].lower() not in AUDIO_EXT:
+        return False
+    try:
+        row = cur.execute("SELECT meta FROM items WHERE path=? AND chunk_idx=0 LIMIT 1",
+                          (path,)).fetchone()
+    except Exception:
+        return False
+    if not row:
+        return False
+    try:
+        m = json.loads(row[0] or "{}")
+    except Exception:
+        return False
+    return not m.get("tags_checked")
 
 
 # 抽帧密度模式：自动策略的缩放系数
@@ -1311,13 +1711,31 @@ def iter_units(path: str):
         for idx, (img, ts) in enumerate(_video_frames(path)):
             yield ("video", idx, {"timestamp": ts}, None, img)
     elif ext in AUDIO_EXT:
-        # 音频：WeMM 不处理音频内容，用文件名 + 元数据构造文本向量
-        # 这样至少能被「文件名/关键词」搜索到（如搜「晓」「歌曲名」）
+        # 音频：WeMM 不处理音频内容，用文件名 + 容器标签构造文本向量
+        #（这样能被「文件名 / 关键词 / 歌手 / 专辑 / 流派」搜到）。
         name = os.path.splitext(os.path.basename(path))[0]
-        dur = _probe_duration(path)
+        # ★ 一次 ffprobe 同时拿时长与标签 —— 以前只取时长，tags 白扔了。
+        mm = _probe_media_meta_raw(path)
+        tg = mm.get("tags") or {}
+        dur = float(mm.get("duration") or 0) or _probe_duration(path)
         dur_txt = f"，时长 {dur:.0f} 秒" if dur > 0 else ""
-        text = f"音频文件 {name}{dur_txt}"
-        yield ("audio", 0, {"duration": round(dur, 1)}, text, None)
+        parts = []
+        if tg.get("title") and tg["title"] != name:
+            parts.append(f"曲名 {tg['title']}")      # 曲名和文件名重复时不用再写一遍
+        if tg.get("artist"):
+            parts.append(f"歌手 {tg['artist']}")
+        if tg.get("album"):
+            parts.append(f"专辑 {tg['album']}")
+        if tg.get("genre"):
+            parts.append(f"流派 {tg['genre']}")
+        if tg.get("year"):
+            parts.append(f"年份 {tg['year']}")
+        if tg.get("composer"):
+            parts.append(f"作曲 {tg['composer']}")
+        tag_txt = ("，" + "，".join(parts)) if parts else ""
+        text = f"音频文件 {name}{dur_txt}{tag_txt}"
+        yield ("audio", 0, {"duration": round(dur, 1), "tags": tg,
+                            "tags_checked": True}, text, None)
     elif ext in DOC_EXT:
         text = _read_text(path)
         chunks = _chunk(text)
@@ -1340,7 +1758,7 @@ def iter_units(path: str):
 # 索引
 # --------------------------------------------------------------------------
 def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=None,
-                ai_config=None, asr_config=None):
+                ai_config=None, asr_config=None, kinds=None):
     """建立/更新索引。
 
     progress: 可选回调 fn(dict) —— 用于把实时进度上报给 UI。
@@ -1348,6 +1766,11 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
             indexed, skipped, units, message
     ai_config: 可选 dict —— AI 描述生成配置（enabled/base_url/api_key/model/prompt）。
                开启后为图片生成描述与标签写入 meta，提升语义检索泛化能力。
+    kinds: 可选 list —— 只索引这些类型（image/video/audio/document）。
+       None 或空 = 全部类型。用于「刷新索引」跟随当前分类：
+       选中「图片」时只扫图片，选中「全部」才全局扫。
+       不影响 purge_stale —— 它只删「磁盘上已不存在」与垃圾文件，
+       因此限类型扫描不会误删其他类型的索引记录。
     """
     import mlx.core as mx
     import embed as we
@@ -1380,20 +1803,41 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
     cur = con.cursor()
 
     report(phase="scanning", message="扫描文件…")
+    # 类型白名单：kinds 为空 → 全部四类；否则只扫指定类别。
+    _EXT_OF_KIND = {"image": IMAGE_EXT, "video": VIDEO_EXT,
+                    "audio": AUDIO_EXT, "document": DOC_EXT}
+    _wanted = [k for k in (kinds or []) if k in _EXT_OF_KIND]
+    if _wanted:
+        scan_ext = set()
+        for k in _wanted:
+            scan_ext |= _EXT_OF_KIND[k]
+        print(f"仅扫描类型：{'/'.join(_wanted)}")
+    else:
+        scan_ext = IMAGE_EXT | VIDEO_EXT | AUDIO_EXT | DOC_EXT
     files = []
     for root in roots:
         rp = Path(os.path.realpath(os.path.expanduser(root)))
         if rp.is_file():
-            files.append(str(rp))
+            if (not is_junk_file(rp.name)
+                    and os.path.splitext(rp.name)[1].lower() in scan_ext):
+                files.append(str(rp))
         elif rp.is_dir():
-            for p in rp.rglob("*"):
-                if p.is_file() and p.suffix.lower() in (IMAGE_EXT | VIDEO_EXT | AUDIO_EXT | DOC_EXT):
-                    files.append(str(p))
+            # 用 os.walk 而不是 rglob：rglob 会一路走进点目录，
+            # 于是 ".Trashes/正常名.jpg" 这种也会被当成素材收进来。
+            for dp, dns, fns in os.walk(rp):
+                dns[:] = [d for d in dns if not d.startswith(".")]
+                for fn in fns:
+                    if is_junk_file(fn):
+                        continue
+                    if os.path.splitext(fn)[1].lower() in scan_ext:
+                        files.append(os.path.join(dp, fn))
     total = len(files)
     print(f"扫描到 {total} 个候选文件")
     report(phase="encoding", total=total, current=0, message=f"共 {total} 个文件")
 
     n_new = n_skip = n_unit = 0
+    n_fail = 0          # 扫到了但解不出任何单元（坏图/不支持的编码）
+    n_meta = 0          # 文件没变，只是补元数据重编了文本侧（不算新增）
     t0 = time.time()
     for fi, path in enumerate(files, 1):
         try:
@@ -1401,8 +1845,12 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
         except OSError:
             continue
         row = cur.execute("SELECT mtime FROM items WHERE path=? LIMIT 1", (path,)).fetchone()
-        if (row and not force and abs(row[0] - mtime) < 1e-6
-                and not _asr_pending(cur, path, asr)):
+        unchanged = bool(row and not force and abs(row[0] - mtime) < 1e-6)
+        asr_need = unchanged and _asr_pending(cur, path, asr)
+        # 老记录还没写过 tags_checked → 说明它是「标签入库」之前编的，
+        # 放回正常分支重编一次（只动文本侧，很便宜），把歌手/专辑拼进向量。
+        meta_need = (unchanged and not asr_need and _tags_pending(cur, path))
+        if unchanged and not asr_need and not meta_need:
             # 跳过的音频/视频：若指纹缺失则补建（增量索引不会重复执行新文件分支）
             try:
                 ext_fp = os.path.splitext(path)[1].lower()
@@ -1418,6 +1866,22 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
                        indexed=n_new, skipped=n_skip, units=n_unit,
                        message=os.path.basename(path))
             continue
+        if meta_need:
+            n_meta += 1          # 只是补元数据重编，不算「新增文件」
+
+        # ★ 重建之前先把旧 meta 读出来当底稿。
+        #   增量刷新时 ai/asr 配置通常是关着的（do_index 传 None），若直接
+        #   INSERT 覆盖，会把上一次辛苦跑出来的 asr_text（歌词）和 ai_tags 弄丢 ——
+        #   以前「mtime 变了就重索引」的图片/音频就是这么悄悄掉标签的。
+        prev_meta = {}
+        try:
+            _pr = cur.execute(
+                "SELECT meta FROM items WHERE path=? AND chunk_idx=0 LIMIT 1",
+                (path,)).fetchone()
+            if _pr and _pr[0]:
+                prev_meta = json.loads(_pr[0]) or {}
+        except Exception:
+            prev_meta = {}
 
         cur.execute("DELETE FROM items WHERE path=?", (path,))
         try:
@@ -1528,9 +1992,13 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
                                    instruction=we.QUERY_INSTRUCTION)
                 mx.eval(vec)
                 lst = vec.tolist()
-                merged = dict(meta or {})
+                merged = dict(prev_meta)      # 底稿：保留上一轮的 asr_text / ai_tags
+                merged.update(meta or {})
                 merged.update(ai_meta)
                 merged.update(asr_meta)
+                # 文件这次查出「没有标签」时，别把上一轮残留的 tags 留着
+                if (meta or {}).get("tags_checked") and not (meta or {}).get("tags"):
+                    merged.pop("tags", None)
                 cur.execute(
                     "INSERT OR REPLACE INTO items (path,kind,chunk_idx,meta,dim,vec,mtime,indexed_at)"
                     " VALUES (?,?,?,?,?,?,?,?)",
@@ -1577,7 +2045,15 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
         except Exception as e:
             print(f"  [指纹索引失败] {path}: {e}")
 
-        n_new += 1
+        if units:
+            if not meta_need:
+                n_new += 1
+        else:
+            # 解不出任何单元：别谎报成「新索引」——它其实一个单元都没进库，
+            # 下次刷新还会被当成新文件重试（报告里那个「新索引 1 个文件 /
+            # 0 个向量」就是这么来的）。单独计数、单独提示。
+            n_fail += 1
+            print(f"  [无法索引] {path}")
         con.commit()
         report(phase="encoding", total=total, current=fi,
                indexed=n_new, skipped=n_skip, units=n_unit,
@@ -1585,27 +2061,12 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
         if fi % 10 == 0:
             print(f"  进度 {fi}/{total}  已索引文件 {n_new}  单元 {n_unit}")
 
-    # ---- 清理：索引源里已不存在的文件 → 从索引中移除 ----
+    # ---- 清理：源里已不存在的文件 + 垃圾文件 → 从索引中移除 ----
     n_removed = 0
     try:
-        known = set()
-        for (p,) in con.execute("SELECT DISTINCT path FROM items").fetchall():
-            known.add(p)
-        # 限制在本次索引的根目录范围内清理（避免误删其他源的记录）
-        def in_roots(p):
-            try:
-                rp = os.path.realpath(p)
-            except Exception:
-                rp = p
-            return any(rp == r or rp.startswith(r + os.sep)
-                       for r in {os.path.realpath(os.path.expanduser(x)).rstrip(os.sep) for x in roots})
-        for p in known:
-            if in_roots(p) and not os.path.exists(p):
-                cur.execute("DELETE FROM items WHERE path=?", (p,))
-                n_removed += 1
+        n_removed = purge_stale(cur, con, roots)
         if n_removed:
-            con.commit()
-            print(f"\n清理：移除 {n_removed} 个已删除文件的索引记录")
+            print(f"\n清理：移除 {n_removed} 个已失效/垃圾的索引记录")
     except Exception as e:
         print(f"  [清理失败] {e}")
 
@@ -1613,16 +2074,23 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
     con.close()
     dt = time.time() - t0
     rm_note = f"，清理 {n_removed} 个失效记录" if n_removed else ""
-    print(f"\n完成：新索引 {n_new} 个文件 / {n_unit} 个向量，跳过 {n_skip} 个未变文件{rm_note}，耗时 {dt:.1f}s")
+    fail_note = f"，{n_fail} 个文件无法解析" if n_fail else ""
+    meta_note = f"，补元数据 {n_meta} 个" if n_meta else ""
+    print(f"\n完成：新索引 {n_new} 个文件 / {n_unit} 个向量，跳过 {n_skip} 个未变文件{meta_note}{rm_note}{fail_note}，耗时 {dt:.1f}s")
     ai_note = f"，AI 描述 {n_ai} 张" if n_ai else ""
     rm_msg = f"，清理 {n_removed} 项" if n_removed else ""
+    fail_msg = f"，{n_fail} 个文件无法解析" if n_fail else ""
+    meta_msg = f"，补元数据 {n_meta} 个" if n_meta else ""
     report(phase="done", total=total, current=total, indexed=n_new,
-           skipped=n_skip, units=n_unit, ai=n_ai, removed=n_removed,
+           skipped=n_skip, units=n_unit, ai=n_ai, removed=n_removed, failed=n_fail,
+           meta=n_meta,
            elapsed=round(dt, 1),
-           message=f"新索引 {n_new} 个文件 / {n_unit} 个向量{ai_note}{rm_msg}")
+           message=f"新索引 {n_new} 个文件 / {n_unit} 个向量{meta_msg}{ai_note}{rm_msg}{fail_msg}")
     return {"indexed": n_new, "skipped": n_skip, "units": n_unit, "ai": n_ai,
             "asr": n_asr,
             "removed": n_removed,
+            "failed": n_fail,
+            "meta": n_meta,
             "total": total, "elapsed": round(dt, 1)}
 
 
@@ -1664,7 +2132,7 @@ def _lexical_boost(query: str, path: str, meta: dict, use_name: bool = True) -> 
     #    没有这条时，搜原文歌词会输给毫不相干的空文档（WeMM 对短查询 vs 长文本
     #    区分度不足，无关文本基线就有 0.45），唱歌检索基本废掉。
     #    ★ 这一档是**内容**证据，不是文件名，所以 use_name=False 时照样保留。
-    txt = (meta.get("asr_text") or "").lower()
+    txt = ((meta.get("asr_text") or "") + " " + (meta.get("asr_clean") or "")).lower()
     if txt and len(q) >= 2:
         if q in txt:
             boost += 0.34

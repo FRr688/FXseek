@@ -173,6 +173,10 @@ body.detail-hidden .detail-collapse .chev svg{transform:rotate(-90deg)}
 .dsec{border-top:1px solid var(--border);padding:12px 16px}
 .dsec .st{font-size:0.625rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.6px;
   margin-bottom:8px;font-weight:600}
+/* 段标题上的小徽标（「智能优化版」），说明下面这段是 LLM 处理过的 */
+.dsec .st .stsub{display:inline-block;margin-left:7px;padding:1px 6px;border-radius:6px;
+  text-transform:none;letter-spacing:0;font-size:0.625rem;font-weight:600;
+  color:#a78bfa;background:rgba(167,139,250,.16)}
 .drow{display:flex;justify-content:space-between;gap:10px;padding:3.5px 0;font-size:0.75rem;line-height:1.5}
 .drow .k{color:var(--text-3);flex-shrink:0;white-space:nowrap}
 .drow .v{color:var(--text);text-align:right;word-break:break-word;font-variant-numeric:tabular-nums}
@@ -893,7 +897,30 @@ body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
 .mv-video{width:100%;height:100%;display:block;background:#000;outline:none}
 /* 视频字幕层：控制栏的开关打开后，转写文字以字幕形式贴底显示。
    和音频歌词页同源（/v1/detail 的 asr_text），只是这里一次只显示当前一行。 */
-.mv-vwrap{position:relative;width:100%;height:100%;min-height:0;display:flex}
+.mv-vsplit{position:relative;width:100%;height:100%;min-height:0;display:flex}
+.mv-vstage{position:relative;flex:1;min-width:0;min-height:0;height:100%;display:flex}
+/* 视频右侧「文字」面板：和音频歌词页共用 .mv-lyrics 的外观，
+   只是默认收起（flex-basis 0 + opacity 0），点控制栏的「文字」才滑出来。
+   用 flex-basis 过渡而不是 transform，是为了让视频真的**让出宽度**给文字，
+   而不是把文字盖在画面上。 */
+.mv-lyrics.mv-vtext{flex:0 0 0;width:0;padding:0;overflow:hidden;
+  border-left:1px solid transparent;opacity:0;animation:none;
+  transition:flex-basis .3s cubic-bezier(.22,1,.36,1),padding .3s,
+             opacity .22s,border-color .3s}
+.mv-vsplit.text .mv-lyrics.mv-vtext{flex:0 0 384px;padding:28px 26px 40px;
+  border-left-color:var(--mv-head-bd);opacity:1;overflow-y:auto}
+/* 面板窄的时候改成上下排：视频在上，文字在下（和音频分栏同一套办法） */
+.mv-vsplit.narrow{flex-direction:column}
+.mv-vsplit.narrow .mv-lyrics.mv-vtext{border-left:0;border-top:1px solid transparent}
+.mv-vsplit.narrow.text .mv-lyrics.mv-vtext{flex:0 0 290px;width:auto;padding:18px 20px 26px;
+  border-top-color:var(--mv-head-bd)}
+/* 这一栏只有 384px 宽，「转写文字」标题和右侧那排工具（原始/优化 · 重新优化 ·
+   重新转写）挤在同一行会叠在一起。改成上下两行：标题居中在上，工具居中在下。
+   音频分栏在窄屏下同理。 */
+.mv-lyrics.mv-vtext .lh,
+.mv-av-split.narrow .mv-lyrics .lh{flex-direction:column;gap:10px}
+.mv-lyrics.mv-vtext .ltools,
+.mv-av-split.narrow .mv-lyrics .ltools{position:static;justify-content:center;flex-wrap:wrap}
 .mv-substage{position:absolute;left:0;right:0;bottom:0;z-index:3;
   display:flex;flex-direction:column;align-items:center;padding:0 26px 20px;
   pointer-events:none;transition:opacity .2s}
@@ -915,6 +942,10 @@ body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
 .mv-cc:hover{background:var(--mv-hover);color:var(--mv-text)}
 .mv-cc.on{background:rgba(61,126,255,.22);color:#3d7eff}
 .mv-cc.busy{opacity:.62;cursor:default;pointer-events:none}
+/* 「智能优化」是主动作，给它品牌紫，和「字幕 / 重新转写」区分开 */
+.mv-cc.lopt{color:#a78bfa}
+.mv-cc.lopt:hover{background:rgba(167,139,250,.16);color:#c4b5fd}
+.mv-cc.lopt.on{background:rgba(167,139,250,.2);color:#c4b5fd}
 /* 音频：左「歌词」右「唱片」的分栏（双击音频时唱片快速右移，左边让出来给转写文字） */
 .mv-av-split{display:flex;width:100%;height:100%;min-height:0}
 .mv-lyrics{flex:1;min-width:0;overflow-y:auto;padding:30px 30px 46px;
@@ -930,8 +961,38 @@ body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
 .mv-lyrics::-webkit-scrollbar-thumb{background:var(--mv-bd);border-radius:4px}
 .mv-lyrics::-webkit-scrollbar-thumb:hover{background:var(--mv-muted)}
 .mv-lyrics .lrwrap{margin:auto 0;width:100%}
-.mv-lyrics .lh{font-size:0.6875rem;letter-spacing:3px;color:var(--mv-text2);
+/* 转写文字的表头：标题居中，右上角一组工具（原始/优化 切换 · 智能优化 · 重新转写） */
+.mv-lyrics .lh{position:relative;display:flex;align-items:center;justify-content:center;
+  min-height:26px;font-size:0.6875rem;letter-spacing:3px;color:var(--mv-text2);
   text-align:center;margin:2px 0 14px;text-transform:uppercase}
+/* 工具组绝对定位在右侧，不参与标题居中 —— 否则按钮一多标题就被挤偏 */
+.mv-lyrics .ltools{position:absolute;right:0;top:0;display:flex;align-items:center;gap:6px;
+  text-transform:none;letter-spacing:0}
+.mv-lyrics .lre{display:inline-flex;align-items:center;gap:5px;
+  height:26px;padding:0 10px;border-radius:8px;border:1px solid var(--mv-bd);
+  background:transparent;color:var(--mv-text2);cursor:pointer;font-family:inherit;
+  font-size:0.6875rem;font-weight:600;letter-spacing:0;text-transform:none;
+  transition:.15s;white-space:nowrap}
+.mv-lyrics .lre:hover{color:var(--mv-text);border-color:var(--mv-muted);background:var(--mv-hover)}
+.mv-lyrics .lre[disabled]{opacity:.55;cursor:default}
+/* 「智能优化」是主动作，给一点品牌色，和「重新转写」区分开 */
+.mv-lyrics .lre.lopt{color:#a78bfa;border-color:rgba(167,139,250,.45)}
+.mv-lyrics .lre.lopt:hover{color:#c4b5fd;border-color:#a78bfa;background:rgba(167,139,250,.12)}
+/* 原始 / 优化 二选一（只在存在优化版时才出现） */
+.mv-lyrics .lseg{display:inline-flex;align-items:center;gap:2px;height:26px;padding:2px;
+  border-radius:8px;background:var(--mv-hover);border:1px solid var(--mv-bd)}
+.mv-lyrics .lseg button{height:20px;padding:0 9px;border:0;border-radius:6px;cursor:pointer;
+  background:transparent;color:var(--mv-text2);font-family:inherit;font-size:0.6875rem;
+  font-weight:600;transition:.15s}
+.mv-lyrics .lseg button.on{background:var(--mv-bg,var(--bg-card));color:var(--mv-text);
+  box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.mv-lyrics .lseg button[disabled]{opacity:.4;cursor:default}
+/* 优化版下方的一行说明：谁优化的、可一键还原 */
+.mv-lyrics .lnote{display:flex;align-items:center;justify-content:center;gap:8px;
+  margin:10px 0 4px;font-size:0.6875rem;color:var(--mv-text2);opacity:.75}
+.mv-lyrics .lnote button{border:0;background:transparent;color:#a78bfa;cursor:pointer;
+  font-family:inherit;font-size:0.6875rem;font-weight:600;padding:2px 4px;border-radius:6px}
+.mv-lyrics .lnote button:hover{background:rgba(167,139,250,.12)}
 .mv-lyrics .lr{font-size:1.0625rem;line-height:2.05;color:var(--mv-text);opacity:.72;
   text-align:center;padding:2px 6px;border-radius:8px;
   transition:color .22s ease,opacity .22s ease,transform .22s ease;
@@ -1793,7 +1854,34 @@ function renderStaticIcons(root){
 }
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* encodeURIComponent 不编码 ' ( ) ! * ~ —— 其中撇号最要命：
+   文件名含 ' 时（如 "014.Dido - Don't Leave Home.flac"），p 里会保留裸撇号，
+   塞进 onclick="selectByPath(this, '${p}')" 就把单引号字符串提前截断，
+   handler 直接语法错误 → 整张卡片点不动、选不中。
+   统一补编码成 %27：JS 字符串里是普通文本、URL 里是合法转义，
+   两种上下文都安全，消费端 decodeURIComponent 也能原样还原。 */
+const encPath = s => encodeURIComponent(String(s)).replace(/'/g, '%27');
+/* 内联事件属性里的 JS 字符串转义。
+   ★ 撇号必须写成 JS 的 \' —— **不能**用 HTML 实体 &#39;：
+     浏览器先把属性里的实体解码回 '，再交给 JS 编译，等于没转义。
+     于是 openPreview('…','Dido - Don&#39;t Leave Home.flac',…) 编译时变成
+     'Dido - Don't Leave Home.flac' → 语法错误 → 表现就是「能单击选中，
+     但双击打不开、右键菜单也失灵」。
+   esc() 负责属性本身的安全（& " < >），这里再补 JS 层的 \ 与 ' 转义。 */
+const jsq = sq => esc(sq).replace(/\\/g, '\\\\').replace(/[\r\n]/g, ' ').replace(/'/g, "\\'");
 const KINDNAME = k => ({image:'图片',video:'视频',document:'文档',audio:'音频'}[k] || k);
+/* 音乐文件的「歌手 · 专辑」一行。
+   ★ 只在文件**确实带元数据**时才有内容 —— 非音乐、或没标签的音频一律返回空串，
+   这样卡片上不会出现空占位，也不会把「音频」这个类别名挤掉。 */
+function musicLine(m){
+  const t = (m && m.tags) || null;
+  if(!t) return '';
+  const parts = [];
+  if(t.artist) parts.push(t.artist);
+  else if(t.album_artist) parts.push(t.album_artist);
+  if(t.album) parts.push(t.album);
+  return parts.join(' · ');
+}
 const KINDICON = k => icon({image:'image',video:'video',document:'document',
                               audio:'audio'}[k] || 'layers', 13);
 
@@ -1894,18 +1982,23 @@ async function pollProgress(){
 }
 
 /* ---------- 刷新索引（扫描新增文件） ---------- */
+/* ★ 跟随当前分类：选中「图片」时只扫图片，免得为了几张新图把整个库重扫一遍
+   （视频抽帧 + 音频转写很贵）。只有选中「全部」才是全局扫描。 */
 async function doRefresh(){
   if(!STATE.sources.length){ toast('请先添加素材目录'); openIndex(); return; }
   playBtnAnim('btnRefresh','anim-refresh');
   const btn = $('#btnRefresh');
   btn.classList.add('on');
+  const kinds = STATE.kind ? [STATE.kind] : null;
+  const texts = refreshScopeTexts();
   try{
     const d = await (await fetch('/v1/refresh',{method:'POST',
-      headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kinds: kinds})})).json();
     if(d.error){ toast(d.error); btn.classList.remove('on'); return; }
     showProgress();
-    $('#pcTitle').textContent = '正在刷新索引…';
-    $('#pcMsg').textContent = '扫描新增与变更的文件';
+    $('#pcTitle').textContent = texts.title;
+    $('#pcMsg').textContent = texts.msg;
     pollProgress();
   }catch(e){
     toast('刷新失败：' + e.message);
@@ -2029,7 +2122,7 @@ function renderSources(){
       const un = (s.files || 0) === 0;
       // 未索引徽标本身可点：这是「去索引」的**主动**入口。
       // （以前是把「点这一行」变成强制弹窗，等于不索引就不让看，太逼人）
-      const sp = esc(s.path).replace(/'/g,"&#39;");
+      const sp = jsq(s.path);
       // 平时显示「未索引」这个**状态**，鼠标移上去才变成「去索引」这个**动作** ——
       // 侧栏一行才 201px，两个词一起塞会挤爆。
       const badge = un
@@ -2047,11 +2140,11 @@ function renderSources(){
           title="${esc(s.path)}${un? '（还没有建立索引）':''} · 拖动可调整顺序"
           ondragstart="srcDragStart(event)" ondragover="srcDragOver(event)"
           ondragend="srcDragEnd()" ondrop="srcDrop(event)"
-          onclick="selectSource('${esc(s.path).replace(/'/g,"&#39;")}')"
-          oncontextmenu="sourceContextMenu(event, '${esc(s.path)}')">
+          onclick="selectSource('${jsq(s.path)}')"
+          oncontextmenu="sourceContextMenu(event, '${jsq(s.path)}')">
         <span class="grip"><i class="icn" data-icon="folder" data-size="13"></i></span><span class="nm" data-no-i18n><i>${nm}</i></span>
         ${badge}
-        <span class="rm" onclick="event.stopPropagation();removeSource('${esc(s.path)}')">×</span>
+        <span class="rm" onclick="event.stopPropagation();removeSource('${jsq(s.path)}')">×</span>
       </div>`;
     }).join('');
   }
@@ -2076,7 +2169,7 @@ function renderUnidxBar(count){
   if(VIEWING_TRASH || SEARCHING){ host.innerHTML = ''; return; }   // 只在浏览视图出现
   const all = unidxSources();
   if(!all.length){ host.innerHTML = ''; return; }
-  const sp = p => esc(p).replace(/'/g,"&#39;");
+  const sp = p => jsq(p);
   let who = null;
   if(STATE.source){
     who = all.find(s => s.path === STATE.source) || null;
@@ -2589,7 +2682,7 @@ function renderHistory(){
     h += '<div class="hempty">还没有搜索记录</div>';
   }else{
     h += HIST.map(x =>
-      `<div class="hitem" onmousedown="event.preventDefault()" onclick="histPick('${esc(x.t).replace(/'/g,"&#39;")}')" title="${esc(x.t)}">
+      `<div class="hitem" onmousedown="event.preventDefault()" onclick="histPick('${jsq(x.t)}')" title="${esc(x.t)}">
          <span class="ic"><i class="icn" data-icon="${iconOf(x.k)}" data-size="14"></i></span>
          <span class="tx" data-no-i18n>${esc(x.t)}</span>
        </div>`).join('');
@@ -2706,8 +2799,35 @@ function setKind(k){
     const c = $('#chip-document'); if(c) c.classList.remove('fmt');
   }
   renderNav();
+  syncRefreshHint();
   document.querySelectorAll('.card,.lrow').forEach(el => { try{ hoverStop(el); }catch(e){} });
   $('#q').value.trim() ? doSearch() : loadBrowse();
+}
+
+/* 刷新范围的文案（中英双语）：跟着当前分类走 */
+const REFRESH_CN = {image:'图片', video:'视频', audio:'音频', document:'文档'};
+const REFRESH_EN = {image:'images', video:'videos', audio:'audio', document:'documents'};
+function refreshScopeTexts(){
+  const T = (window.I18N && I18N.T) ? I18N.T : ((zh, en) => zh);
+  const k = STATE.kind, cn = REFRESH_CN[k], en = REFRESH_EN[k];
+  if(!cn) return {
+    title: T('正在刷新索引…', 'Refreshing index…'),
+    msg:   T('扫描全部类别的新增与变更文件', 'Scanning all categories for new or changed files'),
+    hint:  T('刷新索引（扫描全部类别的新增与变更文件）', 'Refresh index (all categories)')
+  };
+  return {
+    title: T('正在刷新' + cn + '索引…', 'Refreshing ' + en + ' index…'),
+    msg:   T('只扫描新增与变更的' + cn + '文件（当前分类：' + cn + '）',
+             'Scanning only new or changed ' + en + ' files (category: ' + en + ')'),
+    hint:  T('刷新索引（只扫描' + cn + '分类的新增与变更文件）',
+             'Refresh index (' + en + ' only)')
+  };
+}
+
+/* 「刷新」按钮的悬浮提示要跟着分类走，否则用户不知道它只扫当前类别 */
+function syncRefreshHint(){
+  const b = $('#btnRefresh'); if(!b) return;
+  b.title = refreshScopeTexts().hint;
 }
 
 /* ---------- 文档格式细分菜单 ----------
@@ -2919,7 +3039,7 @@ function renderGuide(){
 
 /* 生成缩略图 URL：视频可指定匹配帧时间点做封面 */
 function thumbUrl(x){
-  const p = encodeURIComponent(x.path);
+  const p = encPath(x.path);
   // 以图搜图的命中视频：封面显示「库内最匹配的那一帧」（/v1/thumb?t=命中帧秒数），
   // 悬停预览也从那一帧开始播 —— 用户预期是「封面=相似画面」，不是被输入图顶掉。
   // （曾一度把封面换成用户上传的那张图，实测让人分不清结果是图是视频，已回退。）
@@ -2993,18 +3113,18 @@ function docThumbHTML(path, size){
 }
 
 function mediaHTML(x, small){
-  const p = encodeURIComponent(x.path);
+  const p = encPath(x.path);
   const isVideo = x.kind === 'video';
   if(x.kind === 'document') return docThumbHTML(x.path, small ? 'sm' : '');
   if(x.kind === 'audio'){
     // 缩略图直接可听：隐藏 <audio> + 中央播放键 + 底部可拖拽进度条
     // 播放时再叠一层实时声纹（.audviz，WebAudio 频谱驱动，见 vizLoop）
-    return `<img src="${thumbUrl(x)}" loading="lazy" data-kind="image"
+    return `<img data-thumb="${thumbUrl(x)}" data-kind="image"
       onerror="imgFallback(this)">
       <canvas class="audviz" width="360" height="220"></canvas>
       <audio class="hovaud" data-src="/v1/file?path=${p}" preload="none"></audio>`;
   }
-  const img = `<img src="${thumbUrl(x)}" loading="lazy" data-kind="image"
+  const img = `<img data-thumb="${thumbUrl(x)}" data-kind="image"
       onerror="imgFallback(this)">`;
   if(isVideo){
     // 悬停时替换为静音预览视频；若已知匹配帧，从该时间点开始
@@ -3136,12 +3256,59 @@ function progFoot(){
 }
 
 /* 新插入的卡片只做它自己那份收尾工作 */
+/* ---------- 缩略图分批加载 ----------
+   ★ 不能只靠浏览器原生的 loading="lazy"：它按自己的启发式来，瀑布一屏几十张卡时
+   会**同时**发几十个 /v1/thumb。服务端 ThreadingHTTPServer 的 accept 队列默认只有
+   5，超出的连接被内核直接 reset（实测 34 并发里 25 个 Connection reset by peer），
+   表现就是「搜完半天不出缩略图」。这里自己排队：只给快进入视口的图设 src，
+   并且同时最多 THUMB_MAX 个在飞。 */
+const THUMB_MAX = 5;
+const THUMB_Q = [];
+let THUMB_FLY = 0;
+const THUMB_IO = window.IntersectionObserver ? new IntersectionObserver(function(es){
+  for(let i=0;i<es.length;i++){
+    if(!es[i].isIntersecting) continue;
+    const im = es[i].target;
+    THUMB_IO.unobserve(im);
+    THUMB_Q.push(im);
+    thumbPump();
+  }
+}, {rootMargin:'700px 0px'}) : null;
+
+function thumbPump(){
+  while(THUMB_FLY < THUMB_MAX && THUMB_Q.length){
+    const im = THUMB_Q.shift();
+    const src = im.getAttribute('data-thumb');
+    if(!src || im.getAttribute('src')) continue;
+    THUMB_FLY++;
+    const done = function(){
+      im.removeEventListener('load', done);
+      im.removeEventListener('error', done);
+      THUMB_FLY--;
+      thumbPump();
+    };
+    im.addEventListener('load', done);
+    im.addEventListener('error', done);
+    im.setAttribute('src', src);
+  }
+}
+
+/* 给一批新插入的卡片登记缩略图懒加载 */
+function watchThumbs(root){
+  const imgs = (root || document).querySelectorAll('img[data-thumb]:not([src])');
+  for(let i=0;i<imgs.length;i++){
+    if(THUMB_IO) THUMB_IO.observe(imgs[i]);
+    else { THUMB_Q.push(imgs[i]); thumbPump(); }
+  }
+}
+
 function bindNewCards(nodes){
   for(let n=0;n<nodes.length;n++){
     const c = nodes[n];
     if(c.querySelector('.volbtn')) vidSyncMute(c);
     c.querySelectorAll('.audbar').forEach(bindAudBar);
     renderStaticIcons(c);
+    watchThumbs(c);
     if(window.I18N && I18N.isEn && I18N.isEn() && I18N.refresh) I18N.refresh(c);
   }
 }
@@ -3176,10 +3343,11 @@ function renderMasonry(){
   // 每列当前「估算高度」：用 mediawrap 的 h 作权重，保证各列底部尽量齐。
   const colH = new Array(colCount).fill(0);
   const cards = STATE.results.map(x=>{
-    const p = encodeURIComponent(x.path);
-    const nm = esc(x.name).replace(/'/g,"&#39;");
+    const p = encPath(x.path);
+    const nm = jsq(x.name);
     const m = x.meta||{};
     const corner = cornerText(x);
+    const mus = musicLine(m);          // 有元数据的音乐文件才有内容
     const ar = aspect(x);
     // 温和的按比例高度（140~240px），横图矮竖图高，同列对齐不夸张
     const h = Math.round(Math.min(240, Math.max(140, 210 / ar)));
@@ -3188,7 +3356,7 @@ function renderMasonry(){
     return { h, html: `<div class="card${x.kind==='audio' ? ' audio' : ''}${x.linked ? ' islinked' : ''}" data-path="${esc(x.path)}"
         onclick="selectByPath(this, '${p}')"
         ondblclick="openPreview('${p}','${nm}','${x.kind}',${x.matched_timestamp != null ? x.matched_timestamp : 'null'})"
-        oncontextmenu="fileContextMenu(event, '${esc(x.path)}', '${nm}', '${x.kind}')"
+        oncontextmenu="fileContextMenu(event, '${jsq(x.path)}', '${nm}', '${x.kind}')"
         ${x.kind==='video' ? `onmouseenter="hoverPlay(this)" onmouseleave="hoverStop(this)"` : ''}
         ${x.kind==='audio' ? `onmouseenter="audHoverIn(this)" onmouseleave="audHoverOut(this)"` : ''}>
       <div class="mediawrap" style="height:${h}px">
@@ -3205,7 +3373,7 @@ function renderMasonry(){
         <div class="nm" title="${esc(x.path)}">${esc(x.name)}</div>
         <div class="row">
           <span class="sub">${missing ? '<span style="color:#dc2626">文件已移动</span>' : esc(m.size_text||'')}</span>
-          <span class="sub">${KINDNAME(x.kind)}</span>
+          <span class="sub"${mus ? ` title="${esc(mus)}"` : ''}>${mus ? esc(mus) : KINDNAME(x.kind)}</span>
         </div>
       </div></div>` };
   });
@@ -3234,18 +3402,19 @@ function masonryCols(){
 
 function renderList(){
   const rows = STATE.results.map(x=>{
-    const p = encodeURIComponent(x.path);
-    const nm = esc(x.name).replace(/'/g,"&#39;");
+    const p = encPath(x.path);
+    const nm = jsq(x.name);
     const m = x.meta||{};
     const corner = cornerText(x);
+    const mus = musicLine(m);
     const inner = x.kind==='document'
       ? docThumbHTML(x.path, 'sm')
       : (x.kind==='audio'
-         ? `<img src="${thumbUrl(x)}" loading="lazy" data-kind="image" onerror="imgFallback(this)">
+         ? `<img data-thumb="${thumbUrl(x)}" data-kind="image" onerror="imgFallback(this)">
             <audio class="hovaud" data-src="/v1/file?path=${p}" preload="none"></audio>
             <div class="playbadge audplay" onclick="audToggle(event,this)"><i class="icn" data-icon="play" data-size="15"></i></div>
             <div class="audbar"><i></i><span class="auddot"></span></div><span class="audtime"></span>`
-         : `<img src="${thumbUrl(x)}" loading="lazy" data-kind="image"
+         : `<img data-thumb="${thumbUrl(x)}" data-kind="image"
            onerror="imgFallback(this)">
          ${x.kind==='video'?`<button class="volbtn sm" title="当前静音，点击开启声音" onclick="vidToggleMute(event,this)"></button>
            <video class="hovervid" data-src="/v1/file?path=${p}"${(x.matched_timestamp!=null?` data-start="${x.matched_timestamp}"`:'')} muted loop playsinline
@@ -3264,7 +3433,7 @@ function renderList(){
           <div class="nm">${esc(x.name)}</div>
           ${corner?`<span class="cchip">${esc(corner)}</span>`:''}
         </div>
-        <div class="pth">${esc(m.size_text||'')}${m.dim_text&&x.kind!=='document'?' · '+esc(m.dim_text):''}${x.exists===false?' · <span style="color:#dc2626">文件已移动</span>':''}</div>
+        <div class="pth">${esc(m.size_text||'')}${m.dim_text&&x.kind!=='document'?' · '+esc(m.dim_text):''}${mus?' · '+esc(mus):''}${x.exists===false?' · <span style="color:#dc2626">文件已移动</span>':''}</div>
       </div>
       <span class="badge">${KINDNAME(x.kind)}</span>
     </div>`;
@@ -3358,8 +3527,7 @@ function hoverPlay(el){
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
     });
-    // 点击卡片时不要因为拖进度条而触发选中
-    bar.addEventListener('click', (ev)=>{ ev.stopPropagation(); });
+    // 同上：进度条不吞 click，让卡片照常选中（seek 已在 mousedown 完成）
   }
 
   const startPlay = ()=>{
@@ -3461,7 +3629,8 @@ function volIcon(muted, size){
 
 /* 切换视频缩略图的静音状态（默认静音；选择记在卡片上，悬停播放时沿用） */
 function vidToggleMute(ev, btn){
-  if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+  // 同 audToggle：不吞 click，静音的同时卡片照常选中
+  if(ev){ ev.preventDefault(); }
   const card = btn.closest('.card') || btn.closest('.lrow');
   if(!card) return;
   card._muted = !(card._muted !== false);      // undefined → 视为静音，首次点击变为有声
@@ -3639,9 +3808,11 @@ function audResetCard(card){
   }
 }
 
-/* 点击中央播放键：播放/暂停（不冒泡，避免触发选中/预览） */
+/* 点击中央播放键：播放/暂停。
+   ★ 不再 stopPropagation：这个播放键盖在卡片正中央，吞掉 click 会让「缩略图中间
+   点不中也选不中」。播放/暂停与选中互不冲突，让 click 照常冒泡给卡片即可。 */
 function audToggle(ev, btn){
-  if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+  if(ev){ ev.preventDefault(); }
   const card = audCardOf(btn);
   let a = audEl(card);
   if(!a) return;
@@ -3698,8 +3869,11 @@ function bindAudBar(bar){
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
   });
-  // 避免点击进度条时触发卡片选中
-  bar.addEventListener('click', (ev)=>{ ev.stopPropagation(); });
+  /* ★ 这里**不能**再 stopPropagation。
+     进度条是 left:0;right:0 的整条底边（30px，悬停时 34px），而且不播放时只是
+     opacity:0 —— 照样吃点击。吞掉 click 之后，用户在缩略图下半部分点下去既不选中、
+     也没有任何反馈，就是「这个位置的素材选不中」。
+     seek 已经在 mousedown 里做完了，click 冒泡上去只是让卡片正常完成选中。 */
 }
 
 /* ---------- 右侧详情栏 ---------- */
@@ -3732,7 +3906,7 @@ function selectCard(el, x){
 async function loadDetail(x){
   const box = $('#detail');
   box.classList.remove('is-empty');
-  const p = encodeURIComponent(x.path);
+  const p = encPath(x.path);
   // 整块重建之后手动补一次翻译：观察器只看 addedNodes，而这里的
   // innerHTML 替换在 LANG 还是 zh 时也可能发生（设置还没拉回来），
   // 光等观察器会漏掉一批节点。
@@ -3757,7 +3931,7 @@ async function loadDetail(x){
 }
 
 function detailPreview(x){
-  const p = encodeURIComponent(x.path);
+  const p = encPath(x.path);
   const kind = x.kind;
   if(kind === 'document') return docThumbHTML(x.path, 'lg');
   if(kind === 'audio') return `<div class="ph"><i class="icn" data-icon="audio" data-size="30"></i></div>`;
@@ -3850,7 +4024,7 @@ function renderDetail(d){
   const isAudio = d.kind === 'audio';
   const isImage = d.kind === 'image';
   const isDoc = d.kind === 'document';
-  const p = encodeURIComponent(d.path);
+  const p = encPath(d.path);
 
   // 关键指标格子
   let cells = '';
@@ -3861,6 +4035,16 @@ function renderDetail(d){
       <div class="dcell"><div class="k">时长</div><div class="v">${dur}</div></div>
       <div class="dcell"><div class="k">${isVideo?'分辨率':'采样率'}</div><div class="v">${
         isVideo ? dim : (m.sample_rate ? (m.sample_rate/1000).toFixed(1)+' kHz' : '—')}</div></div>`;
+    /* 音乐文件带元数据时补上唱片信息 —— 没标签就一个格子都不加（不显示空占位） */
+    const tg = m.tags || null;
+    if(tg){
+      const cell = (k, v) => v ? `<div class="dcell"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>` : '';
+      cells += cell('歌手', tg.artist || tg.album_artist)
+             + cell('专辑', tg.album)
+             + cell('流派', tg.genre)
+             + cell('年份', tg.year)
+             + cell('作曲', tg.composer);
+    }
   } else if(isImage){
     cells = `
       <div class="dcell"><div class="k">尺寸</div><div class="v">${m.dim_text||'—'}</div></div>
@@ -3906,9 +4090,18 @@ function renderDetail(d){
   let asrSection = '';
   if(isAudio || isVideo){
     if(m.asr_text){
+      /* 详情栏只负责「看」。比对原文、智能优化、还原这些动作全部搬到播放面板的
+         折叠文字面板里（和音频歌词页同一个组件），详情栏不再摆一排按钮。 */
+      const hasClean = !!(m.asr_clean || '').trim();
+      const _k = m.asr_clean_kind || '';
+      const kName = _k === 'song' ? '按歌词校对'
+                  : _k === 'dialogue' ? '按对话整理'
+                  : _k === 'monologue' ? '按独白校对' : '';
       asrSection = `<div class="dsec">
-        <div class="st">转写内容</div>
-        <div class="dtext">${esc(m.asr_text)}</div>
+        <div class="st">转写内容${hasClean ? '<span class="stsub">智能优化版</span>' : ''}</div>
+        <div class="dtext">${esc(hasClean ? m.asr_clean : m.asr_text)}</div>
+        ${hasClean ? `<div class="hintline" style="margin-top:9px">智能服务把这段文字读顺了${kName ? '（' + kName + '）' : ''}，原文完整保留。
+          想逐字对照原文、重新优化或还原，打开播放面板右下角的「文字」。</div>` : ''}
       </div>`;
     } else if(m.asr_skip === 'too_long'){
       asrSection = `<div class="dsec">
@@ -3982,7 +4175,7 @@ function renderDetail(d){
     <div class="dname" title="${esc(d.name)}">${esc(d.name)}</div>
     <div class="dpath" title="${esc(d.path||'')}">${esc(d.dir||'')}</div>
     <div class="dacts">
-      <button class="btn primary" onclick="openPreview('${p}','${esc(d.name).replace(/'/g,"&#39;")}','${d.kind}')">预览</button>
+      <button class="btn primary" onclick="openPreview('${p}','${jsq(d.name)}','${d.kind}')">预览</button>
       <button class="btn" onclick="revealInFinder('${p}')">路径源</button>
     </div>
     ${cells ? `<div class="dsec">${'' }<div class="dgrid">${cells}</div></div>` : ''}
@@ -4062,7 +4255,7 @@ function mvSibling(enc, kind, step){
   let i = list.findIndex(x => x.path === cur);
   if(i < 0) return null;
   const x = list[(i + step + list.length) % list.length];
-  return { enc: encodeURIComponent(x.path), name: x.name,
+  return { enc: encPath(x.path), name: x.name,
            st: x.matched_timestamp != null ? x.matched_timestamp : null };
 }
 function mvGoto(enc, kind, step){
@@ -4240,9 +4433,13 @@ function mvPaintSeek(box, ratio, bufRatio){
 function mvVideo(box, url, name, st){
   const body = box.querySelector('#mvBody');
   const foot = box.querySelector('#mvFoot');
-  body.innerHTML = `<div class="mv-vwrap" id="mvVWrap">` +
-    `<video class="mv-video" id="mvVideo" src="${url}" playsinline preload="metadata"></video>` +
-    `<div class="mv-substage" id="mvSubStage"></div></div>`;
+  body.innerHTML = `<div class="mv-vsplit" id="mvVSplit">` +
+    `<div class="mv-vstage">` +
+      `<video class="mv-video" id="mvVideo" src="${url}" playsinline preload="metadata"></video>` +
+      `<div class="mv-substage" id="mvSubStage"></div>` +
+    `</div>` +
+    /* 可折叠的文字面板：和音频歌词页是同一个组件（#mvLyrics），默认收起 */
+    `<div class="mv-lyrics mv-vtext" id="mvLyrics"></div></div>`;
   foot.style.display = 'flex';
   foot.innerHTML = `
     <span class="mv-play" id="mvPlay" title="${I18N.T('播放 / 暂停','Play / pause')}">${icon('play',20)}</span>
@@ -4258,10 +4455,13 @@ function mvVideo(box, url, name, st){
       <input type="range" id="mvVol" min="0" max="100" value="100" title="${I18N.T('音量','Volume')}">
     </div>
     <span class="mv-speed" id="mvSpeed" title="${I18N.T('播放速度','Playback speed')}">1x</span>
+    <span class="mv-cc" id="mvText"></span>
     <span class="mv-cc" id="mvCC"></span>`;
   const full = mvStdActs(box, box.dataset.enc, { fullscreen: true, nav: 'video' });
   const v = box.querySelector('#mvVideo');
   mvSubInit(box, v);
+  mvVTextInit(box, v);
+  mvLyricsLoad(box, v);        // 右侧文字面板，和音频歌词页同一套渲染
 
   function paintPlay(){
     const on = !v.paused && !v.ended;
@@ -4374,16 +4574,31 @@ function mvLyricsSplit(txt, maxLen){
   return lines;
 }
 
+/* 歌词页显示「原始」还是「优化」—— 全局记一个偏好，跨文件沿用。
+   默认：有优化版就看优化版（那是用户特意跑出来的），没有就只能看原文。 */
+const MV_LMODE_KEY = 'fxseek.lyricMode';
+function mvLyricsModeGet(){
+  try{ const v = localStorage.getItem(MV_LMODE_KEY); return v === 'orig' ? 'orig' : 'clean'; }
+  catch(e){ return 'clean'; }
+}
+function mvLyricsModeSet(m){
+  try{ localStorage.setItem(MV_LMODE_KEY, m); }catch(e){}
+}
+
 function mvLyricsLoad(box, a){
   const el = box.querySelector('#mvLyrics');
   if(!el) return;
   const enc = box.dataset.enc || '';
   let lines = [], rows = [], active = -1, lastUserScroll = 0;
+  /* 两份文字：srcOrig = ASR 原文（永不改动），srcClean = LLM 优化版。
+     当前显示哪份由 mode 决定，切换只影响渲染，不动数据库。 */
+  let srcOrig = '', srcClean = '', kindName = '';
+  let mode = mvLyricsModeGet();
 
-  const render = (txt, meta) => {
-    lines = mvLyricsSplit(txt);
+  const render = () => {
     el.innerHTML = '';
-    if(!lines.length){
+    if(!srcOrig){
+      lines = []; rows = []; active = -1;
       const btn = `<button class="lbtn" id="mvAsrBtn">${I18N.T('立即转写这段音频','Transcribe this audio')}</button>`;
       el.innerHTML = `<div class="lempty"><b>${I18N.T('还没有转写文字','No transcript yet')}</b>` +
         I18N.T('转写之后这里会像歌词一样显示内容，可以边听边上下滑动。',
@@ -4393,12 +4608,62 @@ function mvLyricsLoad(box, a){
       if(b) b.onclick = () => mvLyricsTranscribe(box, a, b);
       return;
     }
+    const showClean = mode === 'clean' && !!srcClean;
+    lines = mvLyricsSplit(showClean ? srcClean : srcOrig);
+
     const wrap = document.createElement('div');
     wrap.className = 'lrwrap';
     const head = document.createElement('div');
     head.className = 'lh';
-    head.textContent = I18N.T('转写文字', 'Transcript');
+    const ht = document.createElement('span');
+    ht.textContent = I18N.T('转写文字', 'Transcript');
+    head.appendChild(ht);
+
+    const tools = document.createElement('div');
+    tools.className = 'ltools';
+
+    /* 原始 / 优化 二选一 —— 只有确实存在优化版时才露出来。
+       切到「优化」是纯查看，不动数据；要真删得点正文下方那行「还原」。 */
+    if(srcClean){
+      const seg = document.createElement('div');
+      seg.className = 'lseg';
+      [['orig', I18N.T('原始', 'Original')], ['clean', I18N.T('优化', 'Polished')]]
+        .forEach(([m, label]) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          if(mode === m) b.className = 'on';
+          b.title = m === 'orig'
+            ? I18N.T('显示语音识别的原始文字，一个字都没改过', 'Show the raw ASR text, untouched')
+            : I18N.T('显示智能优化后的文字', 'Show the AI-polished text');
+          b.onclick = () => { mvLyricsModeSet(m); mode = m; render(); };
+          seg.appendChild(b);
+        });
+      tools.appendChild(seg);
+    }
+
+    /* 智能优化：没有优化版就是「智能优化」，有了就是「重新优化」（再跑一遍）。 */
+    const ob = document.createElement('button');
+    ob.className = 'lre lopt';
+    ob.type = 'button';
+    ob.textContent = srcClean ? I18N.T('重新优化', 'Re-polish') : I18N.T('智能优化', 'AI polish');
+    ob.title = I18N.T('用智能服务把转写文字读顺（修正错别字、对话区分说话人），原文会完整保留，可随时切回或还原',
+                      'Use the AI service to clean up the transcript (fix typos, label speakers). The original is always kept.');
+    ob.onclick = () => mvLyricsPolish(box, ob);
+    tools.appendChild(ob);
+
+    const rb = document.createElement('button');
+    rb.className = 'lre';
+    rb.type = 'button';
+    rb.textContent = I18N.T('重新转写', 'Re-transcribe');
+    rb.title = I18N.T('重新跑一次语音识别，用新结果覆盖当前文字',
+                      'Run speech recognition again and overwrite the current text');
+    rb.onclick = () => mvLyricsTranscribe(box, a, rb, true);
+    tools.appendChild(rb);
+
+    head.appendChild(tools);
     wrap.appendChild(head);
+
     rows = lines.map(t => {
       const d = document.createElement('div');
       if(!t){ d.className = 'lgap'; }
@@ -4406,6 +4671,25 @@ function mvLyricsLoad(box, a){
       wrap.appendChild(d);
       return d;
     });
+
+    /* 看的是优化版时，底部挂一行说明 + 「还原」。放这里而不是塞进那排按钮，
+       是因为工具组已经被三个控件占满了，再加会挤。 */
+    if(showClean){
+      const note = document.createElement('div');
+      note.className = 'lnote';
+      const span = document.createElement('span');
+      span.textContent = I18N.T('以上是智能优化版（原文已保留）', 'AI-polished version (original kept)');
+      if(kindName) span.textContent += ' · ' + kindName;
+      note.appendChild(span);
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.textContent = I18N.T('还原', 'Revert');
+      back.title = I18N.T('删掉优化版，以后只看原始文字', 'Delete the polished version and keep only the original');
+      back.onclick = () => mvLyricsUnpolish(box, back);
+      note.appendChild(back);
+      wrap.appendChild(note);
+    }
+
     el.appendChild(wrap);
     active = -1;
     paintActive();
@@ -4438,10 +4722,67 @@ function mvLyricsLoad(box, a){
   mvOn(() => a.removeEventListener('timeupdate', onTime));
 
   fetch('/v1/detail?path=' + enc).then(r => r.json()).then(d => {
-    if(d && d.error){ render('', null); return; }
-    render((d && (d.asr_text || (d.meta && d.meta.asr_text))) || '', d);
-  }).catch(() => render('', null));
+    const m = (d && d.meta) || {};
+    srcOrig  = (d && (d.asr_text || m.asr_text)) || '';
+    srcClean = (d && (d.asr_clean || m.asr_clean)) || '';
+    const k = (d && (d.asr_clean_kind || m.asr_clean_kind)) || '';
+    kindName = (k === 'song') ? I18N.T('按歌词校对', 'checked as lyrics')
+             : (k === 'dialogue') ? I18N.T('按对话整理', 'arranged as dialogue')
+             : (k === 'monologue') ? I18N.T('按独白校对', 'checked as monologue') : '';
+    render();
+  }).catch(() => { srcOrig = ''; srcClean = ''; render(); });
 }
+
+/* 音频 / 视频共用的「智能优化」入口：发请求 → 成功后重画（拿到新的 asr_clean）。 */
+async function mvLyricsPolish(box, btn){
+  const enc = box.dataset.enc || '';
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = I18N.T('优化中…', 'Polishing…');
+  try{
+    const r = await fetch('/v1/asr/polish', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: decodeURIComponent(enc || '')})}).then(x => x.json());
+    if(!r.ok){
+      btn.disabled = false; btn.textContent = old;
+      toast(r.message || I18N.T('优化失败', 'Polish failed'));
+      return;
+    }
+    /* 优化完直接切到「优化」视图 —— 用户刚花了十几秒等它，显然是想看结果。 */
+    mvLyricsModeSet('clean');
+    const el = box.querySelector('#mvLyrics');
+    if(el) el.innerHTML = '';
+    mvLyricsLoad(box, mvAudioOf(box) || mvVideoOf(box));
+    if(box._mvSubReload) box._mvSubReload();   // 视频：字幕跟着一起换
+    toast(I18N.T('已优化 ', 'Polished ') + (r.chars || 0) + I18N.T(' 字，原文已保留', ' characters — original kept'));
+  }catch(e){
+    btn.disabled = false; btn.textContent = old;
+    toast(I18N.T('优化失败：', 'Polish failed: ') + e.message);
+  }
+}
+
+async function mvLyricsUnpolish(box, btn){
+  btn.disabled = true;
+  try{
+    await fetch('/v1/asr/unpolish', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: decodeURIComponent(box.dataset.enc || '')})}).then(x => x.json());
+    mvLyricsModeSet('orig');
+    const el = box.querySelector('#mvLyrics');
+    if(el) el.innerHTML = '';
+    mvLyricsLoad(box, mvAudioOf(box) || mvVideoOf(box));
+    if(box._mvSubReload) box._mvSubReload();   // 视频：字幕跟着一起换
+    toast(I18N.T('已还原为原始文字', 'Reverted to the original text'));
+  }catch(e){
+    btn.disabled = false;
+    toast(I18N.T('还原失败：', 'Revert failed: ') + e.message);
+  }
+}
+
+/* 从播放面板里找回当前媒体元素，供重画歌词页复用 */
+function mvAudioOf(box){ return box.querySelector('audio') || null; }
+function mvVideoOf(box){ return box.querySelector('video') || null; }
+
 
 /* 立即转写（音频 / 视频共用）：只负责发请求，按钮文案与刷新交给调用方 */
 async function mvAsrNow(enc){
@@ -4451,7 +4792,7 @@ async function mvAsrNow(enc){
   return await r.json();
 }
 
-async function mvLyricsTranscribe(box, a, btn){
+async function mvLyricsTranscribe(box, a, btn, redo){
   const old = btn.textContent;
   btn.disabled = true;
   btn.textContent = I18N.T('转写中…（几秒到几十秒）','Transcribing… (may take a while)');
@@ -4465,9 +4806,11 @@ async function mvLyricsTranscribe(box, a, btn){
     const el = box.querySelector('#mvLyrics');
     if(el){ el.innerHTML = ''; }
     mvLyricsLoad(box, a);
-    toast(r.chars ? I18N.T('已转写 ' + r.chars + ' 字，现在能按歌词搜到它了',
-                           'Transcribed ' + r.chars + ' characters — searchable now')
-                  : I18N.T('这段音频里没有识别到语音内容','No speech detected in this audio'));
+    if(box._mvSubReload) box._mvSubReload();   // 视频：字幕跟着一起刷新
+    const pre = redo ? I18N.T('已重新转写 ','Re-transcribed ') : I18N.T('已转写 ','Transcribed ');
+    toast(r.chars ? (pre + r.chars + I18N.T(' 字，旧文字已覆盖', ' characters — old text replaced'))
+                  : I18N.T('这段音频里没有识别到语音内容，旧文字已清除',
+                           'No speech detected — old text cleared'));
   }catch(e){
     btn.disabled = false; btn.textContent = old;
     toast(I18N.T('转写失败：','Transcription failed: ') + e.message);
@@ -4489,12 +4832,54 @@ function mvSubPref(){
 function mvSubSave(on){
   try{ localStorage.setItem(MV_SUB_KEY, on ? '1' : '0'); }catch(e){}
 }
+/* 视频的「文字」面板开关：和字幕开关分开记，两个偏好互不干扰。 */
+const MV_TEXT_KEY = 'fxseek.vtext';
+function mvTextPref(){
+  try{ return localStorage.getItem(MV_TEXT_KEY) === '1'; }
+  catch(e){ return false; }
+}
+function mvTextSave(on){
+  try{ localStorage.setItem(MV_TEXT_KEY, on ? '1' : '0'); }catch(e){}
+}
+
+/* ---------- 视频：可折叠的「文字」面板 ----------
+   和音频歌词页是**同一个组件**（#mvLyrics + mvLyricsLoad）：里面同样有
+   「原始 / 优化」对照、「智能优化」、「重新转写」，正文按播放进度高亮跟随。
+   区别只是默认收起 —— 点控制栏右下角的「文字」展开，右侧让出一栏，
+   收起时视频占满整屏。偏好记在 localStorage，下次打开还是上次的选择。 */
+function mvVTextInit(box, v){
+  const split = box.querySelector('#mvVSplit');
+  const btn = box.querySelector('#mvText');
+  const body = box.querySelector('#mvBody');
+  if(!split || !btn || !body) return;
+  let open = mvTextPref();
+
+  const fit = () => split.classList.toggle('narrow', body.clientWidth < 760);
+  fit();
+  const onResize = () => fit();
+  window.addEventListener('resize', onResize);
+  mvOn(() => window.removeEventListener('resize', onResize));
+
+  const paint = () => {
+    split.classList.toggle('text', open);
+    btn.classList.toggle('on', open);
+    btn.title = open
+      ? I18N.T('收起文字面板', 'Hide the transcript')
+      : I18N.T('展开文字面板，看全部转写文字并做智能优化',
+               'Show the full transcript panel — polish and re-transcribe live here');
+    btn.innerHTML = icon('document', 15) +
+      '<span>' + I18N.T('文字', 'Transcript') + '</span>';
+  };
+  paint();
+  btn.onclick = () => { open = !open; mvTextSave(open); paint(); };
+}
 
 function mvSubInit(box, v){
   const stage = box.querySelector('#mvSubStage');
   const cc = box.querySelector('#mvCC');
   if(!stage || !cc) return;
   let lines = [], idx = -1, on = mvSubPref(), busy = false;
+  let clean = '';              // asr_clean：有的话字幕用优化版（更通顺、对话还带说话人）
 
   const paintCC = () => {
     cc.classList.toggle('busy', busy);
@@ -4505,6 +4890,8 @@ function mvSubInit(box, v){
         '<span>' + I18N.T('转写中…','Transcribing…') + '</span>';
       return;
     }
+    /* 「重新转写」「智能优化」已经搬到右侧的「文字」面板里（和音频歌词页同一套），
+       控制栏这里只留一个纯字幕开关，不再堆按钮。 */
     if(!lines.length){
       cc.classList.remove('on');
       cc.title = I18N.T('这段视频还没有转写文字','This video has no transcript yet');
@@ -4548,9 +4935,13 @@ function mvSubInit(box, v){
   const load = async () => {
     try{
       const d = await (await fetch('/v1/detail?path=' + (box.dataset.enc || ''))).json();
-      const txt = (d && (d.asr_text || (d.meta && d.meta.asr_text))) || '';
-      lines = mvLyricsSplit(txt, 20);        // 字幕一行窄一些，读着不累
-    }catch(e){ lines = []; }
+      const m = (d && d.meta) || {};
+      const orig = (d && (d.asr_text || m.asr_text)) || '';
+      clean = (d && (d.asr_clean || m.asr_clean)) || '';
+      /* 有智能优化版就用它当字幕（错别字少、对话还带说话人）；原文照旧留在库里，
+         面板上看不到但搜得到，也可以随时「还原」。 */
+      lines = mvLyricsSplit(clean || orig, 20);   // 字幕一行窄一些，读着不累
+    }catch(e){ clean = ''; lines = []; }
     paintCC();
     renderStage();
   };
@@ -4584,6 +4975,10 @@ function mvSubInit(box, v){
       toast(I18N.T('转写失败：','Transcription failed: ') + e.message);
     }
   };
+
+  /* 转写 / 智能优化都搬进右侧「文字」面板了。那边动完数据后调一下这个钩子，
+     字幕层才知道要重新拉一次 —— 否则会出现「面板里是新文字、字幕还是旧的」。 */
+  box._mvSubReload = load;
 
   v.addEventListener('timeupdate', paintSub);
   v.addEventListener('seeked', () => { idx = -1; paintSub(); });
@@ -4725,7 +5120,6 @@ function mvImage(box, url, name){
     <span class="mv-cb" id="vwIn" title="${I18N.T('放大','Zoom in')}">${icon('zoomIn',17)}</span>
     <span class="mv-sep"></span>
     <span class="mv-cb" id="vwFit" title="${I18N.T('适应窗口','Fit to window')}">${icon('fit',17)}</span>
-    <span class="mv-cb" id="vwReal" title="${I18N.T('实际大小（100%）','Actual size (100%)')}" style="font-size:0.6875rem;font-weight:700;color:#a8b0bf">1:1</span>
     <span class="mv-cb" id="vwRot" title="${I18N.T('旋转 90°','Rotate 90°')}">${icon('rotate',17)}</span>
     <span class="mv-sep"></span>
     <span class="mv-cb" id="vwPrev" title="${I18N.T('上一张','Previous')}">${icon('chevronLeft',17)}</span>
@@ -4751,7 +5145,6 @@ function mvImage(box, url, name){
   box.querySelector('#vwIn').onclick  = () => zoomBy(1.25);
   box.querySelector('#vwOut').onclick = () => zoomBy(0.8);
   box.querySelector('#vwFit').onclick = fit;
-  box.querySelector('#vwReal').onclick = () => { scale = 1; apply(true); };
   box.querySelector('#vwRot').onclick = () => { rot = (rot + 90) % 360; apply(true); };
   const gPrev = box.querySelector('#vwPrev'), gNext = box.querySelector('#vwNext');
   const hasSib = mvResults().filter(x => x.kind === 'image').length > 1;
@@ -5542,10 +5935,10 @@ function qhRender(){
                    : `<span class="th ico">${window.icon ? window.icon('image', 16) : ''}</span>`)
         : `<span class="th ico">${window.icon ? window.icon('audio', 16) : ''}</span>`;
       const nm = esc(x.name);
-      const nq = nm.replace(/'/g, "&#39;");
+      const nq = jsq(x.name);
       const key = x.type + ':' + x.name;
       // 音频多一个试听按钮：同一条再点一次 = 暂停
-      const nk = key.replace(/'/g, "&#39;");
+      const nk = jsq(key);
       const pl = x.type === 'audio'
         ? `<span class="pl" title="试听前 20 秒" onclick="qhPlay(event, '${nk}')">${audIcon('play', QH_BIG ? 18 : 12)}</span>`
         : '';

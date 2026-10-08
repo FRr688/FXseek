@@ -238,7 +238,9 @@ def search_lexical(query: str, db_path: str, kind=None, limit: int = 200):
                 m = json.loads(meta or "{}")
             except Exception:
                 m = {}
-            txt = (m.get("asr_text") or "").lower()
+            # ★ 原文与 LLM 优化版**都要**参与匹配：用户可能按错字搜（只有原文里有），
+            #   也可能按优化后的通顺说法搜（只有优化版里有）。少任何一边都会漏。
+            txt = ((m.get("asr_text") or "") + " " + (m.get("asr_clean") or "")).lower().strip()
             if not txt:
                 continue
             if q in txt:

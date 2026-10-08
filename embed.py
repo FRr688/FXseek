@@ -25,6 +25,7 @@ WeMM-Embedding-2B-Apple-Silicon-MLX 多模态 embedding 脚本 (独立打包版)
 
 import argparse
 import os
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 模型位置：环境变量最高优先（便携/多实例），否则用随包内置的 model/
@@ -39,29 +40,63 @@ DOC_INSTRUCTION = "Represent the document for retrieval:\n"
 
 
 # ★ 全局模型缓存：避免每次检索/编码都重新加载（2GB 模型反复加载极耗资源）
-_MODEL_CACHE = {"path": None, "model": None, "processor": None}
+#   "used" 记录最近一次取用时间，供宿主判断「能不能卸载」——
+#   放在这里而不是 app.py，是因为 indexer.py 也会自己 load_model()，
+#   统一在缓存层计时才不会漏掉任何一个使用者。
+_MODEL_CACHE = {"path": None, "model": None, "processor": None, "used": 0.0}
 
 
 def load_model(model_path: str, use_cache: bool = True):
     """用 mlx_vlm.load() 加载模型（带全局缓存）。
 
     use_cache=True 时同一路径只加载一次，后续复用（省内存、省时间）。
+    每次调用（含缓存命中）都会刷新「最近使用时间」。
     """
     from pathlib import Path
     rp = str(Path(model_path).resolve())
     if use_cache and _MODEL_CACHE["path"] == rp and _MODEL_CACHE["model"] is not None:
+        _MODEL_CACHE["used"] = time.time()
         return _MODEL_CACHE["model"], _MODEL_CACHE["processor"]
     from mlx_vlm import load
+    print(f"[模型] 载入 {rp} …", flush=True)
+    _t0 = time.time()
     model, processor = load(Path(model_path))
+    print(f"[模型] 载入完成（{time.time() - _t0:.1f}s）", flush=True)
     if use_cache:
-        _MODEL_CACHE.update({"path": rp, "model": model, "processor": processor})
+        _MODEL_CACHE.update({"path": rp, "model": model,
+                             "processor": processor, "used": time.time()})
     return model, processor
 
 
+def model_loaded() -> bool:
+    """模型现在是否还驻留在内存里。"""
+    return _MODEL_CACHE["model"] is not None
+
+
+def model_idle_seconds() -> float:
+    """距离最近一次使用过去了多少秒；没加载则返回 inf。"""
+    if _MODEL_CACHE["model"] is None:
+        return float("inf")
+    return max(0.0, time.time() - (_MODEL_CACHE["used"] or 0.0))
+
+
+def touch_model():
+    """标记「刚用过」——用于那些拿到模型引用后要跑一阵子的调用方。"""
+    if _MODEL_CACHE["model"] is not None:
+        _MODEL_CACHE["used"] = time.time()
+
+
 def unload_model():
-    """显式释放模型缓存（省内存；下次调用会自动重新加载）。"""
+    """显式释放模型缓存（省内存；下次调用会自动重新加载）。
+
+    注意：这个调用本身是**瞬间返回**的（~0.04s，只是把引用放掉），
+    真正把几 GB 还给系统由 MLX/Metal 在随后 2~3 秒内异步完成 ——
+    所以「调用耗时」并不等于「内存已释放」，别拿它当指标。
+    3.5 GB 的模型卸载后，实测进程 footprint 约 2337 MB → 310 MB。
+    """
     import gc
-    _MODEL_CACHE.update({"path": None, "model": None, "processor": None})
+    _MODEL_CACHE.update({"path": None, "model": None,
+                         "processor": None, "used": 0.0})
     gc.collect()
     try:
         import mlx.core as mx

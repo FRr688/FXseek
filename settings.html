@@ -255,12 +255,37 @@ details.fold > .foldbody > .row:last-child{border-bottom:0}
 .btn.accent:disabled{background:var(--blue);border-color:var(--blue);opacity:.45;cursor:default}
 .btn.danger{color:var(--danger);border-color:#fecaca;background:var(--danger-bg)}
 .btn.danger:hover{background:#fee2e2}
+
+/* ---------- 按钮点击动效（带刷新语义的按钮转一圈）----------
+   ★ 这台系统上「减弱动态效果」默认是开的（macOS 辅助功能），所以动画必须
+     挂 data-anim 开关，否则用户会看到一个不动的按钮。
+   ★ 目标写 .ico 而不是 .icn：icons.js 会把 <i class="icn"> 换成 <svg class="ico">，
+     等点击发生的时候 .icn 早就没了。 */
+@keyframes setSpinOnce{from{transform:rotate(0deg)} to{transform:rotate(360deg)}}
+@keyframes setRippleOut{0%{opacity:.45;transform:scale(.92)} 100%{opacity:0;transform:scale(1.45)}}
+.btn.spinning{position:relative;overflow:visible}
+.btn.spinning::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  border:2px solid var(--blue);
+  animation:setRippleOut .65s cubic-bezier(.2,.65,.3,1) both}
+.btn.spinning .ico{animation:setSpinOnce .65s cubic-bezier(.45,.05,.3,1) both}
+html[data-anim="off"] .btn.spinning .ico,
+html[data-anim="off"] .btn.spinning::after{animation:none}
+@media (prefers-reduced-motion:reduce){
+  html:not([data-anim="full"]) .btn.spinning .ico,
+  html:not([data-anim="full"]) .btn.spinning::after{animation:none}
+}
 .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:15px}
 /* 设置行里的按钮组不要额外上边距 */
 .row > .acts{margin-top:0}
 
 .stat{font-size:0.7812rem;color:var(--text-2);margin-top:13px;line-height:1.7}
 .stat b{color:var(--text);font-weight:600}
+/* 更新说明：GitHub Release 的 markdown 原文按纯文本展示（不渲染 markdown，
+   只是给用户看个大概）。限高 + 可滚动，免得一份长 changelog 把整页撑开。 */
+.upnote{margin-top:11px;padding:11px 13px;border-radius:10px;background:var(--bg-soft);
+  font-size:0.75rem;color:var(--text-2);line-height:1.65;white-space:pre-wrap;
+  max-height:190px;overflow:auto;word-break:break-word}
 .bar{height:7px;border-radius:4px;background:var(--bg-soft);overflow:hidden;margin:10px 0 6px}
 .bar > i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:.3s}
 .hintline{font-size:0.7188rem;color:var(--text-3);margin-top:10px;line-height:1.65}
@@ -558,7 +583,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
         </div>
         <div class="stat" id="dataStat">读取中…</div>
         <div class="acts">
-          <button class="btn" onclick="gcCheck()"><i class="icn" data-icon="search" data-size="14"></i><span>检查失效记录</span></button>
+          <button data-spin class="btn" onclick="gcCheck()"><i class="icn" data-icon="search" data-size="14"></i><span>检查失效记录</span></button>
           <button class="btn danger" onclick="gcClean()"><i class="icn" data-icon="trash" data-size="14"></i><span>立即清理失效记录</span></button>
         </div>
         <div class="hintline" id="gcHint">「失效记录」指索引过、但文件已经被删除或移走的条目。应用启动时会自动清理一次；不属于任何索引源的条目只报告、不自动删除。</div>
@@ -573,7 +598,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           </div>
         </div>
         <div class="acts">
-          <button class="btn" onclick="loadLogs()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
+          <button data-spin class="btn" onclick="loadLogs()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
           <button class="btn danger" onclick="clearLogs()"><i class="icn" data-icon="trash" data-size="14"></i><span>清空日志</span></button>
         </div>
         <div class="logview" id="logView" data-i18n-ok><div class="tempty">暂无日志</div></div>
@@ -617,7 +642,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
             <div class="k">模型<span class="sub">必须是<b>能看图</b>的模型，名字里常带 vl / vision / 4v</span></div>
             <div class="fld">
               <select id="aiModel"></select>
-              <button class="btn" onclick="loadAIModels()" title="从服务商拉取全部模型"><i class="icn" data-icon="refresh" data-size="14"></i><span>获取列表</span></button>
+              <button data-spin class="btn" onclick="loadAIModels()" title="从服务商拉取全部模型"><i class="icn" data-icon="refresh" data-size="14"></i><span>获取列表</span></button>
             </div>
           </div>
         </div>
@@ -681,7 +706,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           <div class="k">待处理素材<span class="sub">还没有描述/标签的图片视频，与还没转写的音频</span></div>
           <div class="acts" style="margin-top:0">
             <span id="idleStat" style="font-size:0.8125rem;color:var(--text-2)">—</span>
-            <button class="btn" onclick="loadIdleStatus()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
+            <button data-spin class="btn" onclick="loadIdleStatus()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
           </div>
         </div>
         <div class="row">
@@ -737,7 +762,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
             <div class="k">模型<span class="sub">需支持 OpenAI 的 <code>/audio/transcriptions</code></span></div>
             <div class="fld">
               <select id="asrModel"></select>
-              <button class="btn" onclick="loadASRModels()" title="从服务商拉取全部模型"><i class="icn" data-icon="refresh" data-size="14"></i><span>获取列表</span></button>
+              <button data-spin class="btn" onclick="loadASRModels()" title="从服务商拉取全部模型"><i class="icn" data-icon="refresh" data-size="14"></i><span>获取列表</span></button>
             </div>
           </div>
         </div>
@@ -767,6 +792,72 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           用本机 oMLX：服务商选「自定义 / 本地」，地址填 <code>http://127.0.0.1:9977/v1</code>，
           模型点右侧「获取列表」选一个即可，只要是支持转写的 ASR 模型都行（如 <code>Qwen3-ASR</code> 系列）。
         </div>
+      </div>
+
+      <!-- 智能纠偏（LLM 把转写文字读顺） -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="sparkles" data-size="17"></i></span><div class="htxt">
+            <h2>智能纠偏</h2>
+            <div class="d">用对话模型把转写文字读顺 —— 修正错别字、补标点，对话还会按说话人分段。原文完整保留，优化版另存一份，两种文字都能被搜到，随时可以还原。</div>
+          </div>
+        </div>
+
+        <div class="row" style="padding-top:4px">
+          <div class="k">优化进度<span class="sub">已优化的音视频 / 有转写文字的全部素材</span></div>
+          <div class="acts" style="margin-top:0">
+            <span id="polStat" style="font-size:0.8125rem;color:var(--text-2)">—</span>
+            <button data-spin class="btn" onclick="loadPolishStatus()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">一键优化全部<span class="sub">逐个跑，中途能停；已经优化过的会跳过</span></div>
+          <div class="acts" style="margin-top:0">
+            <button class="btn accent" id="polAllBtn" onclick="polishAll('start')">
+              <i class="icn" data-icon="sparkles" data-size="14"></i><span>优化全部</span></button>
+            <button class="btn" id="polStopBtn" onclick="polishAll('stop')" style="display:none">
+              <i class="icn" data-icon="close" data-size="14"></i><span>停止</span></button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">只在空闲时跑<span class="sub">你用电脑的间隙才干活，不跟你抢 GPU</span></div>
+          <div class="seg" id="segPolIdle">
+            <button data-v="on">开启</button>
+            <button data-v="off">关闭</button>
+          </div>
+        </div>
+        <div id="polHint" class="hintline"></div>
+
+        <div class="hintline">
+          <i class="icn" data-icon="info" data-size="13"></i> 纠偏用的是「AI 描述 / 标签」那张卡里配置的对话模型（不是上面转写用的 ASR 模型）。
+          只想改单个素材时：在播放面板（音频歌词页 / 视频控制栏）点「智能优化」，
+          或在右侧详情栏的「转写内容」里切换「原始 / 优化」、点「还原原文」。
+        </div>
+      </div>
+
+      <!-- 内存占用（模型按需加载） -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="cpu" data-size="17"></i></span><div class="htxt">
+            <h2>内存占用</h2>
+            <div class="d">负责「看懂图片 / 听懂音乐」的多模态模型约占 <b>3.5 GB</b> 内存。开启后改成<b>按需加载</b>：启动时不占内存，第一次搜索多等一两秒；闲置一段时间没人用就自动卸载，把内存还给系统。</div>
+          </div>
+        </div>
+        <div class="row" style="padding-top:4px">
+          <div class="k">按需加载<span class="sub">开机不常驻，闲置后自动释放；8 GB 内存的机器建议开着</span></div>
+          <div class="seg" id="segModelLazy">
+            <button data-v="on">开启</button>
+            <button data-v="off">关闭</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">闲置多久后卸载<span class="sub">这期间反复搜索都用同一个，不会来回加载卸载</span></div>
+          <div class="acts" style="margin-top:0">
+            <input type="number" id="modelIdleMin" min="1" max="240" value="5" style="width:84px">
+            <span style="font-size:0.8125rem;color:var(--text-2)">分钟</span>
+          </div>
+        </div>
+        <div class="hintline" id="modelHint"></div>
       </div>
 
       </section>
@@ -805,7 +896,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           </div>
           <div class="mcplist" id="mcpList"><div class="tempty">检测中…</div></div>
           <div class="acts">
-            <button class="btn" onclick="loadMcp()"><i class="icn" data-icon="refresh" data-size="14"></i><span>重新检测</span></button>
+            <button data-spin class="btn" onclick="loadMcp()"><i class="icn" data-icon="refresh" data-size="14"></i><span>重新检测</span></button>
             <button class="btn primary" onclick="setMcpAll()"><i class="icn" data-icon="link" data-size="14"></i><span>全部接入</span></button>
             <button class="btn" onclick="setMcpNone()"><i class="icn" data-icon="close" data-size="14"></i><span>全部断开</span></button>
             <button class="btn" onclick="injectSkills(false)"><i class="icn" data-icon="sparkles" data-size="14"></i><span>重新注入技能</span></button>
@@ -953,7 +1044,10 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           </div>
 
           <div class="acts">
-            <button class="btn primary" onclick="checkUpdate()"><i class="icn" data-icon="refresh" data-size="14"></i><span>检查更新</span></button>
+            <button data-spin class="btn primary" onclick="checkUpdate()"><i class="icn" data-icon="refresh" data-size="14"></i><span>检查更新</span></button>
+            <!-- 检查失败时才亮出来：让用户自己去 GitHub Releases 翻 -->
+            <button class="btn" id="btnReleases" style="display:none" onclick="openReleases()">
+              <i class="icn" data-icon="link" data-size="14"></i><span>releases</span></button>
             <button class="btn" onclick="copyDiag()"><i class="icn" data-icon="save" data-size="14"></i><span>复制诊断信息</span></button>
             <button class="btn" onclick="openDataDirHint()"><i class="icn" data-icon="folder" data-size="14"></i><span>数据目录</span></button>
           </div>
@@ -1001,6 +1095,37 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
 <div class="toast" id="toast"></div>
 
 <script>
+/* ---------- 按钮点击动效 ----------
+   带 data-spin 的按钮（刷新 / 获取列表 / 重新检测 / 检查更新…）点下去图标转一圈。
+   用捕获阶段的事件委托，而不是给每个 onclick 塞一行：这样动效在业务逻辑
+   之前就开始转，异步请求也不会让动画等到请求回来才播。 */
+const SPIN_CLS = 'spinning';
+function spinBtn(btn){
+  if(!btn) return;
+  btn.classList.remove(SPIN_CLS);
+  void btn.offsetWidth;                 // 强制回流，让同一动画能重新触发
+  btn.classList.add(SPIN_CLS);
+  let done = false;
+  function clear(){
+    if(done) return;
+    done = true;
+    btn.classList.remove(SPIN_CLS);
+    btn.removeEventListener('animationend', onEnd);
+  }
+  function onEnd(e){
+    /* 只认图标自己的动画结束，别被内层其它动画提前清掉 */
+    if(e.target !== btn.querySelector('.ico')) return;
+    clear();
+  }
+  btn.addEventListener('animationend', onEnd);
+  setTimeout(clear, 1200);              // 兜底：动画没触发也要复原
+}
+document.addEventListener('click', function(e){
+  const t = e.target;
+  const b = (t && t.closest) ? t.closest('button[data-spin]') : null;
+  if(b) spinBtn(b);
+}, true);
+
 /* 静态占位图标渲染(data-icon -> SVG) */
 function renderStaticIcons(root){
   root = root || document;
@@ -1238,6 +1363,11 @@ function loadAIFields(){
   markSeg('segASR', SETTINGS.asr_enabled ? 'on' : 'off');
   markSeg('segIdleTag', SETTINGS.idle_tag === false ? 'off' : 'on');
   markSeg('segIdleAsr', SETTINGS.idle_asr === false ? 'off' : 'on');
+  markSeg('segPolIdle', SETTINGS.polish_idle_only === false ? 'off' : 'on');
+  updatePolHint();
+  markSeg('segModelLazy', SETTINGS.model_lazy === false ? 'off' : 'on');
+  $('#modelIdleMin').value = SETTINGS.model_idle_minutes != null ? SETTINGS.model_idle_minutes : 5;
+  updateModelHint();
   $('#idleMinutes').value = SETTINGS.idle_minutes != null ? SETTINGS.idle_minutes : 5;
   $('#idleBatch').value = SETTINGS.idle_batch != null ? SETTINGS.idle_batch : 10;
   updateIdleHint();
@@ -1316,6 +1446,9 @@ function aiCfgFromForm(){
     idle_asr: ($('#segIdleAsr button.on') || {dataset:{v:'on'}}).dataset.v === 'on',
     idle_minutes: parseInt($('#idleMinutes').value || '5', 10),
     idle_batch: parseInt($('#idleBatch').value || '10', 10),
+    polish_idle_only: ($('#segPolIdle button.on') || {dataset:{v:'on'}}).dataset.v === 'on',
+    model_lazy: ($('#segModelLazy button.on') || {dataset:{v:'on'}}).dataset.v === 'on',
+    model_idle_minutes: Math.min(240, Math.max(1, parseInt($('#modelIdleMin').value || '5', 10) || 5)),
   };
 }
 
@@ -1368,6 +1501,124 @@ async function loadIdleStatus(){
       setTimeout(loadIdleStatus, 8000);
   }catch(e){
     el.innerHTML = `<span style="color:#dc2626">读取失败：${esc(e.message)}</span>`;
+  }
+}
+
+/* ---------- 智能纠偏（LLM 把转写文字读顺） ---------- */
+let _polTimer = null;
+
+function fmtWait(sec){
+  sec = Math.max(0, Math.round(sec || 0));
+  if(sec >= 60) return `${Math.floor(sec/60)} 分 ${String(sec%60).padStart(2,'0')} 秒`;
+  return `${sec} 秒`;
+}
+
+/* 「只在空闲时跑」这一档在做什么，说清楚免得用户以为点完没反应 */
+function polIdleExplain(){
+  const seg = $('#segPolIdle');
+  const _T = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
+  if(!seg) return '';
+  const on = !!(seg.querySelector('button.on') && seg.querySelector('button.on').dataset.v === 'on');
+  const mins = (SETTINGS && SETTINGS.idle_minutes) || 5;
+  return on
+    ? _T(`空闲门：批量优化会等你连续 <b>${mins}</b> 分钟没操作才开工；中途你一用电脑就自动暂停，等你走开再接着跑。`,
+         `Idle gate on: batch polishing waits for <b>${mins}</b> idle minutes; it pauses the moment you come back.`)
+    : _T('空闲门已关：点「优化全部」立刻开跑、一直跑完为止 —— 这期间跑别的大模型任务会更吃力。',
+         'Idle gate off: it starts right away and runs to the end — heavier load if you run other model jobs meanwhile.');
+}
+
+function updatePolHint(){
+  const el = $('#polHint');
+  if(el) el.innerHTML = polIdleExplain();
+}
+
+async function loadPolishStatus(){
+  const el = $('#polStat');
+  if(!el) return;
+  try{
+    const a = await (await fetch('/v1/asr/status')).json();
+    const pr = a.polish_progress || {total:0, done:0};
+    const p = a.polish || {};
+    const _T = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
+    const parts = [`已优化 <b>${pr.done}</b>/${pr.total}`];
+    if(pr.total === 0) parts[0] = _T('还没有可纠偏的转写文字', 'No transcripts to polish yet');
+    else if(pr.done >= pr.total) parts.push(_T('全都优化过了', 'everything polished'));
+    else parts.push(_T(`还剩 <b>${pr.total - pr.done}</b> 条`, `<b>${pr.total - pr.done}</b> left`));
+    if(p.running){
+      if(p.waiting){
+        /* 空闲门：正在等用户停手。给个倒计时，否则用户会以为卡住了 */
+        const left = Math.max(0, Math.round((p.need_idle || 0) - (p.idle_sec || 0)));
+        parts.push(_T(`正在等你闲下来 · 还有 ${fmtWait(left)}`,
+                      `waiting for you to step away · ${fmtWait(left)} left`));
+      } else {
+        const cur = p.current ? `「${esc(p.current.split('/').pop())}」` : '';
+        parts.push(_T(`正在优化${cur}（本批 ${p.done}/${p.total}）`,
+                      `polishing ${cur} (${p.done}/${p.total} this run)`));
+      }
+    }
+    if(p.failed) parts.push(`<span style="color:#dc2626">${_T(`失败 <b>${p.failed}</b>`, `failed <b>${p.failed}</b>`)}</span>`);
+    el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+    if(p.last_error) el.innerHTML += `<br><span style="color:#dc2626">${_T('上次失败：','Last error: ')}${esc(p.last_error)}</span>`;
+    renderPolishBtns(p);
+    /* 只在真在跑时接着轮询，否则会变成死循环猛刷接口 */
+    clearTimeout(_polTimer);
+    if(p.running) _polTimer = setTimeout(loadPolishStatus, 3000);
+  }catch(e){
+    el.innerHTML = `<span style="color:#dc2626">读取失败：${esc(e.message)}</span>`;
+  }
+}
+
+function renderPolishBtns(p){
+  const all = $('#polAllBtn'), stop = $('#polStopBtn'), hint = $('#polHint');
+  const on = !!(p && p.running);
+  if(all) all.style.display = on ? 'none' : '';
+  if(stop) stop.style.display = on ? '' : 'none';
+  if(!hint) return;
+  const _T = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
+  const lines = [];
+  if(on){
+    lines.push(p.waiting
+      ? _T('正在等你停手 —— 空闲时才继续，中途随时可以「停止」。已经优化好的都会保留。',
+           'Waiting for you to step away — it resumes when idle; you can stop any time.')
+      : _T('正在后台逐个优化，可以随时点「停止」；已经优化好的都会保留。',
+           'Polishing in the background — you can stop any time; finished ones are kept.'));
+  }else if(p && p.finished){
+    lines.push(_T(`上一轮结束：成功 ${p.done} 条，失败 ${p.failed || 0} 条。`,
+                  `Last run finished: ${p.done} ok, ${p.failed || 0} failed.`));
+  }
+  /* 档位说明永远跟着显示：否则跑完之后用户就看不到这个开关到底在干什么了 */
+  const ex = polIdleExplain();
+  if(ex) lines.push(ex);
+  hint.innerHTML = lines.join('<br>');
+}
+
+async function polishAll(action){
+  const all = $('#polAllBtn');
+  if(action === 'start'){
+    if(!SETTINGS.ai_enabled || !SETTINGS.ai_base_url || !SETTINGS.ai_model){
+      toast((window.I18N && I18N.T)
+        ? I18N.T('请先在「AI 描述 / 标签」里配置对话模型','Configure the chat model under AI captions first')
+        : '请先在「AI 描述 / 标签」里配置对话模型');
+      return;
+    }
+    if(all) all.disabled = true;
+  }
+  try{
+    const r = await (await fetch('/v1/asr/polish_all', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action})})).json();
+    if(r && r.ok === false) toast(r.message || '操作失败');
+    if(action === 'start'){
+      toast((window.I18N && I18N.T)
+        ? I18N.T('已开始优化，可以关掉这个页面','Started — you can close this page')
+        : '已开始优化，可以关掉这个页面');
+    }
+  }catch(e){
+    toast((window.I18N && I18N.T) ? I18N.T('操作失败：','Failed: ') + e.message
+                                  : '操作失败：' + e.message);
+  }finally{
+    if(all) all.disabled = false;
+    loadPolishStatus();
   }
 }
 
@@ -1545,6 +1796,26 @@ document.querySelectorAll('#segDensity button').forEach(b=>
 ['segIdleTag','segIdleAsr'].forEach(id=>
   document.querySelectorAll('#'+id+' button').forEach(b=>
     b.onclick = ()=>{ markSeg(id, b.dataset.v); updateIdleHint(); }));
+document.querySelectorAll('#segPolIdle button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segPolIdle', b.dataset.v); updatePolHint(); });
+
+/* 内存占用：按需加载开关 + 闲置卸载时长 */
+function updateModelHint(){
+  const el = $('#modelHint');
+  const seg = $('#segModelLazy');
+  if(!el || !seg) return;
+  const _T = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
+  const on = !!(seg.querySelector('button.on') && seg.querySelector('button.on').dataset.v === 'on');
+  const mins = parseInt(($('#modelIdleMin') || {}).value || '5', 10) || 5;
+  el.innerHTML = on
+    ? _T(`<i class="icn" data-icon="info" data-size="13"></i> 开启后：启动只占几十 MB；第一次搜索稍等一下。之后连续搜索一直用同一份模型，<b>停手 ${mins} 分钟</b>没人用才卸载。`,
+         `<i class="icn" data-icon="info" data-size="13"></i> On: launch keeps only tens of MB; the first search waits briefly. Continuous searching reuses one copy — it unloads after <b>${mins} idle minutes</b>.`)
+    : _T('<i class="icn" data-icon="alert" data-size="13"></i> 关闭后：模型一直驻留内存，每次搜索都最快，但会长期占着约 3.5 GB。',
+         '<i class="icn" data-icon="alert" data-size="13"></i> Off: the model stays resident — fastest every time, but holds ~3.5 GB.');
+}
+document.querySelectorAll('#segModelLazy button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segModelLazy', b.dataset.v); updateModelHint(); });
+(() => { const el = $('#modelIdleMin'); if(el) el.oninput = updateModelHint; })();
 ['idleMinutes','idleBatch'].forEach(id=>document.getElementById(id)
   .addEventListener('input', updateIdleHint));
 async function saveSettings(patch){
@@ -1777,7 +2048,7 @@ function relabel(root){
   if(window.I18N && I18N.lang() === 'en' && I18N.refresh) I18N.refresh(root || document.body);
 }
 
-async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadMcp(); loadAbout(); relabel(); }
+async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadPolishStatus(); loadMcp(); loadAbout(); relabel(); }
 
 /* ── 关于 ──────────────────────────────────────────────────── */
 let AB_INFO = null;
@@ -1824,18 +2095,85 @@ function applyAssetVer(ver){
   });
 }
 
-/* 这个应用没有在线更新源，所以这里只能如实回答「你跑的就是当前这份本地构建」，
-   不能假装联网比对过远端。真要说价值，是顺手把版本/构建时间摆给用户看。 */
+/* 真的去 GitHub Releases 比一下版本。
+   三种结果都如实说，不糊弄用户：
+     · 有新版本 → 摆出「下载更新」+ 更新说明
+     · 已是最新 → 明确说已是最新
+     · 查不动（没网 / 被墙 / 限流 / 仓库还没 Release）→ 如实报错，
+       并把「releases」按钮亮出来，让用户自己去页面翻。 */
 async function checkUpdate(){
   const s = $('#aboutStatus');
+  const rel = $('#btnReleases');
+  const T = (window.I18N && I18N.T) ? I18N.T : (a) => a;
   await loadAbout();
-  if(!AB_INFO){ s.textContent = '检查失败：读不到版本信息。'; relabel(s); return; }
-  s.innerHTML = `当前 <b>v${AB_INFO.version}</b> · 本机构建于 ${fmtTime(AB_INFO.built_at)}`
-              + `　—　这是本地构建版本，未接入在线更新源，没有更新的版本可下载。`;
-  /* innerHTML 里夹了 <b>，整行规则要走 applyHtml；观察器只处理新增节点、
-     不会替容器跑 applyHtml，所以这里必须像 loadAbout 那样显式补一刀。 */
+  const cur = (AB_INFO && AB_INFO.version) || '';
+
+  s.textContent = T('正在检查 GitHub 上有没有新版本…', 'Checking GitHub for a newer release…');
+  relabel(s);
+  if(rel) rel.style.display = 'none';
+
+  let r = null;
+  try{
+    /* 这是个只读检查，走 GET（路由挂在 do_GET 上，POST 会 404） */
+    r = await (await fetch('/v1/update/check')).json();
+  }catch(e){
+    r = {ok:false, error: (e && e.message) || '请求失败'};
+  }
+
+  /* 失败：亮出 releases 按钮，用户点一下就用系统浏览器打开 */
+  if(!r || !r.ok){
+    if(rel) rel.style.display = '';
+    const why = (r && r.error) ? String(r.error) : T('未知原因', 'unknown reason');
+    s.innerHTML = T(
+      `<b>检查更新失败</b>　—　${esc(why)}<br>`
+      + `网络不通、被墙、或 GitHub 限流都可能。你可以点旁边的「releases」自己去页面看最新版。`,
+      `<b>Update check failed</b> — ${esc(why)}<br>`
+      + `No network, blocked, or GitHub rate-limited. Use the “releases” button to check the page yourself.`);
+    relabel(s);
+    return;
+  }
+
+  if(r.has_update){
+    if(rel) rel.style.display = 'none';
+    const dl = (r.assets || []).find(a => /\.dmg$/i.test(a.name || '')) || null;
+    const note = r.notes ? `<div class="upnote">${esc(r.notes.slice(0, 600))}</div>` : '';
+    s.innerHTML = T(
+      `发现新版本 <b>v${esc(String(r.latest).replace(/^v/i,''))}</b>　—　当前 v${esc(cur)}`
+      + (r.published_at ? `　·　发布于 ${fmtTime(Date.parse(r.published_at)/1000)}` : '')
+      + `<div class="acts" style="margin-top:8px">`
+      +   `<button class="btn primary" onclick="openReleases('${esc(r.url)}')">`
+      +     `<i class="icn" data-icon="download" data-size="14"></i><span>${dl ? esc(dl.name) : '去下载'}</span></button>`
+      + `</div>` + note,
+      `New version <b>v${esc(String(r.latest).replace(/^v/i,''))}</b> — you have v${esc(cur)}`
+      + (r.published_at ? ` · published ${fmtTime(Date.parse(r.published_at)/1000)}` : '')
+      + `<div class="acts" style="margin-top:8px">`
+      +   `<button class="btn primary" onclick="openReleases('${esc(r.url)}')">`
+      +     `<i class="icn" data-icon="download" data-size="14"></i><span>${dl ? esc(dl.name) : 'Download'}</span></button>`
+      + `</div>` + note);
+  }else{
+    if(rel) rel.style.display = 'none';
+    s.innerHTML = T(
+      `已是最新版本　—　本机 v${esc(cur)}　·　GitHub 上最新 v${esc(String(r.latest).replace(/^v/i,''))}`
+      + (r.published_at ? `（${fmtTime(Date.parse(r.published_at)/1000)}）` : ''),
+      `You're up to date — local v${esc(cur)} · latest on GitHub v${esc(String(r.latest).replace(/^v/i,''))}`
+      + (r.published_at ? ` (${fmtTime(Date.parse(r.published_at)/1000)})` : ''));
+  }
+  /* 重新注入图标（innerHTML 换过）+ 补翻译：观察器只管新增节点，
+     容器自己重写的内容要像 loadAbout 那样显式补一刀。 */
+  renderStaticIcons(s);
   relabel(s);
 }
+
+/* 打开 GitHub Releases。走系统浏览器 —— WKWebView 没有"开新窗"，
+   直接导航会把应用窗口自己带走、回不来。 */
+function openReleases(url){
+  const u = url || 'https://github.com/FRr688/FXseek/releases';
+  fetch('/v1/open-url', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url: u})}).catch(function(){});
+  return false;
+}
+window.openReleases = openReleases;
 
 async function copyDiag(){
   const s = $('#aboutStatus');

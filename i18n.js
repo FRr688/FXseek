@@ -547,6 +547,7 @@
   "创建时间": "Created",
   "AI 描述": "AI description",
   "转写内容": "Transcription",
+  "智能优化版": "Smart-polished",
   "完整路径": "Full path",
   "标签": "Tags",
   "尺寸": "Dimensions",
@@ -845,6 +846,28 @@
   '漫 步 时 光 · 回 忆 长 廊': 'S T R O L L I N G   D O W N   M E M O R Y   L A N E',
   '漫步时光：单击任意缩略图可以让它淡出，再点按钮就回到素材库': 'Memory stroll on — click any thumbnail to fade it away; click the button again to go back',
   '这一刻的回忆都看过了 — 再点一次「漫步时光」回到素材库': 'You have seen every memory here — click the button again to go back',
+
+    /* ---- 智能纠偏 / 内存占用（按需加载）两张卡 ---- */
+    "智能纠偏": "Transcript polish",
+    "用对话模型把转写文字读顺 —— 修正错别字、补标点，对话还会按说话人分段。原文完整保留，优化版另存一份，两种文字都能被搜到，随时可以还原。": "Use a chat model to tidy up transcripts — fix typos, add punctuation, and split dialogue by speaker. The original is kept in full, the polished version is stored alongside it, both stay searchable, and you can revert at any time.",
+    "优化进度": "Polish progress",
+    "已优化的音视频 / 有转写文字的全部素材": "polished audio/video · all assets that have a transcript",
+    "已优化": "Polished ",
+    "一键优化全部": "Polish everything at once",
+    "逐个跑，中途能停；已经优化过的会跳过": "Runs one at a time and can be stopped midway; anything already polished is skipped",
+    "优化全部": "Polish all",
+    "只在空闲时跑": "Only run while idle",
+    "你用电脑的间隙才干活，不跟你抢 GPU": "Works only in the gaps while you're away, so it never fights you for the GPU",
+    "纠偏用的是「AI 描述 / 标签」那张卡里配置的对话模型（不是上面转写用的 ASR 模型）。\n          只想改单个素材时：在播放面板（音频歌词页 / 视频控制栏）点「智能优化」，\n          或在右侧详情栏的「转写内容」里切换「原始 / 优化」、点「还原原文」。": " The polish uses the chat model configured in the “AI descriptions / tags” card above (not the ASR model used for transcription).\n          To polish a single item: open the player (audio lyrics page / video control bar) and click “Smart polish”,\n          or switch between “Original / Polished” and hit “Revert” in the transcript panel on the right.\n        ",
+    "内存占用": "Memory usage",
+    "负责「看懂图片 / 听懂音乐」的多模态模型约占": "The multimodal model that understands images and music takes about ",
+    "内存。开启后改成": " of memory. Turn this on and it switches to",
+    "按需加载": "On-demand loading",
+    "：启动时不占内存，第一次搜索多等一两秒；闲置一段时间没人用就自动卸载，把内存还给系统。": ": nothing is held at startup, the first search takes a second or two longer, and it unloads automatically after a period of inactivity, giving the memory back to the system.",
+    "开机不常驻，闲置后自动释放；8 GB 内存的机器建议开着": "not resident at launch, released automatically once idle; recommended on 8 GB machines",
+    "闲置多久后卸载": "Unload after idle for",
+    "这期间反复搜索都用同一个，不会来回加载卸载": "repeated searches in this window reuse the same copy — no load/unload churn",
+    "分钟": "min",
 };
 
   /* 词条里带参数的（如「已接入 {n} 个 Agent」）走这里，按顺序套用。
@@ -1354,6 +1377,19 @@
     'This audio is longer than the “max transcription length” setting and was skipped. To transcribe it, raise the limit in Settings → AI services → Audio transcription (or set 0 for unlimited) and try again.'],
   [/^这段音频里没有识别到可用的语音内容（纯音乐或环境音）。$/,
     'No usable speech found in this audio (music or ambient sound only).'],
+  /* 详情栏「转写内容」下面那行说明。原文是模板字符串、中间夹着缩进换行，
+     而且括号里的校对方式（按歌词/按对话/按独白）是变量，词典装不下四种变体，
+     所以用正则 + 函数替换把括号单独映射一次。 */
+  [/^智能服务把这段文字读顺了(（按歌词校对）|（按对话整理）|（按独白校对）)?，原文完整保留。\s*想逐字对照原文、重新优化或还原，打开播放面板右下角的「文字」。$/,
+    function (m) {
+      var kind = { '（按歌词校对）': ' (checked against the lyrics)',
+                   '（按对话整理）': ' (tidied as dialogue)',
+                   '（按独白校对）': ' (checked as a monologue)' }[m[1]] || '';
+      return 'The smart service has tidied this text up' + kind +
+             ', and the original is kept in full. To compare it word by word, ' +
+             're-polish it, or revert, open the “Transcript” panel at the ' +
+             'bottom right of the player.';
+    }],
 
   ];
 

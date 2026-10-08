@@ -619,21 +619,86 @@ def main():
         _paint()
 
     # ---------------------------------------------------------------- 菜单绘制
-    def _title_item(text, color=None):
-        """禁用（点不动）的标题项，可以带颜色 —— 状态行就是靠它高亮的。"""
+    def _title_item(text, color=None, bold=False):
+        """禁用（点不动）的标题项，可以带颜色 / 加粗 —— 状态行就是靠它高亮的。
+
+        加粗必须**跟随菜单字号**：`boldSystemFontOfSize_(0)` 会返回 13pt，而
+        `menuFontOfSize_(0)` 是 14pt，直接用会让高亮项比邻居小一号。
+        """
         mi = MI.alloc().initWithTitle_action_keyEquivalent_(text, None, "")
         mi.setEnabled_(False)
-        if color is not None:
+        if color is not None or bold:
             try:
+                base = AppKit.NSFont.menuFontOfSize_(0)
+                font = (AppKit.NSFont.boldSystemFontOfSize_(base.pointSize())
+                        if bold else base)
+                attrs = {AppKit.NSFontAttributeName: font}
+                if color is not None:
+                    attrs[AppKit.NSForegroundColorAttributeName] = color
                 mi.setAttributedTitle_(AppKit.NSAttributedString.alloc()
-                                       .initWithString_attributes_(text, {
-                                           AppKit.NSForegroundColorAttributeName: color,
-                                           AppKit.NSFontAttributeName:
-                                               AppKit.NSFont.menuFontOfSize_(0),
-                                       }))
+                                       .initWithString_attributes_(text, attrs))
             except Exception:
                 pass
         return mi
+
+    def _strong_item(text, color=None, bold=True):
+        """「点不动，但颜色说了算」的标题项（自定义视图，绕开禁用压暗）。
+
+        ★ 为什么不能直接 _title_item(text, labelColor)：
+        AppKit 对**所有禁用项**统一压暗绘制，连显式写进 attributed title 里的
+        颜色也盖不过去。实测同一条 labelColor：禁用态渲染成灰色，启用态才是
+        纯黑。所以之前「已接入的 agent 用 labelColor」在菜单里一直还是灰的。
+
+        这里改用**自定义视图**（一个不可编辑的 NSTextField 当菜单项）：它不
+        参与菜单那套「禁用压暗」绘制，于是颜色能如实显示，同时仍然是点不动、
+        悬停不泛蓝的状态行（对比过「改成 setEnabled_(True) + 关掉
+        autoenablesItems」那条路，那样虽然也黑，但整行会变得像能点的按钮）。
+
+        bold 默认 True，但 MCP 面板现在**全部传 False** —— 用户反馈整块加粗
+        太压眼，正文粗细更耐看。这里保留参数是为了 `_set_strong` 的调用方
+        （状态行）也能按需切换。
+        """
+        mi = MI.alloc().initWithTitle_action_keyEquivalent_("", None, "")
+        mi.setEnabled_(False)
+        try:
+            base = AppKit.NSFont.menuFontOfSize_(0)
+            tf = AppKit.NSTextField.alloc().initWithFrame_(
+                AppKit.NSMakeRect(0, 0, 200, 20))
+            tf.setStringValue_(text)
+            tf.setBezeled_(False)
+            tf.setDrawsBackground_(False)
+            tf.setEditable_(False)
+            tf.setSelectable_(False)
+            tf.setFont_(AppKit.NSFont.boldSystemFontOfSize_(base.pointSize()) if bold
+                        else base)
+            tf.setTextColor_(color if color is not None else AppKit.NSColor.labelColor())
+            tf.sizeToFit()                    # 按文本量宽度，长 agent 名不会被截断
+            f = tf.frame()
+            tf.setFrame_(AppKit.NSMakeRect(0, 0, f.size.width + 2, 20))
+            mi.setView_(tf)
+        except Exception as e:
+            print("[tray] 加粗菜单项失败，退化成普通标题：%s" % e)
+            mi.setTitle_(text)
+        return mi
+
+    def _set_strong(mi, text, color=None):
+        """改 _strong_item 那行的文字 / 颜色（它是个自定义视图，不能走 _set_title）。
+
+        宽度要跟着文字重量一遍，否则「服务器：运行中（端口 8231）」切到
+        「服务器：已停止（点下面那项即可启动）」这种更长的文案会被截断。
+        """
+        tf = mi.view()
+        if tf is None:
+            _set_title(mi, text, color if color is not None else AppKit.NSColor.labelColor())
+            return
+        try:
+            tf.setStringValue_(text)
+            tf.setTextColor_(color if color is not None else AppKit.NSColor.labelColor())
+            tf.sizeToFit()
+            f = tf.frame()
+            tf.setFrame_(AppKit.NSMakeRect(0, 0, f.size.width + 2, 20))
+        except Exception as e:
+            print("[tray] 刷新加粗菜单项失败：%s" % e)
 
     def _action(title, sel, target, key=""):
         mi = MI.alloc().initWithTitle_action_keyEquivalent_(title, sel, key)
@@ -647,11 +712,11 @@ def main():
         """
         running = bool(STATE["running"])
         if running:
-            _set_title(ITEMS["status"], _t("status_on", STATE["port"]),
-                       AppKit.NSColor.systemGreenColor())
+            _set_strong(ITEMS["status"], _t("status_on", STATE["port"]),
+                        AppKit.NSColor.systemGreenColor())
         else:
-            _set_title(ITEMS["status"], _t("status_off"),
-                       AppKit.NSColor.systemOrangeColor())
+            _set_strong(ITEMS["status"], _t("status_off"),
+                        AppKit.NSColor.systemOrangeColor())
         ITEMS["toggle"].setTitle_(_t("stop") if running else _t("start"))
         ITEMS["web"].setTitle_(_t("web"))
         ITEMS["mcp"].setTitle_(_t("mcp"))
@@ -688,22 +753,34 @@ def main():
         if st.get("available") is False:
             sub.addItem_(_title_item(_t("mcp_unavailable", st.get("error") or "")))
             return
-        sub.addItem_(_title_item(_t("mcp_on") if st.get("enabled") else _t("mcp_off")))
-        sub.addItem_(_title_item(_t("mcp_agents", st.get("connected", 0),
-                                   st.get("installed", 0))))
+        connected = int(st.get("connected") or 0)
+        # 汇总三行用 _strong_item，但**不加粗**（用户反馈加粗太压眼，正文粗细就好）。
+        # ★ 为什么不能用 _title_item(text, labelColor)：后者是禁用项，会被系统统一
+        # 压暗成灰色，颜色写了也没用（见 _strong_item 的说明）。
+        # 用 labelColor 而不是写死黑色：它在浅色外观下就是纯黑，
+        # 深色外观下自动变白 —— 写死 blackColor 在深色菜单里等于隐形。
+        sub.addItem_(_strong_item(_t("mcp_on") if st.get("enabled") else _t("mcp_off"),
+                                  bold=False))
+        sub.addItem_(_strong_item(_t("mcp_agents", connected, st.get("installed", 0)),
+                                  bold=False))
         if st.get("skilled") is not None:
-            sub.addItem_(_title_item(_t("mcp_skills", st.get("skilled", 0))))
+            sub.addItem_(_strong_item(_t("mcp_skills", st.get("skilled", 0)), bold=False))
         sub.addItem_(MI.separatorItem())
         for r in (st.get("agents") or [])[:8]:
             name = r.get("name") or r.get("id") or "?"
-            if not r.get("installed"):
-                mark = _t("mark_noinstall")
-            elif r.get("connected"):
-                mark = _t("mark_connected")
+            mark = (_t("mark_noinstall") if not r.get("installed")
+                    else _t("mark_connected") if r.get("connected")
+                    else _t("mark_offline"))
+            text = ("  %s：%s" % (name, mark)) if _lang() == "zh" else ("  %s: %s" % (name, mark))
+            if r.get("connected"):
+                # ★ 已接入的：正文色（黑/白），但不加粗
+                sub.addItem_(_strong_item(text, bold=False))
+            elif r.get("installed"):
+                # 装了但没接：次要灰，别跟已接入的抢注意力
+                sub.addItem_(_title_item(text, AppKit.NSColor.secondaryLabelColor()))
             else:
-                mark = _t("mark_offline")
-            sub.addItem_(_title_item("  %s：%s" % (name, mark) if _lang() == "zh"
-                                     else "  %s: %s" % (name, mark)))
+                # 没装：最淡
+                sub.addItem_(_title_item(text, AppKit.NSColor.tertiaryLabelColor()))
         sub.addItem_(MI.separatorItem())
         sub.addItem_(_action(_t("mcp_open"), b"openMcp:", ITEMS["target"]))
 
@@ -799,8 +876,10 @@ def main():
         b.setTitle_("")
 
         menu = AppKit.NSMenu.alloc().init()
-        ITEMS["status"] = _title_item(_t("status_on", args.port),
-                                      AppKit.NSColor.systemGreenColor())
+        # ★ 这行也要走 _strong_item：它的绿色是显式指定的，而禁用项会被系统
+        # 压暗 —— 之前它一直渲染成灰色，跟文件开头写的「绿色高亮，点不动」对不上。
+        ITEMS["status"] = _strong_item(_t("status_on", args.port),
+                                       AppKit.NSColor.systemGreenColor(), bold=False)
         menu.addItem_(ITEMS["status"])
         menu.addItem_(MI.separatorItem())
 
@@ -970,13 +1049,17 @@ def main():
             if _ICON["tries"]:
                 print("[tray] 图标已排上（%s）" % _where())
                 sys.stdout.flush()
-                _hide_pending_sacs()      # 真图标排稳了，把替死鬼藏掉（防透明占位）
-                try:
-                    _start_anim()          # 帧循环动画（幂等）
-                except Exception:
-                    import traceback
-                    traceback.print_exc()
-                    sys.stdout.flush()
+            # ★ 不管试了几次都要起动画：`_start_anim` 是幂等的，
+            #   而之前这个调用被塞在 `if _ICON["tries"]:` 里面 —— 于是
+            #   **一次就排上（tries==0）时动画永远不会启动**，图标就"变静态"了。
+            #   排不排得上是随机的（约 1/3 成功），所以时好时坏，很难复现。
+            _hide_pending_sacs()          # 真图标排稳了，把替死鬼藏掉（防透明占位）
+            try:
+                _start_anim()             # 帧循环动画（幂等）
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                sys.stdout.flush()
             _ICON["tries"] = 0
             _ICON["healing"] = False
             return

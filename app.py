@@ -44,6 +44,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import asr_polish
 import embed as we
 import heif_support  # noqa: F401  注册 HEIC/HEIF 解码器（缩略图、打标都要）
 import indexer as ix
@@ -57,7 +58,12 @@ _STATE = {"model": None, "processor": None, "model_path": None,
           "last_req": 0.0,        # 最近一次 HTTP 请求时间（含轮询，仅用于诊断）
           "last_user_req": 0.0,   # 最近一次「用户真的在操作」的请求时间
           "ai_tagging": None,     # 正在手动/自动打标的文件路径
-          "asr_running": None}    # 正在手动/自动转写的文件路径
+          "asr_running": None,    # 正在手动/自动转写的文件路径
+          "model_unloaded": 0}    # 累计「按需卸载」次数（诊断用）
+
+# 模型按需加载的锁：两个请求同时发现模型没加载时，只让一个真去 load()，
+# 否则会同时加载两份 2GB 权重（8G 机器上直接换页卡死）。
+_MODEL_LOCK = threading.Lock()
 
 # 纯轮询端点：前端（设置页 / 进度条）会按秒级定时打这些接口，
 # 它们只代表「界面开着」不代表「用户在用」。如果拿它们刷新闲置计时，
@@ -104,7 +110,7 @@ DEFAULT_SETTINGS = {
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
     # ★ 版本号唯一来源：改这里就够了 —— build_app.sh / release.sh 都从这一行 grep，
     # tray_helper 的「关于」兜底也从这里读。别在别处再写死版本号。
-    "version": "1.0.3",
+    "version": "1.0.5",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -134,6 +140,15 @@ DEFAULT_SETTINGS = {
     "asr_model": "",
     "asr_language": "",          # 留空=自动检测；可填 zh/en 等
     "asr_max_duration": 600,     # 超过该秒数的音频跳过转写（0=不限）
+    # ---- 智能纠偏（转写文字的 LLM 校对）----
+    # 默认「只在空闲时跑」：批量纠偏要反复打本地大模型，用户正敲键盘/搜东西的时候
+    # 抢 GPU 会明显卡顿。判定门槛与闲置补全完全一致（距上次用户操作 idle_minutes 分钟）。
+    "polish_idle_only": True,
+    # 模型按需加载 + 闲置卸载：启动不常驻 3.5 GB 权重，闲置 N 分钟后自动还内存。
+    # 8 GB 的 M1 上这是「整机不发涩」和「首次检索多等 1.5~3 秒」之间的取舍，
+    # 默认取前者；机器内存宽裕、追求每次检索都秒回的话可以关掉。
+    "model_lazy": True,
+    "model_idle_minutes": 5,
     # ---- 检索性能 ----
     "search_tier": "auto",       # auto | fast | vector | deep
     "match_level": "balanced",   # 搜索结果匹配度门槛 off | loose | balanced | strict | strictest
@@ -537,7 +552,10 @@ def _idle_loop():
             idle_asr = bool(st.get("idle_asr")) and bool(st.get("asr_enabled"))
             if not (idle_tag or idle_asr):
                 continue
-            if _STATE["busy"] or _STATE.get("ai_tagging") or _STATE.get("asr_running"):
+            # 打标/转写/纠偏/建索引互斥 —— 顺带把正在跑的「智能纠偏」也算进来，
+            # 否则用户点了「优化全部」之后，闲置补全还会照旧开跑，两边同时打 oMLX。
+            heavy = _heavy_running(exclude="idle")
+            if heavy:
                 _IDLE["window"] = None          # 用户回来了/正在忙 → 本轮计数作废
                 continue
             # ---- 「立即补全」模式 ----
@@ -687,6 +705,13 @@ def _idle_autostart():
     _STATE["last_user_req"] = now0
     threading.Thread(target=_idle_loop, daemon=True,
                      name="idle-worker").start()
+    if st.get("model_lazy", True):
+        threading.Thread(target=_model_reaper, daemon=True,
+                         name="model-reaper").start()
+        print(f"[模型] 按需加载已开启：闲置 {st.get('model_idle_minutes', 5)} 分钟"
+              f"自动卸载，把内存还给系统")
+    else:
+        print("[模型] 常驻模式：加载后不再自动卸载")
     print(f"[闲置处理] 已启动（打标签 {'开' if st.get('idle_tag') else '关'}"
           f" · 转写 {'开' if st.get('idle_asr') else '关'}"
           f" · 空闲 {st.get('idle_minutes', 5)} 分钟后开始"
@@ -753,12 +778,16 @@ def sources_with_stats() -> list:
     return out
 
 
-def index_sources() -> dict:
-    """对全部已添加索引源执行增量索引（刷新新增/变更文件）。"""
+def index_sources(kinds=None) -> dict:
+    """对全部已添加索引源执行增量索引（刷新新增/变更文件）。
+
+    kinds: 可选 list —— 只扫这些类型（image/video/audio/document）。
+           由「刷新」按钮按当前选中的分类传入；None/空 = 全局扫描。
+    """
     srcs = [s["path"] for s in load_sources() if os.path.isdir(s["path"])]
     if not srcs:
         return {"error": "还没有添加任何索引目录"}
-    return do_index(srcs)
+    return do_index(srcs, kinds=kinds)
 
 
 
@@ -1115,6 +1144,147 @@ def about_info() -> dict:
         "ai_enabled": bool(load_settings().get("ai_enabled")),
         "ai_model": (load_settings().get("ai_model") or "").strip(),
     }
+
+
+# ---------------------------------------------------------------- 检查更新
+# ★ 项目地址只有这一处（前端那个 Star 卡片的 href 是另一处，改版本仓库时两边都要动）。
+GH_REPO = "FRr688/FXseek"
+GH_RELEASES = f"https://github.com/{GH_REPO}/releases"
+
+_UPDATE_TTL = 600.0                     # 10 分钟内不重复联网（用户可能连点）
+_UPDATE_CACHE = {"at": 0.0, "data": None}
+
+
+def _ver_key(s: str):
+    """把版本号变成可排序的元组。
+
+    ★ 关键点：带后缀的（1.0.4test10）必须排在同号正式版（1.0.4）**前面**，
+    否则装了 test 版的用户会一直被告知"有新版 1.0.4"却下不动。
+    """
+    import re
+    s = (s or "").strip().lstrip("vV")
+    m = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(.*)$", s)
+    if not m:
+        return (0, 0, 0, 0, "")
+    a, b, c = (int(x or 0) for x in m.group(1, 2, 3))
+    tail = (m.group(4) or "").strip("-_. ")
+    return (a, b, c, 0 if tail else 1, tail)
+
+
+def _gh_fetch(url, timeout=10):
+    """拉一个 URL 的正文（GitHub API / atom feed）。
+
+    ★ 为什么用 /usr/bin/curl 而不是 urllib：
+      - 这台机器（以及不少开了代理/VPN 的环境）走的是 TLS 中间人，服务端证书
+        由本地根签发；Python 的 OpenSSL **只认 certifi / openssl 的 CA 目录，
+        不读 macOS 钥匙串**，于是必然 `CERTIFICATE_VERIFY_FAILED`（certifi、
+        /private/etc/ssl/cert.pem、load_default_certs 三条路实测全失败）。
+      - 系统 curl 用钥匙串，同一时刻 `curl` 拿到 HTTP 200。
+      只跑 macOS、curl 是系统自带，所以直接用它，既不用打包 CA、也天然尊重
+      用户机器上已经装好的根证书。
+    超时必须短 —— 用户点了按钮在等。
+    """
+    import subprocess
+    cmd = ["/usr/bin/curl", "-sSL", "--fail", "--max-time", str(int(timeout)),
+           "--compressed",
+           "-H", "Accept: application/vnd.github+json",
+           "-H", "User-Agent: FXseek/%s" % DEFAULT_SETTINGS["version"],
+           url]
+    r = subprocess.run(cmd, capture_output=True, timeout=timeout + 5)
+    if r.returncode != 0:
+        msg = (r.stderr or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError("curl 退出码 %d：%s" % (r.returncode, msg or "未知错误"))
+    return r.stdout.decode("utf-8", "replace")
+
+
+def _gh_json(url, timeout=10):
+    return json.loads(_gh_fetch(url, timeout=timeout))
+
+
+def _gh_latest_via_atom(timeout=10):
+    """兜底：解析 releases.atom。
+
+    GitHub API 有匿名限流（每小时 60 次，共享出口 IP 时很容易撞上），
+    而 atom feed 不限流、也不用 token，代价是只有 tag 没有下载链接。
+
+    ★ entry 的 <title> 是**发布标题**（可能是「FXseek 1.0.3」这种自由文本），
+    不是 tag。所以优先从 <link href="…/releases/tag/v1.0.3"> 里取真正的 tag，
+    取不到再退回从标题里抠一个版本号形状的串 —— 否则 "FXseek 1.0.3" 会被
+    _ver_key 解析成 0.0.0，害得用户永远看不到更新。
+    """
+    import re as _re
+    xml = _gh_fetch("https://github.com/%s/releases.atom" % GH_REPO, timeout=timeout)
+    entry = _re.search(r"<entry>(.*?)</entry>", xml, _re.S)
+    if not entry:
+        return None
+    body = entry.group(1)
+    tag = ""
+    m = _re.search(r'<link[^>]*href="([^"]*?/releases/tag/([^"/]+))"', body, _re.S)
+    if m:
+        tag = m.group(2).strip()
+    if not tag:
+        m = _re.search(r"<title>(.*?)</title>", body, _re.S)
+        if m:
+            raw = _re.sub(r"<[^>]+>", "", m.group(1)).strip()
+            v = _re.search(r"v?\d+(?:\.\d+)+(?:[-._]?[A-Za-z0-9]+)*", raw)
+            tag = v.group(0) if v else raw
+    if not tag:
+        return None
+    url = m.group(1) if m else GH_RELEASES
+    return {"tag": tag, "url": url, "notes": "", "at": "", "assets": []}
+
+
+def update_check(force=False) -> dict:
+    """查一下 GitHub 上有没有比本机新的版本。
+
+    三种结果都如实返回，前端照实说：
+      ok=True,  has_update=True   —— 有新版本
+      ok=True,  has_update=False  —— 已是最新
+      ok=False                    —— 查不动（没网 / 被墙 / 限流 / 仓库还没有 release）
+                                     前端这时会亮出「releases」按钮，让人自己去翻。
+    """
+    cur = load_settings().get("version", DEFAULT_SETTINGS["version"])
+    now = time.time()
+    if not force and _UPDATE_CACHE["data"] and (now - _UPDATE_CACHE["at"]) < _UPDATE_TTL:
+        return _UPDATE_CACHE["data"]
+
+    rel, err = None, ""
+    # ① 首选官方 API（有下载链接、更新说明、发布时间）
+    try:
+        d = _gh_json("https://api.github.com/repos/%s/releases/latest" % GH_REPO)
+        rel = {"tag": d.get("tag_name") or d.get("name") or "",
+               "url": d.get("html_url") or GH_RELEASES,
+               "notes": (d.get("body") or "").strip(),
+               "at": d.get("published_at") or "",
+               "prerelease": bool(d.get("prerelease")),
+               "assets": [{"name": a.get("name"), "url": a.get("browser_download_url"),
+                           "size": a.get("size")}
+                          for a in (d.get("assets") or [])]}
+    except Exception as e:
+        err = "%s: %s" % (type(e).__name__, e)
+        # ② 退到 atom feed（不限流）
+        try:
+            rel = _gh_latest_via_atom()
+        except Exception as e2:
+            err = "%s / %s" % (err, e2)
+
+    if not rel or not rel.get("tag"):
+        out = {"ok": False, "current": cur, "releases_url": GH_RELEASES,
+               "error": err or "没有读到版本信息（仓库可能还没有 Release）"}
+        _UPDATE_CACHE.update({"at": now, "data": out})
+        return out
+
+    latest = rel["tag"].strip()
+    out = {"ok": True, "current": cur, "latest": latest,
+           "has_update": _ver_key(latest) > _ver_key(cur),
+           "url": rel.get("url") or GH_RELEASES,
+           "notes": rel.get("notes") or "",
+           "published_at": rel.get("at") or "",
+           "prerelease": bool(rel.get("prerelease")),
+           "assets": rel.get("assets") or [],
+           "releases_url": GH_RELEASES}
+    _UPDATE_CACHE.update({"at": now, "data": out})
+    return out
 
 
 def _load_trash() -> list:
@@ -2050,7 +2220,7 @@ def asr_transcribe_one(path: str, st: dict = None) -> dict:
 
 
 def asr_status() -> dict:
-    """未转写清单 + 闲置处理运行状态。"""
+    """未转写清单 + 闲置处理运行状态 + 智能纠偏进度。"""
     s = ix.asr_status()
     st = load_settings()
     return {
@@ -2058,7 +2228,263 @@ def asr_status() -> dict:
         "pending": len(s["pending"]), "items": s["pending"][:200],
         "running": bool(_STATE.get("asr_running")),
         "enabled": bool(st.get("asr_enabled")),
+        "polish": polish_view(),
+        "polish_progress": ix.polish_progress(),
+        "ai_on": bool(st.get("ai_enabled")) and bool((st.get("ai_model") or "").strip()),
     }
+
+
+# ------------------------------------------------------ 转写文字智能纠偏
+# 用已配置的 LLM 把 ASR 生文字读顺。结果是**另存** asr_clean，asr_text 原文
+# 一个字不动 —— 用户常常正是照着他听到的那个错字去搜，改掉原文等于把那条
+# 检索路径砍了（详见 asr_polish.py 顶部）。检索两路都同时吃原文与优化版。
+_POLISH = {"running": False, "stop": False, "done": 0, "failed": 0,
+           "total": 0, "current": None, "started": None, "finished": None,
+           "last_error": None,
+           # 空闲门（polish_idle_only）用到：正在等用户闲下来 / 本轮到点还要等几秒
+           "waiting": False, "need_idle": 0, "idle_sec": 0}
+
+
+def _polish_idle_wait() -> bool:
+    """批量纠偏的分文件闸门：确认「用户现在没在用」再继续。返回 False = 被中止。
+
+    判据与闲置补全同一套：`_STATE["last_user_req"]`（只有用户真的在操作才刷新，
+    设置页那种纯轮询端点被 `_QUIET_PATHS` 排除了）距今超过 idle_minutes 分钟。
+    每 5 秒看一次，期间随时响应「停止」；门槛每轮重读设置，
+    这样用户在等待期间把「空闲几分钟」改小能立刻生效，不用先停再开。
+    """
+    announced = False
+    while True:
+        if _POLISH["stop"]:
+            return False
+        st = load_settings()
+        need = float(st.get("idle_minutes", 5) or 5) * 60
+        _POLISH["need_idle"] = need
+        idle_sec = time.time() - _STATE.get("last_user_req",
+                                           _STATE.get("last_req", 0))
+        _POLISH["idle_sec"] = idle_sec
+        if idle_sec >= need:
+            if announced:
+                print("[智能纠偏] 用户闲下来了，继续")
+            _POLISH["waiting"] = False
+            return True
+        if not announced:
+            announced = True
+            _POLISH["waiting"] = True
+            print(f"[智能纠偏] 用户正在用，等空闲 {need / 60:.0f} 分钟再继续")
+        time.sleep(5)
+
+
+def _is_local_url(url: str) -> bool:
+    """这个服务地址是不是跑在**本机**上？
+
+    只有本机服务才会真占这台机器的内存/显存。填官方（远端）地址时模型在
+    人家服务器上跑，本地只剩网络 I/O —— 那就不该跟别的任务互斥。
+
+    认的东西：localhost / 127.0.0.1 / 127.x.x.x / ::1 / 0.0.0.0。
+    局域网别的机器（192.168.x.x、*.local）不算 —— 它不占本机内存，
+    虽然会占网络，但那不是「重活」要防的东西。
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return False
+    try:
+        u = urllib.parse.urlsplit(raw if "://" in raw else "http://" + raw)
+        host = (u.hostname or "").lower().strip("[]")
+    except Exception:
+        return False
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    return host.startswith("127.")
+
+
+def _model_in_use() -> str:
+    """谁正攥着**本进程的 WeMM 模型**（空串 = 没人用，可以放心卸载）。
+
+    ★ 给 `_model_reaper` 用，判据和 `_heavy_running` **不一样**：这里问的是
+    「这个任务会不会用到 WeMM」，跟模型服务在哪台机器上无关 ——
+      * 打标签即使把视觉模型填成远端官方 API，最后仍要用 WeMM 把生成的描述和
+        标签编成向量写进索引（`indexer.tag_file` 的 `model, processor` 参数）；
+      * 转写只有**音频**要重编码 chunk 0，**视频只写 meta（关键词路），压根不碰
+        WeMM**（见 `asr_transcribe_one` 里那个 `if ext not in VIDEO_EXT`）；
+      * 建索引、智能纠偏、一键补全都得 encode。
+    如果这里错判成「没人用」把模型卸了，正在跑的编码会拿着已被丢弃的引用继续
+    跑完 —— 不崩，但那几 GB 根本不会释放，卸载等于白做。
+    """
+    if _STATE.get("busy"):
+        return "建索引"
+    if _STATE.get("ai_tagging"):
+        return "打标签"
+    p = _STATE.get("asr_running")
+    if p and os.path.splitext(p)[1].lower() not in ix.VIDEO_EXT:
+        return "转写"
+    if _POLISH.get("running"):
+        return "智能纠偏"
+    man = _IDLE.get("manual")
+    if man and not man.get("stop") and not man.get("finished"):
+        return "一键补全"
+    return ""
+
+
+def _heavy_running(exclude: str = "") -> str:
+    """谁在抢**本机**的资源（空串 = 都闲着）。用于重任务互斥。
+
+    ★ 关键是判「模型跑在哪台机器上」，而不是「有没有任务在跑」：
+      * 打标签 / 转写如果填的是**官方（远端）API**，模型在人家服务器上，本地
+        只是网络等待，内存占用可以忽略 —— 那**不算重活**，不该把「智能纠偏」
+        和「闲置补全」一起挡住干等。用户机器内存宽裕，没必要让两边互相等。
+      * 填的是**本机地址**（127.0.0.1 / localhost，比如 oMLX / Ollama）时才要
+        互斥：打标要驻留视觉模型、转写要驻留 ASR 模型、纠偏要驻留文本模型，
+        三个一起上就是好几 G，16G 机器风扇直接起飞。
+      * 建索引 / 智能纠偏 / 一键补全本身就要用本进程的 WeMM（2G 级）吃 CPU，
+        不管模型在哪都算重活。
+
+    exclude 用来忽略「自己」，避免自己把自己挡住。
+    """
+    if _STATE.get("busy"):
+        return "建索引"
+    st = load_settings()
+    if _STATE.get("ai_tagging") and _is_local_url(st.get("ai_base_url")):
+        return "打标签"
+    if _STATE.get("asr_running") and _is_local_url(st.get("asr_base_url")):
+        return "转写"
+    if _POLISH.get("running") and exclude != "polish":
+        return "智能纠偏"
+    man = _IDLE.get("manual")
+    if (man and not man.get("stop") and not man.get("finished")
+            and exclude != "idle"):
+        return "一键补全"
+    return ""
+
+
+def polish_view() -> dict:
+    p = _POLISH
+    return {
+        "running": bool(p["running"]),
+        "done": p["done"], "failed": p["failed"], "total": p["total"],
+        "current": os.path.basename(p["current"]) if p["current"] else None,
+        "started": p["started"], "finished": p["finished"],
+        "last_error": p["last_error"],
+        # 空闲门：前端据此显示「正在等你闲下来 · 还有 N 分 M 秒」
+        "waiting": bool(p["waiting"]),
+        "need_idle": p["need_idle"],
+        "idle_sec": round(p["idle_sec"], 1),
+    }
+
+
+def asr_polish_one(path: str) -> dict:
+    """给一个音频/视频做智能纠偏（播放面板按钮）。"""
+    if not _path_allowed(path) or not os.path.exists(path):
+        return {"ok": False, "message": "文件不存在或不可访问"}
+    st = load_settings()
+    if not (bool(st.get("ai_enabled")) and (st.get("ai_base_url") or "").strip()
+            and (st.get("ai_model") or "").strip()):
+        return {"ok": False, "message": "请先在「设置 → 智能服务」配置文本模型"}
+    model = processor = None
+    # 只有音频需要重编码 chunk 0；视频的转写只走关键词路，不必加载 WeMM。
+    if os.path.splitext(path)[1].lower() not in ix.VIDEO_EXT:
+        try:
+            model, processor = _ensure_model()
+        except Exception:
+            return {"ok": False, "message": "模型还没加载完，稍后再试"}
+    r = ix.polish_file(path, ai_cfg_from_settings(st), model, processor)
+    if r.get("ok"):
+        op_log("智能纠偏", f"{os.path.basename(path)} · {r.get('chars')} 字"
+                          f" · {asr_polish.KIND_NAMES.get(r.get('kind'), '')}"
+                          f" · {r.get('seconds')}s")
+    return r
+
+
+def asr_unpolish_one(path: str) -> dict:
+    """丢掉优化版、回到只看原文。
+
+    音频要重编码 chunk 0（只留原文）—— 当初 polish 是把「原文 + 优化版」一起拼进
+    向量的，不重编码就会出现「点了还原，但搜优化版才有的词还能搜到这个文件」。
+    视频的转写不走向量路，直接删元数据即可。
+    """
+    if not _path_allowed(path) or not os.path.exists(path):
+        return {"ok": False, "message": "文件不存在或不可访问"}
+    model = processor = None
+    if os.path.splitext(path)[1].lower() not in ix.VIDEO_EXT:
+        try:
+            model, processor = _ensure_model()
+        except Exception:
+            model = processor = None   # 模型没就绪也让它删：元数据先干净，刷新索引会自愈
+    r = ix.unpolish_file(path, model, processor)
+    if r.get("ok"):
+        op_log("智能纠偏", f"{os.path.basename(path)} · 还原原文")
+    return r
+
+
+def asr_polish_all(action: str = "status") -> dict:
+    """一键优化全部：把「有转写、还没优化」的逐个过一遍。"""
+    if action == "stop":
+        if _POLISH["running"]:
+            _POLISH["stop"] = True
+            print(f"[智能纠偏] 用户中止（已优化 {_POLISH['done']} 个）")
+        return {"ok": True, "polish": polish_view(), "progress": ix.polish_progress()}
+
+    if action == "start":
+        if _POLISH["running"]:
+            return {"ok": False, "message": "已经有一轮在跑了"}
+        # 和打标/转写/建索引互斥：三个一起跑会同时占住 oMLX 的两个模型 + 本进程的
+        # WeMM，内存和风扇都受不了（见 _heavy_running 的注释）。
+        busy = _heavy_running(exclude="polish")
+        if busy:
+            return {"ok": False, "message": f"正在{busy}，等它跑完再优化"}
+        st = load_settings()
+        if not (bool(st.get("ai_enabled")) and (st.get("ai_base_url") or "").strip()
+                and (st.get("ai_model") or "").strip()):
+            return {"ok": False, "message": "请先在「设置 → 智能服务」配置文本模型"}
+        todo = ix.polish_pending()
+        if not todo:
+            return {"ok": False, "message": "没有待优化的转写文字（都是最新的）"}
+        _POLISH.update({"running": True, "stop": False, "done": 0, "failed": 0,
+                        "total": len(todo), "started": time.time(),
+                        "finished": None, "last_error": None,
+                        "waiting": False, "need_idle": 0, "idle_sec": 0})
+        idle_only = bool(st.get("polish_idle_only", True))
+        print(f"[智能纠偏] 开始（待优化 {len(todo)} 个"
+              + ("，只在空闲时跑" if idle_only else "") + "）")
+        op_log("智能纠偏", f"开始批量优化，待处理 {len(todo)} 个")
+
+        def _worker():
+            try:
+                model = processor = None
+                for p in todo:
+                    if _POLISH["stop"]:
+                        break
+                    # 空闲门：用户在用就先挂着，别抢 GPU。放在**每个文件之前**，
+                    # 所以用户中途回来用电脑，这一批会就地暂停、等人走了接着跑
+                    # —— 进度是留在库里（asr_clean）的，暂停不丢东西。
+                    if idle_only and not _polish_idle_wait():
+                        break
+                    _POLISH["current"] = p
+                    try:
+                        if os.path.splitext(p)[1].lower() not in ix.VIDEO_EXT:
+                            if model is None:
+                                model, processor = _ensure_model()
+                        r = ix.polish_file(p, ai_cfg_from_settings(), model, processor)
+                        if r.get("ok"):
+                            _POLISH["done"] += 1
+                        else:
+                            _POLISH["failed"] += 1
+                            _POLISH["last_error"] = r.get("message")
+                    except Exception as e:      # noqa: BLE001
+                        _POLISH["failed"] += 1
+                        _POLISH["last_error"] = f"{type(e).__name__}: {e}"
+            finally:
+                _POLISH["current"] = None
+                _POLISH["running"] = False
+                _POLISH["finished"] = time.time()
+                op_log("智能纠偏",
+                       f"结束：成功 {_POLISH['done']} 个，失败 {_POLISH['failed']} 个")
+                print(f"[智能纠偏] 结束（成功 {_POLISH['done']}，失败 {_POLISH['failed']}）")
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return {"ok": True, "polish": polish_view(), "progress": ix.polish_progress()}
+
+    return {"ok": True, "polish": polish_view(), "progress": ix.polish_progress()}
 
 
 def ai_backfill(action: str = "status", what: str = "tag"):
@@ -2084,6 +2510,13 @@ def ai_backfill(action: str = "status", what: str = "tag"):
     if action == "start":
         st = load_settings()
         what = what if what in ("tag", "asr", "both") else "tag"
+        # 和「智能纠偏」/建索引互斥：补全走的是 oMLX 的视觉或 ASR 模型，
+        # 纠偏走的是文本模型 + 本进程的 WeMM，撞一起就是几个 G 的内存。
+        busy = _heavy_running(exclude="idle")
+        if busy:
+            return {"ok": False, "message": f"正在{busy}，等它跑完再补全"}
+        if man and not man.get("stop") and not man.get("finished"):
+            return {"ok": False, "message": "已经有一轮补全在跑了"}
         if what in ("tag", "both") and not (bool(st.get("idle_tag")) and bool(st.get("ai_enabled"))):
             return {"ok": False, "message": "AI 打标没开：先去「智能服务」打开「AI 描述与标签」。"}
         if what in ("asr", "both") and not (bool(st.get("idle_asr")) and bool(st.get("asr_enabled"))):
@@ -2259,7 +2692,7 @@ def search_by_image(image, top_k=20, kind=None, db_path=None):
     import embed as we
     import fastsearch as fs
 
-    model, processor = we.load_model(_STATE["model_path"] or we.DEFAULT_MODEL)
+    model, processor = _ensure_model()
     v = we.embed(model, processor, image=image, instruction=we.QUERY_INSTRUCTION)
     mx.eval(v)
     qvec = v.tolist()
@@ -2803,18 +3236,68 @@ def browse_all(kind=None, limit=300, sort="recent", source=None):
 
 
 def _ensure_model():
-    if _STATE["model"] is None:
-        raise RuntimeError("模型未加载")
-    return _STATE["model"], _STATE["processor"]
+    """拿到 WeMM，没有就现场加载（按需加载）。
+
+    启动时不再无条件把 3.5 GB 权重拉进内存 —— 8 GB 的 M1 上那会直接拖慢整机。
+    第一次检索/编码多等约 1.5~3 秒，之后一直复用，直到闲置卸载（见 `_model_reaper`）。
+    """
+    if _STATE["model"] is not None:
+        we.touch_model()
+        return _STATE["model"], _STATE["processor"]
+    with _MODEL_LOCK:
+        # 双检：等锁期间可能已经有别的线程加载好了
+        if _STATE["model"] is None:
+            path = _STATE["model_path"] or we.DEFAULT_MODEL
+            _STATE["model"], _STATE["processor"] = we.load_model(path)
+        return _STATE["model"], _STATE["processor"]
 
 
-def do_index(paths, force=False):
-    """后台建索引（同一时间只允许一个任务），实时上报进度。"""
+def _model_reaper():
+    """闲置守护线程：没人用模型就把它卸掉，把几 GB 还给系统。
+
+    判据用 `embed.model_idle_seconds()`（缓存层计时，indexer 自己 load 也覆盖到），
+    所以「用户一分钟内搜好几次」只会不断刷新计时，不会来回加载卸载。
+
+    ★ 这里用 `_model_in_use()` 而不是 `_heavy_running()`：只要还有任务在用 WeMM
+    就不能卸 —— 哪怕那个任务打的是远端官方 API。反过来，只跑视频转写（不碰
+    WeMM）时是允许卸的，`_model_in_use` 认得出来。
+    """
+    while True:
+        time.sleep(20)
+        try:
+            st = load_settings()
+            if not st.get("model_lazy", True):
+                continue
+            if not we.model_loaded():
+                continue
+            if _model_in_use():
+                continue
+            mins = float(st.get("model_idle_minutes", 5) or 5)
+            idle = we.model_idle_seconds()
+            if idle < mins * 60:
+                continue
+            we.unload_model()
+            _STATE["model"] = None
+            _STATE["processor"] = None
+            _STATE["model_unloaded"] += 1
+            print(f"[模型] 已闲置 {idle / 60:.0f} 分钟，卸载释放内存"
+                  f"（下次使用会重新加载，约 1.5~3 秒）", flush=True)
+        except Exception as e:
+            print(f"[模型] 闲置卸载跳过：{e}", flush=True)
+
+
+def do_index(paths, force=False, kinds=None):
+    """后台建索引（同一时间只允许一个任务），实时上报进度。
+
+    kinds: 可选 list —— 只索引这些类型（image/video/audio/document），
+           由「刷新」按钮按当前分类传入；None/空 = 全部类型。
+    """
     if _STATE["busy"]:
         return {"error": "已有索引任务在运行", "since": _STATE["busy"]["started"]}
     for p in paths:
         if not _path_allowed(p):
             return {"error": f"路径不在允许范围: {p}"}
+    kinds = [k for k in (kinds or []) if k in ("image", "video", "audio", "document")] or None
 
     def run():
         t0 = time.time()
@@ -2838,7 +3321,7 @@ def do_index(paths, force=False):
             result = ix.build_index(paths, force=force,
                                     model_path=_STATE["model_path"],
                                     progress=on_progress, ai_config=ai_cfg,
-                                    asr_config=asr_cfg)
+                                    asr_config=asr_cfg, kinds=kinds)
         except Exception as e:
             status = f"error: {e}"
 
@@ -2847,11 +3330,14 @@ def do_index(paths, force=False):
         skipped = (result or {}).get("skipped")
         units = (result or {}).get("units")
         removed = (result or {}).get("removed") or 0
-        _STATE["last_index"] = {"status": status, "paths": paths,
+        failed = (result or {}).get("failed") or 0
+        _STATE["last_index"] = {"status": status, "paths": paths, "kinds": kinds,
                                 "elapsed": elapsed, "at": time.time(),
                                 "indexed": indexed, "skipped": skipped,
-                                "units": units, "removed": removed}
+                                "units": units, "removed": removed, "failed": failed}
         _STATE["busy"] = None
+        _KN = {"image": "图片", "video": "视频", "audio": "音频", "document": "文档"}
+        scope = ("／".join(_KN.get(k, k) for k in kinds)) if kinds else ""
         if status == "done":
             # 索引完顺手重算「同一首歌」关联（只比指纹切片、不解码音频，秒级）
             try:
@@ -2861,8 +3347,16 @@ def do_index(paths, force=False):
                     op_log("同一首歌", f"建立 {len(links)} 条关联")
             except Exception as e:
                 op_log("同一首歌", f"关联扫描失败：{e}", level="warn")
-            msg = (f"完成：新增 {indexed} 个文件 / {units} 个向量"
-                   if indexed else "完成：没有发现新文件")
+            if indexed:
+                msg = f"完成：新增 {indexed} 个文件 / {units} 个向量"
+            elif failed:
+                msg = f"完成：没有新增文件（{failed} 个文件无法解析）"
+            elif scope:
+                msg = f"完成：{scope}没有发现新文件"
+            else:
+                msg = "完成：没有发现新文件"
+            if indexed and failed:
+                msg += f"，{failed} 个文件无法解析"
             if removed:
                 msg += f"，清理 {removed} 个失效记录"
             op_log("索引", f"{msg}，耗时 {elapsed}s")
@@ -2877,9 +3371,9 @@ def do_index(paths, force=False):
     _STATE["last_result"] = None
     _STATE["progress"] = {"phase": "starting", "message": "启动索引…",
                           "total": 0, "current": 0, "updated": time.time()}
-    _STATE["busy"] = {"paths": paths, "started": time.time()}
+    _STATE["busy"] = {"paths": paths, "kinds": kinds, "started": time.time()}
     threading.Thread(target=run, daemon=True).start()
-    return {"status": "started", "paths": paths}
+    return {"status": "started", "paths": paths, "kinds": kinds}
 
 
 def do_search(query, top_k=10, kind=None, threshold=0.0, tier=None, source=None, lexical=True):
@@ -3038,6 +3532,57 @@ _PANEL_HOOK_MISSING = {
 # 以前 run_server 里是 `ThreadingHTTPServer(...).serve_forever()` 一行，
 # 对象谁都没留着引用，也就没法停。现在存下来 —— 停了之后**模型、索引线程、
 # 用户数据都不动**，再点「启动服务器」就是原样把监听重新架起来。
+class _Server(ThreadingHTTPServer):
+    """本地服务用的 HTTP 服务器。
+
+    ★ request_queue_size 默认只有 5（socketserver.TCPServer 的历史默认值）。
+      素材瀑布一屏就是几十张卡，浏览器会**同时**发几十个 /v1/thumb，
+      排在 5 个之后的连接直接被内核丢掉 —— 客户端看到的就是
+      `Connection reset by peer`。实测 34 个并发取图，25 个被掐断，
+      表现就是「搜完之后缩略图半天不出来」。
+      调到 256：并发取图不再被 backlog 卡死。
+    """
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 256
+
+
+# 缩略图**生成**（缓存未命中）的并发闸门：一屏几十张卡同时进来会瞬间拉起几十个
+# ffmpeg 子进程，把 CPU 抢烂反而全都变慢；排队等一小会儿比一起挤好。
+_THUMB_SEM = threading.BoundedSemaphore(6)
+
+# 音频波形缩略图的**公共底图**（渐变 + 光晕）。它与文件无关，每张卡都一模一样，
+# 所以只算一次缓存住。原来这两步是纯 Python 逐像素循环（420×140≈5.9 万次）外加
+# 一次 GaussianBlur(85)，单张几百毫秒，而且全程占着 GIL —— 并发生成时线程互相
+# 排队，几十张卡能拖到十几秒。
+_WAVE_BASE = {}
+
+
+def _wave_base(W, H):
+    hit = _WAVE_BASE.get((W, H))
+    if hit is not None:
+        return hit
+    from PIL import Image, ImageDraw, ImageFilter
+    im = Image.new("RGB", (W, H))
+    px = im.load()
+    c0 = (24, 30, 54)      # 左上：深靛
+    c1 = (46, 38, 88)      # 右下：深紫
+    for y in range(H):
+        for x in range(0, W, 4):
+            t = (x / W * 0.55 + y / H * 0.45)
+            r = int(c0[0] + (c1[0] - c0[0]) * t)
+            g = int(c0[1] + (c1[1] - c0[1]) * t)
+            b = int(c0[2] + (c1[2] - c0[2]) * t)
+            for k in range(4):
+                if x + k < W:
+                    px[x + k, y] = (r, g, b)
+    glow = Image.new("RGB", (W, H), (0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([W - 300, -190, W + 130, 240], fill=(96, 58, 160))
+    glow = glow.filter(ImageFilter.GaussianBlur(85))
+    im = Image.blend(im, Image.blend(im, glow, 1.0), 0.42)
+    _WAVE_BASE[(W, H)] = im
+    return im
+
 _SRV = {"inst": None, "host": "127.0.0.1", "port": 8231, "thread": None}
 
 
@@ -3079,7 +3624,7 @@ def server_start() -> dict:
     """把监听重新架起来。模型还在内存里，所以这条路径很快。"""
     if _SRV.get("inst") is not None:
         return {"ok": True, "running": True, "note": "服务已经在跑"}
-    srv = ThreadingHTTPServer((_SRV["host"], _SRV["port"]), Handler)
+    srv = _Server((_SRV["host"], _SRV["port"]), Handler)
     _SRV["inst"] = srv
     th = threading.Thread(target=srv.serve_forever, daemon=True, name="fxseek-server")
     _SRV["thread"] = th
@@ -3228,6 +3773,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, scoped_stats(source=src))
         elif u.path == "/v1/about":
             self._json(200, about_info())
+        elif u.path == "/v1/update/check":
+            force = (qs.get("force", ["0"])[0] or "0").lower() in ("1", "true", "yes")
+            self._json(200, update_check(force=force))
         elif u.path == "/v1/settings":
             self._json(200, load_settings())
         elif u.path == "/v1/cache":
@@ -3403,12 +3951,16 @@ class Handler(BaseHTTPRequestHandler):
             cache_dir = P.THUMB_DIR
             os.makedirs(cache_dir, exist_ok=True)
             import hashlib
-            key = hashlib.sha1(f"{path}|{os.path.getmtime(path)}|{at}|{w}".encode()).hexdigest()[:24]
+            key = hashlib.sha1(f"v2|{path}|{os.path.getmtime(path)}|{at}|{w}".encode()).hexdigest()[:24]
             cache_fp = os.path.join(cache_dir, key + ".jpg")
             if os.path.exists(cache_fp):
                 self._bytes(200, open(cache_fp, "rb").read(), "image/jpeg"); return
 
-            img = self._make_thumb_image(path, ext, at=at)
+            _THUMB_SEM.acquire()
+            try:
+                img = self._make_thumb_image(path, ext, at=at)
+            finally:
+                _THUMB_SEM.release()
             if img is None:
                 self._json(404, {"error": "cannot render thumb"}); return
             img.thumbnail((w, w))
@@ -3458,8 +4010,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._overlay_play(frames[0][0])
             return self._placeholder("🎬 视频", "#e0e7ff")
 
-        # 3) 音频：波形
+        # 3) 音频：优先用封面（内嵌 APIC / 同目录封面图），没有才回落到波形
         if ext in ix.AUDIO_EXT:
+            cov = self._audio_cover(path)
+            if cov is not None:
+                try:
+                    return self._cover_card(cov)
+                except Exception as e:
+                    print(f"  [封面合成失败] {path}: {e}")
             return self._audio_waveform(path)
 
         # 4) 文档：文本摘要卡片
@@ -3541,6 +4099,69 @@ class Handler(BaseHTTPRequestHandler):
         d.rectangle([0, H - 5, W, H], fill="#c8f542")
         return im
 
+    def _audio_cover(self, path):
+        """取音频封面：优先内嵌（ID3 APIC / MP4 covr / FLAC picture），其次同目录封面图。
+
+        ★ 这些封面一直就在文件里 —— ffmpeg 把附加图当作一路 video 流暴露出来，
+        以前音频缩略图一律走程序生成的波形，等于把封面白扔了。
+        取不到返回 None，调用方回落到波形缩略图。
+        """
+        from PIL import Image
+        import subprocess, io as _io
+        # 1) 内嵌封面：抽第一路视频流的第一帧
+        try:
+            r = subprocess.run([ix.FFMPEG, "-v", "error", "-i", path,
+                                "-map", "0:v:0", "-frames:v", "1",
+                                "-f", "image2", "-c:v", "mjpeg", "-"],
+                               capture_output=True, timeout=30)
+            if r.returncode == 0 and r.stdout:
+                im = Image.open(_io.BytesIO(r.stdout))
+                im.load()
+                return im.convert("RGB")
+        except Exception:
+            pass
+        # 2) 同目录封面图（cover/folder/front/album/artwork、封面/专辑…）
+        try:
+            d = os.path.dirname(path)
+            for n in sorted(os.listdir(d)):
+                if os.path.splitext(n)[1].lower() not in (".jpg", ".jpeg", ".png", ".webp"):
+                    continue
+                low = n.lower()
+                if (low.startswith(("cover", "folder", "front", "album", "artwork", "disc"))
+                        or n.startswith(("封面", "专辑"))):
+                    with Image.open(os.path.join(d, n)) as im:
+                        return im.convert("RGB")
+        except Exception:
+            pass
+        return None
+
+    def _cover_card(self, cover):
+        """把封面排成一张卡片图：模糊放大做底 + 居中圆角方形封面。
+
+        故意**不**叠播放键 —— 音频卡片中央那个播放键是真实 DOM 按钮
+        （`.playbadge.audplay`），烘进图里会和它重叠成两个。
+        """
+        from PIL import Image, ImageDraw, ImageFilter
+        W, H = 560, 420
+        bg = cover.copy()
+        sc = max(W / max(1, bg.width), H / max(1, bg.height))
+        bg = bg.resize((max(W, int(bg.width * sc)), max(H, int(bg.height * sc))), Image.LANCZOS)
+        left, top = (bg.width - W) // 2, (bg.height - H) // 2
+        bg = bg.crop((left, top, left + W, top + H)).filter(ImageFilter.GaussianBlur(30))
+        bg = Image.blend(bg, Image.new("RGB", (W, H), (10, 12, 18)), 0.5)
+
+        side = int(H * 0.74)
+        fg = cover.copy()
+        s = min(fg.width, fg.height)
+        fg = fg.crop(((fg.width - s) // 2, (fg.height - s) // 2,
+                      (fg.width + s) // 2, (fg.height + s) // 2))
+        fg = fg.resize((side, side), Image.LANCZOS)
+        mask = Image.new("L", (side, side), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, side - 1, side - 1],
+                                               radius=16, fill=255)
+        bg.paste(fg, ((W - side) // 2, (H - side) // 2), mask)
+        return bg
+
     def _audio_waveform(self, path):
         """音频缩略图：深色渐变底 + 对称圆角波形 + 中央播放键 + 底部时长胶囊。
 
@@ -3551,34 +4172,19 @@ class Handler(BaseHTTPRequestHandler):
         import subprocess, array, tempfile, math, random
 
         W, H = 560, 420
-        # ---- 1. 深色渐变底：斜向青蓝 → 靛紫（与卡片深色主题一致）----
-        im = Image.new("RGB", (W, H))
-        px = im.load()
-        c0 = (24, 30, 54)      # 左上：深靛
-        c1 = (46, 38, 88)      # 右下：深紫
-        for y in range(H):
-            for x in range(0, W, 4):          # 每 4px 采样一次，再横向铺开，兼顾速度
-                t = (x / W * 0.55 + y / H * 0.45)
-                r = int(c0[0] + (c1[0] - c0[0]) * t)
-                g = int(c0[1] + (c1[1] - c0[1]) * t)
-                b = int(c0[2] + (c1[2] - c0[2]) * t)
-                for k in range(4):
-                    if x + k < W:
-                        px[x + k, y] = (r, g, b)
-        # ---- 2. 右上角径向光晕（品牌紫），让画面有纵深感 ----
-        glow = Image.new("RGB", (W, H), (0, 0, 0))
-        gd = ImageDraw.Draw(glow)
-        gd.ellipse([W - 300, -190, W + 130, 240], fill=(96, 58, 160))
-        glow = glow.filter(ImageFilter.GaussianBlur(85))
-        im = Image.blend(im, Image.blend(im, glow, 1.0), 0.42)
+        # ---- 1+2. 渐变底 + 右上角光晕：每张卡都一样，只算一次（见 _wave_base）----
+        im = _wave_base(W, H).copy()
         d = ImageDraw.Draw(im, "RGBA")
 
         # ---- 3. 取真实波形峰值；失败则用平滑合成波，避免出现空白 ----
+        #   -t 60：只解码前 60 秒。原先整首歌解成 8kHz 原始 PCM，
+        #   6 分钟的曲子要解 2.8 MB 出来，纯属浪费 —— 缩略图看不出差别。
         peaks = []
         try:
             with tempfile.TemporaryDirectory() as td:
                 fp = os.path.join(td, "a.raw")
-                subprocess.run([ix.FFMPEG, "-i", path, "-ac", "1", "-ar", "8000",
+                subprocess.run([ix.FFMPEG, "-t", "60", "-i", path,
+                                "-ac", "1", "-ar", "8000",
                                 "-f", "s16le", "-y", fp],
                                capture_output=True, timeout=90)
                 if os.path.exists(fp) and os.path.getsize(fp) > 1000:
@@ -3788,7 +4394,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception as e:
                         res = {"error": f"图片解析失败：{e}"}
             elif u.path == "/v1/refresh":
-                res = index_sources()
+                res = index_sources(body.get("kinds"))
             elif u.path == "/v1/index":
                 res = do_index(body.get("paths", []), body.get("force", False))
             elif u.path == "/v1/embeddings":
@@ -3838,6 +4444,16 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/v1/asr/transcribe":
                 # 立即给一个音频/视频转写（详情页按钮）。同步返回，同上。
                 res = asr_transcribe_one(body.get("path", ""))
+            elif u.path == "/v1/asr/polish":
+                # 单个素材的转写文字智能纠偏（播放面板按钮）。同步返回。
+                res = asr_polish_one(body.get("path", ""))
+            elif u.path == "/v1/asr/unpolish":
+                # 丢掉优化版、回到只看原文。音频还要按原文重编码 chunk 0，
+                # 否则优化版里的词还能从向量那条路搜到 —— 那就没还原干净。
+                res = asr_unpolish_one(body.get("path", ""))
+            elif u.path == "/v1/asr/polish_all":
+                # 一键优化全部。action = start | stop | status（默认 status）
+                res = asr_polish_all(body.get("action", "status"))
             elif u.path == "/v1/mcp/toggle":
                 # 一键开启/关闭 MCP 接入。body: {"enabled":true, "ids":["dsh",...]}
                 res = mcp_set(bool(body.get("enabled")), body.get("ids"))
@@ -3963,9 +4579,17 @@ def run_server(model_path, host="127.0.0.1", port=8231, allow=None):
             print(f"[模型下载] 失败：{_e}")
             print("           可以手动下载后放到数据目录的 model/ 下，或用 --model 指定路径。")
             raise
-    print(f"加载模型: {model_path}")
-    model, processor = we.load_model(model_path)
-    _STATE.update({"model": model, "processor": processor, "model_path": model_path})
+    _st0 = load_settings()
+    if _st0.get("model_lazy", True):
+        # 按需加载：这里只记路径，权重等第一次检索时再拉。
+        # 8 GB 的 M1 上开机就吃 3.5 GB 会让整机发涩，而代价只是首次检索慢 1.5~3 秒。
+        _STATE["model_path"] = model_path
+        print("模型: 按需加载模式（首次检索时载入，约 1.5~3 秒）")
+    else:
+        print(f"加载模型: {model_path}")
+        model, processor = we.load_model(model_path)
+        _STATE.update({"model": model, "processor": processor,
+                       "model_path": model_path})
     # ffmpeg 自检（确保视频/音频能力可用，且不依赖目标机器是否装了系统 ffmpeg）
     fs = ix.ffmpeg_status()
     tag = "内置 ✅" if fs["using_builtin"] else "系统 ⚠️"
@@ -3983,7 +4607,7 @@ def run_server(model_path, host="127.0.0.1", port=8231, allow=None):
     _idle_autostart()                   # 闲置时逐个补 AI 标签 / 音频转写
     # 服务实例存进 _SRV：菜单栏的「停止服务器 / 启动服务器」要能把它关掉再架回来
     _SRV.update({"host": host, "port": port})
-    _srv = ThreadingHTTPServer((host, port), Handler)
+    _srv = _Server((host, port), Handler)
     _SRV["inst"] = _srv
     _SRV["thread"] = threading.current_thread()
     try:

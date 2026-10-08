@@ -54,7 +54,7 @@ mkdir -p "$RES"
 
 # 2a. Python 源码与前端资源（白名单，避免漏进杂物）
 for f in app.py launcher.py model_dl.py paths.py embed.py indexer.py fingerprint.py \
-         fastsearch.py ai_desc.py asr_desc.py voice_intent.py net_util.py heif_support.py \
+         fastsearch.py ai_desc.py asr_desc.py asr_polish.py voice_intent.py net_util.py heif_support.py \
          seed.py serve.py \
          run_daemon.py mcp_server.py mcp_agents.py tray_helper.py recorder.py requirements.txt; do
   # 注：README.md 不进包 —— 运行期没人读它，仓库里留着给 GitHub 首页看就行
@@ -68,6 +68,27 @@ done
 for d in bin vendor seed assets fxseek_skill; do
   [ -d "$d" ] && cp -R "$d" "$RES/"
 done
+
+# 2b-1. 白名单守卫：把本程序依赖的「本地模块」逐个和包里对一遍。
+#       吃过一次亏：新增 asr_polish.py 忘了加白名单，包能打出来，
+#       但用户一启动就 ImportError —— 这种错必须 build 时就炸，不能等交付。
+echo "==> 校验本地模块是否都进包"
+MISSING=0
+for m in $(grep -hoE '^[[:space:]]*(import|from)[[:space:]]+[a-z_][a-z0-9_]*' \
+             app.py launcher.py indexer.py fastsearch.py paths.py serve.py \
+             run_daemon.py mcp_server.py tray_helper.py 2>/dev/null \
+           | awk '{print $2}' | sort -u); do
+  # 只关心「本仓库里真实存在的 .py」，第三方库不在此列
+  if [ -f "$m.py" ] && [ ! -f "$RES/$m.py" ]; then
+    echo "    !! 漏了本地模块: $m.py" >&2
+    MISSING=1
+  fi
+done
+if [ "$MISSING" = "1" ]; then
+  echo "!! 有本地模块没进包，打出来的 app 会启动即崩。请补 tools/build_app.sh 的白名单。" >&2
+  exit 1
+fi
+echo "    本地模块齐全"
 
 # 2c. venv —— 整份搬过去。它是「可重定位运行时」（自包含 libpython），
 #     里面的 python3.11 二进制用 @executable_path 找 dylib，换目录也能跑。
