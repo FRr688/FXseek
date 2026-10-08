@@ -765,13 +765,14 @@ def asr_bad_ratio(text: str, duration: float) -> bool:
         return False
 
 
-def asr_status(db_path=None):
+def asr_status(db_path=None, max_duration=None):
     """音频/视频里，哪些已经转写过、哪些还没有。
 
     返回 {total, done, pending: [{path, kind, name, bad?}]}。
-    「已转写」的判据是 meta 里有非空 asr_text；已经确认过「没有内容」(`asr_none`) 或
-    「超过时长上限」(`asr_skip`) 的也算处理过 —— 它们不该反复重试。
-    **但复读退化的旧记录要重新排队**（见 asr_bad_ratio），否则永远修不回来。
+    「已转写」的判据是 meta 里有非空 asr_text；已经确认过「没有内容」(`asr_none`)
+    的算处理过 —— 它不该反复重试。`asr_skip` 则要看**当初是哪条上限挡的**：
+    上限被调大（或改成不限）之后，这些文件必须重新排队，判据见 `_asr_skip_lifted`。
+    **复读退化的旧记录也要重新排队**（见 asr_bad_ratio），否则永远修不回来。
     """
     db = db_path or DB_PATH
     con = sqlite3.connect(db)
@@ -809,7 +810,9 @@ def asr_status(db_path=None):
                     pend.append({"path": p, "kind": k,
                                  "name": os.path.basename(p), "bad": True})
             continue
-        if m.get("asr_none") or m.get("asr_skip"):
+        if m.get("asr_none"):
+            continue
+        if m.get("asr_skip") and not _asr_skip_lifted(m, max_duration):
             continue
         pend.append({"path": p, "kind": k, "name": os.path.basename(p)})
     return {"total": len(rows), "done": len(rows) - len(pend), "pending": pend}
@@ -860,10 +863,14 @@ def transcribe_file(path, asr_cfg, model=None, processor=None, db_path=None):
         if max_dur:
             dur = _probe_duration(path)
             if dur and dur > max_dur:
-                _merge_meta(con, path, {"asr_skip": "too_long"})
+                # 连「哪条上限挡的」一起记下来，上限放宽后 _asr_pending 才好放行
+                _merge_meta(con, path, {"asr_skip": "too_long",
+                                        "asr_skip_dur": round(dur, 1)})
                 con.commit()
                 return {"ok": False,
-                        "message": f"时长 {dur:.0f} 秒，超过设置的上限 {max_dur} 秒"}
+                        "message": f"时长 {dur/60:.1f} 分钟，超过「设置 → 智能服务 → "
+                                   f"音频转写」里的时长上限 {max_dur} 秒。"
+                                   f"把那个数字调大、或填 0 表示不限，就能转写。"}
         # 没有音频轨的视频（测试卡、纯画面录像）直接标记，不必去问 ASR 服务
         if not _has_audio_stream(path):
             _merge_meta(con, path, {"asr_none": True})
@@ -884,10 +891,11 @@ def transcribe_file(path, asr_cfg, model=None, processor=None, db_path=None):
                                f"疑似模型复读），已丢弃，稍后重试"}
         if txt:
             asr_meta = {"asr_text": txt, "asr_model": asr_cfg["model"]}
-            asr_clear = ("asr_none", "asr_skip")     # 这次有字了，清掉「没内容/跳过」标记
+            asr_clear = ("asr_none", "asr_skip", "asr_skip_dur")   # 这次有字了，清掉「没内容/跳过」标记
         else:
             asr_meta = {"asr_none": True}
-            asr_clear = ("asr_text", "asr_model", "asr_skip")   # ★ 清掉上一次的旧文字
+            asr_clear = ("asr_text", "asr_model", "asr_skip",
+                         "asr_skip_dur")   # ★ 清掉上一次的旧文字与跳过痕迹
         _merge_meta(con, path, asr_meta, clear=asr_clear)
 
         n_vec = 0
@@ -1219,13 +1227,43 @@ def _probe_duration(path: str) -> float:
         return 0.0
 
 
+def _asr_skip_lifted(m: dict, max_duration) -> bool:
+    """meta 里的「跳过转写」标记是不是**因为时长上限被放宽而作废了**。
+
+    ★ 为什么要有这个函数：判断「该不该重试」的地方有**两处** ——
+      `_asr_pending()`（增量索引时决定跳不跳过）和 `asr_status()`（界面上的
+      待转写清单）。以前两处各写各的 `if m.get("asr_skip"): skip`，于是
+      「用户把上限从 600 调到 0」这件事它们都看不见，那些 30~60 分钟的
+      专辑/演唱会 FLAC 会**永远停在跳过状态**，一次都不会再试。
+      抽成一份共用判断，以后改规则只改这里。
+
+    只有 `too_long` 这一种理由是可以被放宽救回来的；`asr_none`（确认没语音）
+    之类的标记与上限无关，永远不该重试。
+    """
+    if m.get("asr_skip") != "too_long":
+        return False
+    try:
+        max_dur = int(max_duration or 0)
+    except Exception:
+        max_dur = 0
+    if not max_dur:
+        return True                       # 已改成「不限」→ 放回来重试
+    try:
+        dur = float(m.get("duration") or 0)
+    except Exception:
+        dur = 0.0
+    if not dur:
+        return True                       # 没记时长，交给下游自己再量一次
+    return dur <= max_dur                 # 上限调高到够得着了 → 重试
+
+
 def _asr_pending(cur, path: str, asr) -> bool:
     """ASR 开着、但这个音视频文件还没有转写文本 → 需要重跑。
 
     历史遗留：增量索引遇到 mtime 未变就整个跳过，导致开启 ASR 之前入库的
     歌曲/视频从来没被转写过（meta 里没有 asr_text），歌词也就搜不到。
     这里让这类文件不参与跳过，落回正常索引分支复用全部 ASR + 编码逻辑。
-    已确认过「转写为空」或「超过时长上限」的文件打标记后不再反复重试。
+    已确认过「转写为空」的文件、以及「仍超时长上限」的文件不再反复重试。
     """
     if not asr:
         return False
@@ -1244,7 +1282,11 @@ def _asr_pending(cur, path: str, asr) -> bool:
         m = {}
     if (m.get("asr_text") or "").strip():
         return False
-    return not (m.get("asr_none") or m.get("asr_skip"))
+    if m.get("asr_none"):
+        return False
+    if m.get("asr_skip"):
+        return _asr_skip_lifted(m, (asr or {}).get("max_duration"))
+    return True
 
 
 def _tags_pending(cur, path: str) -> bool:
@@ -1955,8 +1997,11 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
                     max_dur = asr.get("max_duration") or 0
                     dur = _probe_duration(path) if max_dur else 0
                     if max_dur and dur > 0 and dur > float(max_dur):
-                        print(f"  [跳过ASR] 媒体过长 {dur:.0f}s: {os.path.basename(path)}")
-                        asr_meta = {"asr_skip": "too_long"}   # 打标记，不反复重试
+                        print(f"  [跳过ASR] 媒体过长 {dur:.0f}s/"
+                              f"{dur/60:.1f}分钟（上限 {max_dur}s）: "
+                              f"{os.path.basename(path)}")
+                        asr_meta = {"asr_skip": "too_long",
+                                    "asr_skip_dur": round(dur, 1)}
                     else:
                         r = _asr.transcribe(
                             asr["base_url"], asr.get("api_key", ""), asr["model"],
@@ -1996,6 +2041,12 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
                 merged.update(meta or {})
                 merged.update(ai_meta)
                 merged.update(asr_meta)
+                # ★ 这次真转出文字了 → 清掉上一轮的「跳过 / 没内容」痕迹。
+                #   不清的话，老记录里的 asr_skip 会一直挂在 meta 上，把这条
+                #   永远挡在待转写清单外（`asr_status` 见到 asr_skip 就 continue）。
+                if (asr_meta.get("asr_text") or "").strip():
+                    for _k in ("asr_skip", "asr_skip_dur", "asr_none"):
+                        merged.pop(_k, None)
                 # 文件这次查出「没有标签」时，别把上一轮残留的 tags 留着
                 if (meta or {}).get("tags_checked") and not (meta or {}).get("tags"):
                     merged.pop("tags", None)

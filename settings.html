@@ -781,8 +781,8 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
               <input type="text" id="asrLang" class="w-sm" placeholder="自动检测">
             </div>
             <div class="row">
-              <div class="k">时长上限<span class="sub">超过该秒数的音频跳过（0 = 不限）</span></div>
-              <input type="number" id="asrMaxDur" min="0" max="36000" value="600">
+              <div class="k">时长上限<span class="sub">超过该秒数的音频跳过转写（0 = 不限）</span></div>
+              <input type="number" id="asrMaxDur" min="0" max="36000" value="0">
             </div>
           </div>
         </details>
@@ -1359,7 +1359,7 @@ function loadAIFields(){
   $('#asrKey').value = SETTINGS.asr_api_key || '';
   setModelOptions('asrModel', SETTINGS.asr_model, []);
   $('#asrLang').value = SETTINGS.asr_language || '';
-  $('#asrMaxDur').value = SETTINGS.asr_max_duration != null ? SETTINGS.asr_max_duration : 600;
+  $('#asrMaxDur').value = SETTINGS.asr_max_duration != null ? SETTINGS.asr_max_duration : 0;
   markSeg('segASR', SETTINGS.asr_enabled ? 'on' : 'off');
   markSeg('segIdleTag', SETTINGS.idle_tag === false ? 'off' : 'on');
   markSeg('segIdleAsr', SETTINGS.idle_asr === false ? 'off' : 'on');
@@ -1699,7 +1699,7 @@ async function saveASR(){
     asr_api_key: $('#asrKey').value,
     asr_model: $('#asrModel').value.trim(),
     asr_language: $('#asrLang').value.trim(),
-    asr_max_duration: parseInt($('#asrMaxDur').value || '600', 10),
+    asr_max_duration: parseInt($('#asrMaxDur').value || '0', 10) || 0,
   };
   if(cfg.asr_enabled && !cfg.asr_base_url){ toast('请先填写 API 地址'); return; }
   if(cfg.asr_enabled && !cfg.asr_model){ toast('请先填写模型名'); return; }

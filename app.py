@@ -110,7 +110,7 @@ DEFAULT_SETTINGS = {
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
     # ★ 版本号唯一来源：改这里就够了 —— build_app.sh / release.sh 都从这一行 grep，
     # tray_helper 的「关于」兜底也从这里读。别在别处再写死版本号。
-    "version": "1.0.5",
+    "version": "1.0.6",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -139,7 +139,12 @@ DEFAULT_SETTINGS = {
     "asr_api_key": "",
     "asr_model": "",
     "asr_language": "",          # 留空=自动检测；可填 zh/en 等
-    "asr_max_duration": 600,     # 超过该秒数的音频跳过转写（0=不限）
+    # ★ 默认「不限」。以前是 600 秒，代价是**整张专辑 / 演唱会现场的 FLAC**
+    #   （常见 35~65 分钟）一进来就被拒，而且拒得悄无声息：转写根本没启动，
+    #   用户只看到「超过设置的上限」，不会想到去改一个自己没动过的设置。
+    #   ASR 是本地跑的、不要钱，只在空闲时跑，实测 37 分钟的歌 = 6.2 分钟处理，
+    #   完全可以接受；真嫌慢的人再自己填一个秒数。
+    "asr_max_duration": 0,       # 超过该秒数的音频跳过转写（0=不限）
     # ---- 智能纠偏（转写文字的 LLM 校对）----
     # 默认「只在空闲时跑」：批量纠偏要反复打本地大模型，用户正敲键盘/搜东西的时候
     # 抢 GPU 会明显卡顿。判定门槛与闲置补全完全一致（距上次用户操作 idle_minutes 分钟）。
@@ -603,7 +608,7 @@ def _idle_loop():
                 if want == "tag" and idle_tag:
                     pend = ix.ai_tag_status()["pending"]
                 elif want == "asr" and idle_asr:
-                    pend = ix.asr_status()["pending"]
+                    pend = _asr_pending_list()
                 else:
                     continue
                 if not pend:
@@ -800,6 +805,65 @@ def _path_allowed(path: str) -> bool:
     return False
 
 
+def _ix_asr_status() -> dict:
+    """`ix.asr_status()` 的包装：把**当前的时长上限**一并传进去。
+
+    ★ 必须包一层。indexer 那份清单要拿上限才能判断「这个跳过标记还作不作数」，
+    不传的话，因「超过老上限 600 秒」被跳过的长音频（整张专辑 / 演唱会现场）
+    会永远停留在待转写清单之外 —— 用户把上限调到不限也救不回来。
+    见 `indexer._asr_skip_lifted`。
+    """
+    try:
+        mx = int(load_settings().get("asr_max_duration") or 0)
+    except Exception:
+        mx = 0
+    return ix.asr_status(max_duration=mx)
+
+
+def _asr_pending_list() -> list:
+    return _ix_asr_status().get("pending") or []
+
+
+
+    """把整份设置写盘（0600）。save_settings 与一次性迁移共用。"""
+    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(s, f, ensure_ascii=False, indent=2)
+    # 设置里有 API Key，权限收到 0600（只有当前用户可读写）
+    try:
+        os.chmod(SETTINGS_PATH, 0o600)
+    except OSError:
+        pass
+
+
+def _migrate_settings(s: dict) -> bool:
+    """对老设置做一次性修正。返回是否改动过（需要回写）。
+
+    ★ 为什么要机制而不是直接改 DEFAULT_SETTINGS：`load_settings` 是
+    「默认值 ← 用户已存的值」，用户那份里**冻结着老默认值**，改 DEFAULT_SETTINGS
+    对他们完全无效。实测：asr_max_duration 老默认 600 被写进 settings.json 后，
+    把默认改成 0 也救不了他们 —— 除非把冻结的 600 也搬走。
+
+    每条迁移跑过一次就记进 `_migrations`，不再重复（用户之后自己改回 600 不会被再动）。
+    """
+    done = s.get("_migrations")
+    if not isinstance(done, list):
+        done = []
+    changed = False
+
+    if "asr_max_duration:600->0" not in done:
+        # 600 曾经**只是**默认值（界面上从没建议过这个数），所以存着 600 基本等于
+        # 「没动过」。这一步是放宽，不会让任何人少转写；真想要上限的人自己填。
+        if int(s.get("asr_max_duration") or 0) == 600:
+            s["asr_max_duration"] = 0
+        done.append("asr_max_duration:600->0")
+        changed = True
+
+    if changed:
+        s["_migrations"] = done
+    return changed
+
+
 def load_settings() -> dict:
     """合并「代码默认值」与「用户已保存的设置」。"""
     s = dict(DEFAULT_SETTINGS)
@@ -814,6 +878,11 @@ def load_settings() -> dict:
     # "1.0.0"）。它会在上面的 update() 里把 DEFAULT_SETTINGS 的新版本号盖掉，
     # 结果就是「界面显示 v1.0.0、安装包却是新版本」——版本号看着永远不同步。
     s["version"] = DEFAULT_SETTINGS["version"]
+    try:
+        if _migrate_settings(s):
+            _persist_settings(s)
+    except Exception:
+        pass
     return s
 
 
@@ -829,14 +898,7 @@ def save_settings(patch: dict) -> dict:
             _we.set_image_max_side(int(s["image_max_side"]))
     except Exception:
         pass
-    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(s, f, ensure_ascii=False, indent=2)
-    # 设置里有 API Key，权限收到 0600（只有当前用户可读写）
-    try:
-        os.chmod(SETTINGS_PATH, 0o600)
-    except OSError:
-        pass
+    _persist_settings(s)
     return s
 
 
@@ -2161,7 +2223,7 @@ def asr_cfg_from_settings(st: dict = None) -> dict:
         "api_key": st.get("asr_api_key", "") or "",
         "model": (st.get("asr_model") or "").strip(),
         "language": (st.get("asr_language") or "").strip(),
-        "max_duration": int(st.get("asr_max_duration", 600) or 0),
+        "max_duration": int(st.get("asr_max_duration", 0) or 0),
     }
 
 
@@ -2221,7 +2283,7 @@ def asr_transcribe_one(path: str, st: dict = None) -> dict:
 
 def asr_status() -> dict:
     """未转写清单 + 闲置处理运行状态 + 智能纠偏进度。"""
-    s = ix.asr_status()
+    s = _ix_asr_status()
     st = load_settings()
     return {
         "total": s["total"], "done": s["done"],
@@ -2525,7 +2587,7 @@ def ai_backfill(action: str = "status", what: str = "tag"):
             what = "tag"          # 只补标签
         _IDLE["manual"] = {"what": what, "done": 0, "failed": 0,
                            "started": time.time(), "stop": False, "finished": None}
-        left = len(ix.ai_tag_status()["pending"]) if what in ("tag", "both") else len(ix.asr_status()["pending"])
+        left = len(ix.ai_tag_status()["pending"]) if what in ("tag", "both") else len(_asr_pending_list())
         print(f"[立即补全] 开始（{'标签' if what == 'tag' else '转写'}，待处理 {left} 个）")
         op_log("立即补全", f"开始补{'标签' if what == 'tag' else '转写'}，待处理 {left} 个")
         return {"ok": True, "pending": left, "backfill": _backfill_view()}
@@ -2573,7 +2635,7 @@ def ai_tag_status() -> dict:
         "last_ts": _IDLE.get("last_ts"),
         "last_error": _IDLE.get("last_error"),
         "backfill": _backfill_view(),
-        "asr_pending": len(ix.asr_status()["pending"]),
+        "asr_pending": len(_asr_pending_list()),
     }
 
 

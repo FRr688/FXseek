@@ -1,3 +1,47 @@
+## FXseek 1.0.6
+
+A fix for the thing that made long recordings look broken: **transcribing anything longer than about
+ten minutes did nothing at all** — no progress, no error you could act on, and the ASR model never
+even started. It was never a model problem. Two bugs were stacked on top of each other, and the
+second one was the nasty one.
+
+### The limit nobody could get past
+
+`asr_max_duration` defaulted to **600 seconds**, and the check ran *before* the request was sent. A
+50-minute concert track was rejected in **4.1 seconds** — faster than the model takes to load. That
+is why it looked like transcription "wouldn't start": it was refused at the door.
+
+Then the rejection wrote a permanent `asr_skip: "too_long"` marker, and **the two places that decide
+whether to retry only asked "is this marker present?", never "which limit blocked it?"**. One of
+them — the pending list shown in the UI — did not even accept a duration limit. So raising the
+setting changed nothing: those files stayed skipped forever.
+
+The second layer is worse than the first. The first is just a bad default you could work around. The
+second meant **fixing the setting did not help**.
+
+### What changed
+
+- **Default is now `0` = unlimited.** No more gate.
+- **A one-time migration moves your frozen `600` to `0`.** Your `settings.json` stored the old
+  default, so changing the code default alone would have done nothing for existing installs. It is
+  recorded in `_migrations`, so if you later set `600` on purpose it will not be touched again.
+- **One shared `_asr_skip_lifted()`** replaces both checks, and both now consult the current limit.
+- **`asr_status()` takes the limit**, so the pending list heals itself.
+- **Successful transcription clears the skip markers** instead of leaving stale ones behind.
+- **The error message now names the setting**: "…raise the duration limit under
+  Settings → Smart services → Audio transcription, or set it to 0 for unlimited."
+
+### Verified
+
+The same 37.7-minute file, once the limit was lifted: **373.7 s, 5074 characters**, clean text. Then
+a **2989-second (≈50 minute)** concert FLAC through the real HTTP endpoint:
+
+```json
+{"ok": true, "text": "快使用双面棍！电烧电的要命，隔壁是火树连环…"}
+```
+
+---
+
 ## FXseek 1.0.5
 
 The interface now speaks **two languages**, the app can **check for its own updates**, and audio and

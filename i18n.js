@@ -62,7 +62,7 @@
     "管理本机配置、数据安全和当前版本信息。": "Manage local configuration, data safety, and current version info.",
     "，再点「获取列表」挑一个能看图的模型。": ", then click “Fetch List” and pick a model that can see images.",
     "单个视频最多抽多少帧（控制索引体积）": "Maximum frames extracted per video (controls index size)",
-    "超过该秒数的音频跳过（0 = 不限）": "Skip audio longer than this many seconds (0 = unlimited)",
+    "超过该秒数的音频跳过转写（0 = 不限）": "Skip transcription for audio longer than this (0 = unlimited)",
     "闲时逐个转写音频与视频里的说话/歌词": "Transcribe speech/lyrics in audio and video one by one while idle",
     "把媒体库接入本机 AI Agent": "Connect your library to local AI agents",
     "设置与备份 · FXseek媒体库": "Settings &amp; backup · FXseek Media Library",
