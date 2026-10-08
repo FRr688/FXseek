@@ -1,3 +1,88 @@
+## FXseek 1.0.5
+
+The interface now speaks **two languages**, the app can **check for its own updates**, and audio and
+video finally **share one transcript panel**. Along the way we hunted down a menu-bar item whose
+colour was being silently thrown away by AppKit, and a "heavy work" check that was far too eager.
+
+### New: English / 简体中文 interface
+- A **language switcher** lives in *Settings → Appearance* (first row, next to the theme). Pick
+  **简体中文** or **English** and the whole UI follows — sidebar, settings, dialogs, toasts, empty
+  states, tooltips.
+- Switching is instant and remembered; there is no restart step.
+- Your **own metadata is never translated** — artist names, album titles and filenames stay exactly
+  as you typed or tagged them.
+- Implementation note: instead of threading a lookup through ~193 call sites, a DOM walker translates
+  text nodes after render, keeping the original string on each node so switching back is lossless.
+  Dynamic sentences (ones with counts or filenames spliced in) go through pattern rules rather than a
+  flat dictionary.
+
+### New: Check for updates
+- *About → Check for updates* tells you honestly which of three things is true: **a newer version
+  exists** (with a Download button and the release notes), **you are already current**, or **the check
+  failed**.
+- If the check fails, the app says so and reveals a **releases** button that opens the GitHub releases
+  page in your browser — it never pretends "you're up to date" when it simply could not reach GitHub.
+- Version ordering understands development suffixes, so someone running a `-test` build is not told to
+  "update" to an older official release they cannot install.
+
+### New: one transcript panel, audio and video alike
+- Video now gets the **same collapsible transcript panel** the audio player has: a **文字 / Transcript**
+  button on the control bar slides the panel in beside the picture, showing the full text with
+  **原始 / 优化** (raw vs smart-polished), **重新优化**, **重新转写** and **还原原文**.
+- Your open/closed choice is remembered. The video is genuinely resized rather than covered, and the
+  panel stacks below the picture automatically when the window is too narrow.
+- Because both players now share one implementation, the **subtitle overlay refreshes together with the
+  panel** — change the transcript and the subtitles follow immediately.
+
+### Fixed: the menu-bar icon turned static
+- Whether a menu-bar item gets placed by the system is **random** (roughly one in three attempts). The
+  animation starter was nested inside the "retry" branch, so it only ran when the *first* placement had
+  **failed** — meaning the lucky, first-try placements were exactly the ones that never animated.
+- The animation starter now runs on every path; the retry branch only keeps its log line.
+
+### Fixed: menu-bar items lost their colour
+- AppKit **dims every disabled menu item** when it draws it, and an explicitly-set colour cannot
+  override that. The "connected" rows were asking for the label colour and getting grey — the bold
+  survived, the colour did not.
+- Measurement matrix on this machine: disabled + no colour = grey; **disabled + explicit colour = still
+  grey**; enabled + explicit colour = full colour; **disabled + custom view = colour honoured**.
+- Rows now use a custom view, which renders the requested colour and remains unclickable. This also
+  fixed the top "Server: running" line, which had been documented as green since forever but always
+  drew grey.
+
+### Fixed: on-demand model loading was too shy about unloading, and too eager about blocking
+- The 2 GB model is unloaded after a period of inactivity, but the check asked "is any heavy task
+  running?" without asking **where the model actually lives**.
+- Tagging and transcription are now classified by whether their endpoint is **on this machine**
+  (loopback) or **remote**. Point them at a remote API and they no longer block other heavy work —
+  they genuinely do not compete for local memory.
+- Unloading is a *separate* question and got its own check: tagging still needs the local model to
+  encode text into vectors **even when the description came from a remote API**, so it still holds the
+  model resident. Video transcription, which only writes metadata, does not.
+
+### Fixed: clutter removed from the detail panel
+- The **原始 / 优化 · 重新优化 · 还原原文** button row is gone from the detail side panel — it was
+  noise there. The transcript is still readable and searchable, and a one-line hint points at the
+  player's panel where those actions actually live.
+- The image viewer's **1:1** button is gone too. "Fit to window" already resets zoom *and* rotation
+  *and* panning, which is a superset — and the zoom percentage still shows when you are at 100%.
+
+### New: refresh buttons confirm they are working
+- Every button that re-fetches something (**Check for stale records**, **Refresh**, **Fetch list**,
+  **Re-detect**, **Check for updates**) spins its icon and throws a soft ripple on click.
+- This respects the **Reduce motion** accessibility setting; there is a three-way *Follow system / Full /
+  Off* switch under *Settings → Appearance* if you want to override it.
+
+### Install
+1. Download `FXseek-1.0.5.dmg`, double-click to mount, and drag `FXseek.app` into *Applications*
+2. **On first launch use right-click → Open** (the app is not notarised, so Gatekeeper blocks it once)
+3. Requires macOS 13 or newer + Apple Silicon (M-series)
+4. The first launch downloads a ~1.8 GB model; after that it works **fully offline**
+
+Free for noncommercial use (PolyForm Noncommercial 1.0.0); **commercial use requires a licence** — see [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md).
+
+---
+
 ## FXseek 1.0.3
 
 > Note: `1.0.3` and `1.0.4` existed only during development and were **never released**, so everything
