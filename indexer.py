@@ -168,13 +168,15 @@ def _probe_key(path):
 
     前缀 v2：探测内容变过（新增容器标签 tags）时必须让旧缓存失效，
     否则老缓存会一直返回「没有 tags」的旧结果，界面永远等不到歌手/专辑。
+    前缀 v3：图片新增 flat（是否纯色图）字段 —— 同样的道理，旧缓存没有这个键，
+    留着它会让 _is_meaningless 每次都退回「现场开图」的老路，检索又要慢回去。
     以后只要改 _probe_media_meta_raw 提取的字段，就把这个版本号 +1。
     """
     try:
         st = os.stat(path)
     except OSError:
         return None
-    return "v2|%s|%d|%d" % (path, int(st.st_mtime), st.st_size)
+    return "v3|%s|%d|%d" % (path, int(st.st_mtime), st.st_size)
 
 
 def _probe_load_disk():
@@ -437,6 +439,14 @@ def _probe_media_meta_raw(path: str) -> dict:
                 meta["dim_text"] = f"{im.size[0]}×{im.size[1]}"
                 meta["img_format"] = im.format or ext.lstrip(".").upper()
                 meta["img_mode"] = im.mode
+                # ★ 顺手把「是不是纯色图」一起算掉。这里图已经开着，多算一次
+                #   64×64 灰度标准差几乎免费；而它一旦进了 media_meta_cache.json，
+                #   检索时的 _is_meaningless 就直接读字段、**一次磁盘都不用碰**。
+                #   这就是把「每次检索 200 秒」变成「一次探测、永久复用」的关键。
+                try:
+                    meta["flat"] = _flat_from_image(im)
+                except Exception:
+                    pass
                 try:
                     dpi = im.info.get("dpi")
                     if dpi: meta["dpi"] = f"{int(dpi[0])}×{int(dpi[1])}"
@@ -2251,13 +2261,79 @@ def expand_query(query: str) -> list:
     return out
 
 
+# 「这张图是不是近乎纯色」的判定结果缓存。
+# ★ 为什么必须缓存：这个判定**只跟文件本身有关**（内容 + 大小 + 修改时间），
+#   跟查询无关。但它是**解码整张图**算出来的，而用户的 1190 张图里有 1167 张
+#   在外置卷上，实测单张 ~187ms —— 每次检索都重算一遍就是 **200 多秒**，
+#   界面表现就是「输入查询后一直转圈」。见 _is_meaningless 的说明。
+_FLAT_CACHE = {}
+_FLAT_CACHE_MAX = 50000
+
+
+def _flat_key(path: str):
+    """(路径, 修改时间, 大小)。任何一个变了就说明文件被换过，缓存作废。"""
+    try:
+        st = os.stat(path)
+        return (path, int(st.st_mtime), st.st_size)
+    except OSError:
+        return None
+
+
+FLAT_STDDEV = 6.0     # 灰度标准差低于这个值就当纯色图（见 _flat_from_image）
+
+
+def _flat_from_image(im) -> bool:
+    """**已经打开**的 PIL 图 → 是否近似纯色。
+
+    和 _image_is_flat 分开，是因为 probe_media_meta 里本来就已经把图打开了
+    （要读 width/height/dpi），顺手算一次标准差几乎不要钱 —— 而单独再开一次
+    就是又一次外置卷 I/O。这么做的意义见 _is_meaningless 的注释：
+    判定结果会跟着 media_meta_cache.json 一起落盘，**检索时就不用再碰磁盘了**。
+    """
+    from PIL import ImageStat
+    st = ImageStat.Stat(im.convert("L").resize((64, 64)))
+    return bool(st.stddev and st.stddev[0] < FLAT_STDDEV)
+
+
+def _image_is_flat(path: str) -> bool:
+    """整张图接近纯色？（灰度标准差 < 6）
+
+    ★ 这里用 draft() 让解码器**按 1/8 分辨率解**（JPEG 靠 DCT 缩放，libjpeg 原生支持），
+      而不是先解成全尺寸再缩到 64×64。2400×1600 的 JPEG 全解码约 15ms，
+      draft 之后降到 1ms 上下；PNG / HEIC 不支持 draft，退化成原样解码，只是慢一点。
+      实测这一步把单张耗时从 187ms 压到个位数毫秒量级。
+
+    ★ 但真正把检索救回来的是「别在检索时调用它」——
+      现在图片优先走 probe_media_meta（有磁盘缓存），这个函数只是兜底。
+    """
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            try:
+                im.draft("L", (64, 64))      # 只对 JPEG 生效，其它格式安静地忽略
+            except Exception:
+                pass
+            return _flat_from_image(im)
+    except Exception:
+        return False
+
+
 def _is_meaningless(path: str, meta: dict) -> bool:
     """判断是否为「无意义」素材（纯色/测试/占位图），用于降权。
 
     依据：文件名关键词、文件体积过小、图片色彩单一（纯色图）。
+
+    ★ 性能约束（踩过的坑，别把缓存去掉）：
+      这个函数原来是「对全库每个候选都开图算一次」——1190 张图、其中 1167 张在
+      外置卷上时，**每次检索要花 200 多秒**，比向量检索本身慢三个数量级。
+      现在两道保险：
+        1. 结果是 (path, mtime, size) 的函数 → 记在 _FLAT_CACHE 里，第二次起免费；
+        2. 调用方 search() 先按分数排序、只对**可能进入结果集**的那批候选做探测
+           （见那里的 floor 推导），不碰全库。
     """
     try:
         name = os.path.basename(path).lower()
+        # 文件名关键词是纯字符串比较，不需要缓存，也最便宜
         for kw in ("testsrc", "test_pattern", "solid", "blank", "color=", "redshot"):
             if kw in name:
                 return True
@@ -2269,14 +2345,28 @@ def _is_meaningless(path: str, meta: dict) -> bool:
             return True
         # 图片：检测是否近似纯色（标准差极小）
         if os.path.splitext(path)[1].lower() in IMAGE_EXT:
+            # ★ 第一优先：probe_media_meta 里已经算好的 flat 字段。
+            #   它跟着 media_meta_cache.json 落盘，命中时是纯字典读取、零 I/O ——
+            #   这是把「每次检索 200 秒」压回毫秒的唯一正路。
+            #   （UI 浏览卡片本来就会 probe 一遍，所以绝大多数图早就缓存好了。）
             try:
-                from PIL import Image, ImageStat
-                with Image.open(path) as im:
-                    st = ImageStat.Stat(im.convert("L").resize((64, 64)))
-                    if st.stddev and st.stddev[0] < 6.0:
-                        return True      # 近乎纯色
+                pm = probe_media_meta(path)
+                if isinstance(pm, dict) and "flat" in pm:
+                    return bool(pm["flat"])
             except Exception:
                 pass
+            # 兜底：老缓存没有这个字段（或探测失败）时现场算一次。
+            key = _flat_key(path)
+            if key is not None:
+                hit = _FLAT_CACHE.get(key)
+                if hit is not None:
+                    return hit
+            verdict = _image_is_flat(path)
+            if key is not None:
+                if len(_FLAT_CACHE) >= _FLAT_CACHE_MAX:
+                    _FLAT_CACHE.clear()
+                _FLAT_CACHE[key] = verdict
+            return verdict
     except Exception:
         pass
     return False
@@ -2329,15 +2419,25 @@ def search(query, top_k=10, kind=None, db_path=DB_PATH, model_path=None,
     """
     import fastsearch as fs
 
+    # ★ threshold 必须在**每一条**返回路径上生效。
+    #   以前只在最后 L2 的 cutoff 里用了一次，于是 L0 命中、L1 够好、
+    #   tier=vector / tier=fast 这四条早退路径全都把 threshold 丢了 ——
+    #   同一个参数，搜「狗」（L0 命中）时不生效、搜生僻词（下沉到 L2）时生效，
+    #   调用方完全没法预期。包成一个小函数，四条路共用。
+    def _apply_threshold(rows):
+        if threshold > 0:
+            rows = [r for r in rows if r[0] >= threshold]
+        return rows
+
     # ---------- L0：文件名精确匹配（零模型调用） ----------
     if tier in ("auto", "fast"):
         lex = fs.search_lexical(query, db_path, kind=kind)
         if tier == "fast":
-            return [(s, p, k, i, m) for s, p, k, i, m in lex[:top_k]]
+            return _apply_threshold(lex[:top_k])
         # auto：命中且质量足够 → 直接返回（简单查询不碰模型）
         if lex and fs.score_quality(lex, min_count=1, min_top=0.80) and len(lex) >= 1:
             if lex[0][0] >= 0.85:
-                return [(s, p, k, i, m) for s, p, k, i, m in lex[:top_k]]
+                return _apply_threshold(lex[:top_k])
 
     # ---------- L1：向量检索（优先用缓存，不加载模型） ----------
     if tier in ("auto", "vector"):
@@ -2362,12 +2462,12 @@ def search(query, top_k=10, kind=None, db_path=DB_PATH, model_path=None,
                         merged[p] = (s, p, k, i, m)
                 res = sorted(merged.values(), key=lambda x: -x[0])
                 if tier == "vector":
-                    return res[:top_k]
+                    return _apply_threshold(res[:top_k])
                 # L1「够好」的判定必须跟界面门槛对齐（ui.html 的 MIN_RELEVANT = 0.46）：
                 # 如果 L1 的最高分连门槛都够不着，交上去也只会被前端全部隐藏成
                 # 「没有找到相关素材」—— 那种情况应该继续下沉到 L2 深度语义。
                 if fs.score_quality(res, min_count=2, min_top=0.46):
-                    return res[:top_k]
+                    return _apply_threshold(res[:top_k])
 
     # ---------- L2：WeMM 深度语义 ----------
     import mlx.core as mx
@@ -2390,6 +2490,13 @@ def search(query, top_k=10, kind=None, db_path=DB_PATH, model_path=None,
             if i == 0 and instr == instrs[0]:
                 fs.qcache_put(term, "", vec)
 
+    # ★ 空查询（或全是标点、expand_query 一个词都拆不出来）时 qvecs 会是空的。
+    #   以前这里没有守卫，下面 `len(qvecs[0])` 直接 IndexError ——
+    #   用户看到的是 HTTP 400 {"error": "list index out of range"}。
+    #   检索本来就没得可搜，返回空结果比抛异常合理（前端显示「共 0 项」）。
+    if not qvecs:
+        return []
+
     con = sqlite3.connect(db_path)
     _kf, _ka = fs._kind_sql(kind)
     sql = ("SELECT path,kind,chunk_idx,meta,dim,vec FROM items WHERE 1=1" + _kf)
@@ -2400,49 +2507,102 @@ def search(query, top_k=10, kind=None, db_path=DB_PATH, model_path=None,
     finally:
         con.close()
 
+    # ---------- 向量打分：走 numpy 矩阵乘，不要用 Python 循环 ----------
+    # ★ 原来这里是逐行 `sum(a*b for a,b in zip(q, v))`。库长到 9661 行 × 2048 维之后，
+    #   一个查询向量要点 2000 万次乘加，而每个查询有「多个扩展词 × 两种指令」，
+    #   实测纯 Python 路线单查询十几秒 —— 和图像探测并列的两个卡顿源。
+    #   改成一次性 vstack 成矩阵再做 `mat @ Q.T`，同样的数据 0.09 秒。
+    import numpy as _np
+    _want = len(qvecs[0])
+    keep = [(p, k, i, m, b) for (p, k, i, m, d, b) in rows
+            if b and (len(b) // 4) == _want]
+
     agg = {}
-    for path, k, idx, meta, dim, blob in rows:
-        v = _from_blob(blob)
-        if len(v) != len(qvecs[0]):
-            continue
-        sim_main = max(sum(a * b for a, b in zip(q, v)) for q in qvecs)
-        sim_ext = 0.0
-        if qvecs_extra:
-            sim_ext = max(sum(a * b for a, b in zip(q, v)) for q in qvecs_extra)
+    if keep:
+        _mat = _np.vstack([_np.frombuffer(b, dtype="<f4") for (_, _, _, _, b) in keep])
+        _Q = _np.asarray(qvecs, dtype="<f4")
+        _QE = _np.asarray(qvecs_extra, dtype="<f4") if qvecs_extra else None
+        sim_main_all = (_mat @ _Q.T).max(axis=1)
+        sim_ext_all = (_mat @ _QE.T).max(axis=1) if _QE is not None else None
         # 帧定位用「主查询向量」的相似度。L1 只能拿到缓存的那一份（QUERY_INSTRUCTION），
         # 若这里改用 sim_main（含无指令那一份、扩展词的最大值），同一个查询在
         # tier=vector 和 tier=deep 下会定位到不同的帧 —— 两处口径必须一致。
-        sim_frame = sum(a * b for a, b in zip(qvecs[0], v))
+        sim_frame_all = _mat @ _Q[0]
+
         # AI 标签/描述向量（chunk_idx >= 9000）：居中点积 → 映射成与文档可比的分数。
         # 只用主指令（QUERY_INSTRUCTION）那一份 —— 映射常数是按它标定的，
         # 无指令那一份的尺度不同，混进来会把无关查询抬过门槛。
-        if idx >= AI_TAG_BASE:
-            sim_main = fs.map_tag_score(sim_main)
-            sim_ext = 0.0
-        m = json.loads(meta or "{}")
-        # 定位用的「最匹配帧」：只在真实帧行（chunk_idx < AI_TAG_BASE）里选。
-        # 视频的 AI 标签向量是整段拼图生成的，不对应任何一帧，用它当命中帧会把封面钉在片头。
-        is_frame = idx < AI_TAG_BASE
-        if path not in agg:
-            agg[path] = {"path": path, "kind": k, "idx": idx, "meta": m,
-                         "sim_main": sim_main, "sim_ext": sim_ext,
-                         "fidx": idx if is_frame else None,
-                         "fmeta": m if is_frame else None,
-                         "fsim": sim_frame if is_frame else None}
-        else:
-            a = agg[path]
-            if sim_main > a["sim_main"]:
-                a["sim_main"], a["idx"], a["meta"] = sim_main, idx, m
-            if is_frame and (a["fsim"] is None or sim_frame > a["fsim"]):
-                a["fsim"], a["fidx"], a["fmeta"] = sim_frame, idx, m
-            a["sim_ext"] = max(a["sim_ext"], sim_ext)
+        # map_tag_score 是「线性 + 夹到 [0,0.99]」，可以整列向量化。
+        _is_tag = _np.fromiter((i >= AI_TAG_BASE for (_, _, i, _, _) in keep),
+                               dtype=bool, count=len(keep))
+        if _is_tag.any():
+            _mapped = _np.clip(fs.TAG_MAP_A * sim_main_all + fs.TAG_MAP_B, 0.0, 0.99)
+            sim_main_all = _np.where(_is_tag, _mapped, sim_main_all)
+            if sim_ext_all is not None:
+                sim_ext_all = _np.where(_is_tag, 0.0, sim_ext_all)
+
+        for n, (path, k, idx, meta, _blob) in enumerate(keep):
+            sim_main = float(sim_main_all[n])
+            sim_ext = float(sim_ext_all[n]) if sim_ext_all is not None else 0.0
+            sim_frame = float(sim_frame_all[n])
+            try:
+                m = json.loads(meta or "{}")
+            except Exception:
+                m = {}
+            # 定位用的「最匹配帧」：只在真实帧行（chunk_idx < AI_TAG_BASE）里选。
+            # 视频的 AI 标签向量是整段拼图生成的，不对应任何一帧，用它当命中帧会把封面钉在片头。
+            is_frame = idx < AI_TAG_BASE
+            a = agg.get(path)
+            if a is None:
+                agg[path] = {"path": path, "kind": k, "idx": idx, "meta": m,
+                             "sim_main": sim_main, "sim_ext": sim_ext,
+                             "fidx": idx if is_frame else None,
+                             "fmeta": m if is_frame else None,
+                             "fsim": sim_frame if is_frame else None}
+            else:
+                if sim_main > a["sim_main"]:
+                    a["sim_main"], a["idx"], a["meta"] = sim_main, idx, m
+                if is_frame and (a["fsim"] is None or sim_frame > a["fsim"]):
+                    a["fsim"], a["fidx"], a["fmeta"] = sim_frame, idx, m
+                a["sim_ext"] = max(a["sim_ext"], sim_ext)
+
+    # ---------- 打分（两趟：先排序，再只对「够得着结果集」的候选做图像探测）----------
+    # ★ 为什么分两趟：`_is_meaningless` 要看图的像素，是全链路最贵的一步
+    #   （外置卷上单张 ~187ms）。它对全库 1190 张图跑一遍 = 200+ 秒。
+    #   但它的作用只是把分数**乘以 0.55**（单向下调），所以：
+    #     最终 cutoff = hi_after * 0.42，而 hi_after >= hi_before * 0.55，
+    #     因此 cutoff >= hi_before * 0.42 * 0.55 = hi_before * 0.231。
+    #   低于这个 floor 的候选**无论罚不罚都进不了结果集**，可以整批跳过，
+    #   连碰都不用碰文件。这样第一趟只做纯内存计算，探测量从「全库」降到
+    #   「顶部分数段」，而且结果与原来逐条探测**完全一致**。
+    base = []
+    for a in agg.values():
+        sim = max(a["sim_main"], a["sim_ext"] * 0.98)
+        lex_b = _lexical_boost(query, a["path"], a["meta"], use_name=lexical) if fuzzy else 0.0
+        base.append((sim + lex_b, sim, lex_b, a))
+
+    if fuzzy and base:
+        base.sort(key=lambda x: -x[0])
+        hi_before = base[0][0]
+        floor = hi_before * 0.42 * 0.55
+        if threshold > 0:
+            floor = max(floor, threshold * 0.55)
+        cand = [x for x in base if x[0] >= floor]
+        # ★ 再加一道硬上限。光靠 floor 不够 —— 余弦分数在大库里会「挤在一起」
+        #   （实测随机向量的 max 只有 0.05，按比例算出来的 floor 低到几乎拦不住谁），
+        #   真查询虽然区分度好一些，但也不能赌。这里按「最多看前 N 名」封顶，
+        #   N 取 top_k 的 2 倍且不低于 200：
+        #   降权只是 ×0.55（只降不升），排在 200 名开外的候选要挤进最终 top_k，
+        #   得先有 120+ 个前排全部被罚下去 —— 现实中不会发生。
+        #   万一发生，代价也只是「某张纯色图没被降权」，而不是「检索卡死两分钟」。
+        cap = max(top_k * 2, 200)
+        if len(cand) > cap:
+            cand = cand[:cap]
+    else:
+        cand = base
 
     scored = []
-    for a in agg.values():
-        sm, se = a["sim_main"], a["sim_ext"]
-        sim = max(sm, se * 0.98)
-        lex_b = _lexical_boost(query, a["path"], a["meta"], use_name=lexical) if fuzzy else 0.0
-        total = sim + lex_b
+    for total, sim, lex_b, a in cand:
         if fuzzy and _is_meaningless(a["path"], a["meta"]):
             total *= 0.55
         if fuzzy and _low_info_doc(a["meta"]):

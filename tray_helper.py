@@ -641,6 +641,19 @@ def main():
                 pass
         return mi
 
+    def _dim(color, alpha=0.66):
+        """把系统语义色压淡一档（保留色相，只降分量）。
+
+        ★ 为什么需要它：_strong_item 是自定义视图，不参与菜单的「禁用压暗」，
+          所以 systemGreen 这种高饱和色渲出来会比周围亮一大截，看起来像加粗。
+          直接换次要灰又丢了「运行中 / 已停止」的色相信号，所以折中成半透明。
+          colorWithAlphaComponent_ 拿不到时原样返回 —— 宁可不淡，也别崩。
+        """
+        try:
+            return color.colorWithAlphaComponent_(alpha)
+        except Exception:
+            return color
+
     def _strong_item(text, color=None, bold=True):
         """「点不动，但颜色说了算」的标题项（自定义视图，绕开禁用压暗）。
 
@@ -711,12 +724,16 @@ def main():
         文案也在这里重设 —— 语言是设置页那个开关，用户切完下次点开菜单就换过来。
         """
         running = bool(STATE["running"])
+        # 状态行也是自定义视图（_strong_item），同样不参与菜单的「禁用压暗」，
+        # 直接给 systemGreen 会比邻居亮一大截、看着发粗。用户要求「不要加粗，
+        # 淡化」—— 这里压低不透明度：饱和度还在（一眼能分出运行中/已停止），
+        # 但分量降下来，不再抢菜单里真正能点的那些项。
         if running:
             _set_strong(ITEMS["status"], _t("status_on", STATE["port"]),
-                        AppKit.NSColor.systemGreenColor())
+                        _dim(AppKit.NSColor.systemGreenColor()))
         else:
             _set_strong(ITEMS["status"], _t("status_off"),
-                        AppKit.NSColor.systemOrangeColor())
+                        _dim(AppKit.NSColor.systemOrangeColor()))
         ITEMS["toggle"].setTitle_(_t("stop") if running else _t("start"))
         ITEMS["web"].setTitle_(_t("web"))
         ITEMS["mcp"].setTitle_(_t("mcp"))
@@ -754,17 +771,21 @@ def main():
             sub.addItem_(_title_item(_t("mcp_unavailable", st.get("error") or "")))
             return
         connected = int(st.get("connected") or 0)
-        # 汇总三行用 _strong_item，但**不加粗**（用户反馈加粗太压眼，正文粗细就好）。
-        # ★ 为什么不能用 _title_item(text, labelColor)：后者是禁用项，会被系统统一
-        # 压暗成灰色，颜色写了也没用（见 _strong_item 的说明）。
-        # 用 labelColor 而不是写死黑色：它在浅色外观下就是纯黑，
-        # 深色外观下自动变白 —— 写死 blackColor 在深色菜单里等于隐形。
+        # 汇总三行用 _strong_item，但**不加粗、且必须给次要灰**。
+        # ★ 为什么非得是次要灰，不能留 labelColor：
+        #   菜单里别的项都是禁用状态，AppKit 会把它们统一压暗成灰色；而
+        #   _strong_item 走的是自定义视图，不参与那套压暗绘制 —— 结果它顶着
+        #   一身纯黑（labelColor）跟一片灰邻居并排，**看起来就像加粗了**。
+        #   用户两次反馈「太粗/太丑」，其实字重早就是正文粗细了（bold=False），
+        #   重的是颜色。这里换成 secondaryLabelColor()，让汇总行的视觉分量
+        #   跟邻居对齐。
         sub.addItem_(_strong_item(_t("mcp_on") if st.get("enabled") else _t("mcp_off"),
-                                  bold=False))
+                                  AppKit.NSColor.secondaryLabelColor(), bold=False))
         sub.addItem_(_strong_item(_t("mcp_agents", connected, st.get("installed", 0)),
-                                  bold=False))
+                                  AppKit.NSColor.secondaryLabelColor(), bold=False))
         if st.get("skilled") is not None:
-            sub.addItem_(_strong_item(_t("mcp_skills", st.get("skilled", 0)), bold=False))
+            sub.addItem_(_strong_item(_t("mcp_skills", st.get("skilled", 0)),
+                                      AppKit.NSColor.secondaryLabelColor(), bold=False))
         sub.addItem_(MI.separatorItem())
         for r in (st.get("agents") or [])[:8]:
             name = r.get("name") or r.get("id") or "?"
@@ -879,7 +900,7 @@ def main():
         # ★ 这行也要走 _strong_item：它的绿色是显式指定的，而禁用项会被系统
         # 压暗 —— 之前它一直渲染成灰色，跟文件开头写的「绿色高亮，点不动」对不上。
         ITEMS["status"] = _strong_item(_t("status_on", args.port),
-                                       AppKit.NSColor.systemGreenColor(), bold=False)
+                                       _dim(AppKit.NSColor.systemGreenColor()), bold=False)
         menu.addItem_(ITEMS["status"])
         menu.addItem_(MI.separatorItem())
 

@@ -16,6 +16,8 @@
 /dist/
 /dmgstage/
 *.dmg
+# i18n 资源导出产物（tools/export_i18n.js 生成，可随时重建）
+/build/
 
 # ---- 本机数据 / 用户隐私 ----
 /data/

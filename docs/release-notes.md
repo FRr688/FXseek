@@ -1,3 +1,63 @@
+## FXseek 1.0.7
+
+Search got slow. Not "a bit slower than before" — **typing a query and watching nothing happen for
+minutes**. The obvious suspect was the index size. It wasn't the index.
+
+Two costs had been hiding in the code, both of which grow with your library:
+
+**1. Every search opened every image in your library.** A "is this a flat colour block?" check —
+used only to down-rank solid-colour placeholders — was being run against every single candidate,
+and it did a full `Image.open()` to do it. On an external drive that's ~187 ms per image. With 1,190
+images: **223 seconds per search**, three orders of magnitude more than the actual vector search.
+
+The fix is to compute that verdict **once, while the metadata is already being probed** — the image
+is open at that moment anyway, and a 64×64 standard deviation is nearly free. The result is cached to
+disk, so searching afterwards touches no image files at all.
+
+> ⚠️ If you're reading this while patching your own copy: changing a probe field **requires bumping
+> the cache key prefix** (`v2|` → `v3|`). A stale cache missing the new field silently falls back to
+> the slow path — everything looks correct, it's just slow. That's the worst kind of bug.
+
+**2. The deep semantic pass used a pure-Python dot-product loop.** 9,661 rows × 2,048 dimensions ×
+(expanded terms × 2 instruction vectors). The first two tiers had been using NumPy for a long time;
+the third never got converted. One matrix multiply instead of a Python loop: **22× faster**.
+
+Two smaller bugs surfaced while in there:
+
+- **An empty query returned HTTP 400.** It's an `IndexError` from `qvecs[0]` on an empty list, and
+  any client that sends an empty box hits it.
+- **`threshold` was ignored on four of five code paths.** It only applied to the deepest tier, so the
+  same parameter worked or didn't depending on which path your query happened to take. All paths now
+  share one filter.
+
+Measured on a 9,661-row library:
+
+| | Before | After |
+|---|---|---|
+| Text search (warm) | 223 s and climbing | **0.07 – 5.5 s** |
+| Per-search image probes | 1,190 | **0** (cached) |
+| First browse after restart | 70 s | **0.35 s** |
+
+**Results are byte-for-byte identical.** `女人照片` → `05_人物_839.jpg` at 0.823, `鸡翅` →
+` (216).jpg` at 1.015, `狗` → `小狗'(示例).png` at 0.950. A performance change that also changes your
+results isn't an optimisation, it's a rewrite.
+
+> One honest caveat: a **brand-new install still pays the probe cost once**, on the first search that
+> touches your images. It's not precomputed — it's cached on first use. After that, including across
+> restarts, searches are in the tens of milliseconds.
+
+**Also in this release:** the tray menu's status line and the MCP panel's summary lines are dimmed.
+They were never actually bold — they're custom-drawn menu items that don't participate in AppKit's
+dimming of disabled items, so they rendered at full black next to a row of grey and *looked* heavy.
+They now use a secondary colour instead.
+
+### Install
+
+Download `FXseek-1.0.7.dmg` below, drag it to Applications, and on first launch **right-click → Open**
+(the app isn't notarised, so Gatekeeper will block a double-click once).
+
+---
+
 ## FXseek 1.0.6
 
 A fix for the thing that made long recordings look broken: **transcribing anything longer than about

@@ -110,7 +110,7 @@ DEFAULT_SETTINGS = {
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
     # ★ 版本号唯一来源：改这里就够了 —— build_app.sh / release.sh 都从这一行 grep，
     # tray_helper 的「关于」兜底也从这里读。别在别处再写死版本号。
-    "version": "1.0.6",
+    "version": "1.0.7",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",

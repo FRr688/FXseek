@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FXseek · 我的 UDID</title>
+<meta name="theme-color" content="#6366f1">
+<style>
+  :root{
+    --bg:#eef1f5; --card:#f7f9fb; --soft:#eaedf2; --line:#d9dde4;
+    --ink:#1a1d21; --ink2:#636a77; --ink3:#8f96a2;
+    --b1:#6366f1; --grad:linear-gradient(100deg,#6366f1,#a855f7 55%,#ec4899);
+    --grad2:linear-gradient(135deg,#6366f1,#a855f7 55%,#ec4899);
+    --sh:0 1px 2px rgba(20,22,34,.05),0 8px 26px rgba(20,22,34,.07);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#16181d; --card:#1f232a; --soft:#242931; --line:#2e333c;
+           --ink:#e8eaed; --ink2:#b6bcc8; --ink3:#8b93a1;
+           --sh:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.35); }
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;padding:26px 20px 56px;background:var(--bg);color:var(--ink);
+    font:400 15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Segoe UI",sans-serif;
+    display:flex;flex-direction:column;align-items:center}
+  .wrap{width:100%;max-width:430px}
+  a.back{display:inline-flex;align-items:center;gap:6px;color:var(--ink2);
+    text-decoration:none;font-size:13.5px;font-weight:600;margin-bottom:18px}
+  a.back svg{display:block;width:15px;height:15px}
+  h1{margin:0 0 7px;font-size:24px;font-weight:800;letter-spacing:-.5px}
+  .lead{color:var(--ink2);font-size:13.5px;margin:0 0 20px;line-height:1.65}
+  .card{background:var(--card);border-radius:17px;box-shadow:var(--sh);padding:17px 17px 15px;margin-bottom:14px}
+  .card .t{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:700;margin-bottom:11px}
+  .badge{width:23px;height:23px;border-radius:7px;background:var(--grad2);color:#fff;
+    font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  ol{margin:0;padding-left:19px;font-size:13.5px;color:var(--ink2);line-height:1.72}
+  ol li{margin-bottom:5px}
+  ol li:last-child{margin-bottom:0}
+  b{color:var(--ink);font-weight:600}
+  code{background:rgba(0,0,0,.05);padding:1.5px 6px;border-radius:5px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  @media (prefers-color-scheme: dark){ code{background:rgba(255,255,255,.09)} }
+
+  textarea{
+    width:100%;height:84px;border-radius:13px;border:1px solid var(--line);background:var(--soft);
+    color:var(--ink);font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+    padding:12px;resize:none;letter-spacing:.4px;
+  }
+  textarea:focus{outline:2px solid var(--b1);outline-offset:-1px}
+  .hint{font-size:11.5px;color:var(--ink3);margin-top:8px;line-height:1.65}
+  .note{background:var(--soft);border-radius:12px;padding:12px 13px;font-size:12.5px;
+    color:var(--ink2);line-height:1.68;margin-top:14px}
+  [data-lang="en"] .zh{display:none}
+  [data-lang="zh"] .en{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>
+    <span class="zh">返回安装页</span><span class="en">Back to install</span>
+  </a>
+
+  <h1><span class="zh">我的 UDID</span><span class="en">My UDID</span></h1>
+  <p class="lead zh">装不上通常是这台设备还没登记。把 UDID 发给开发者，重新出一次包就能装了。<br>
+    UDID 是一串 40 位的字母数字，<b>不是序列号</b>。</p>
+  <p class="lead en">Install failures usually mean this device isn't registered yet. Send your UDID to
+    the developer and the next build will work. It's a 40-character string — <b>not the serial number</b>.</p>
+
+  <div class="card">
+    <div class="t"><span class="badge">1</span><span class="zh">用 Mac 最省事</span><span class="en">Easiest — on a Mac</span></div>
+    <ol class="zh">
+      <li>数据线连上 iPhone，打开 <b>访达（Finder）</b></li>
+      <li>左侧选中你的设备</li>
+      <li>点设备名下方那行小字，<b>多点几次</b>，会依次切换：容量 → 电话号码 → <b>UDID</b></li>
+      <li>看到 UDID 后<b>右键 → 拷贝</b>，粘到下面</li>
+    </ol>
+    <ol class="en">
+      <li>Connect the iPhone and open <b>Finder</b></li>
+      <li>Select your device in the sidebar</li>
+      <li>Click the small line under the device name <b>repeatedly</b> — it cycles: capacity → phone number → <b>UDID</b></li>
+      <li><b>Right-click → Copy</b> the UDID, then paste it below</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="t"><span class="badge">2</span><span class="zh">Windows 用 iTunes</span><span class="en">On Windows — iTunes</span></div>
+    <ol class="zh">
+      <li>装 <b>iTunes</b>，数据线连上 iPhone</li>
+      <li>进入设备 → <b>摘要</b> 页</li>
+      <li>在「序列号」那行上<b>点一下</b>，会切成 UDID</li>
+      <li><b>右键 → 拷贝</b></li>
+    </ol>
+    <ol class="en">
+      <li>Install <b>iTunes</b> and connect the iPhone</li>
+      <li>Go to the device → <b>Summary</b></li>
+      <li><b>Click</b> the "Serial Number" line — it switches to UDID</li>
+      <li><b>Right-click → Copy</b></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="t"><span class="badge">3</span><span class="zh">粘到这里检查</span><span class="en">Paste here to check</span></div>
+    <textarea id="u" placeholder="00008030-000A1B2C3D4E5F60 / 或 40 位十六进制" spellcheck="false"></textarea>
+    <div class="hint" id="hint"></div>
+    <div class="note zh">这个页面<b>不会把你填的内容发到任何地方</b> —— 它只是一张纯静态网页，检查在你自己手机/电脑上完成。请手动把 UDID 发给开发者。</div>
+    <div class="note en">This page <b>never sends what you enter anywhere</b> — it's a static page and the check
+      runs locally. Copy the UDID and send it to the developer yourself.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var ta = document.getElementById('u'), hint = document.getElementById('hint');
+  var m = (navigator.language || 'zh').toLowerCase();
+  setLang(m.indexOf('zh') === 0 ? 'zh' : 'en');
+  function say(zh, en, ok){
+    hint.innerHTML = (document.documentElement.getAttribute('data-lang') === 'zh' ? zh : en);
+    hint.style.color = ok === true ? '#3fb950' : (ok === false ? '#e5534b' : '');
+  }
+  ta.addEventListener('input', function(){
+    // ★ 两种合法格式要分开判：
+    //   旧版 40 位纯十六进制（可带连字符分隔）
+    //   新版 8-16，形如 00008030-000A1B2C3D4E5F60
+    //   先判 8-16 再剥连字符 —— 否则 8-16 剥完只剩 24 位，两条都对不上。
+    var raw = ta.value.trim();
+    var squashed = raw.replace(/[\s\-]/g, '');
+    if (!squashed) { say('', ''); return; }
+
+    if (/^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}$/.test(raw.replace(/\s/g, ''))) {
+      say('✓ 新版格式（8-16）—— 可以发给开发者了',
+          '✓ Modern format (8-16) — send it over', true);
+    } else if (/^[0-9A-Fa-f]{40}$/.test(squashed)) {
+      say('✓ 40 位十六进制 —— 这就是 UDID，可以发给开发者了',
+          '✓ 40 hex chars — that\'s a UDID, send it over', true);
+    } else if (/^[0-9]{10,15}$/.test(squashed)) {
+      say('✗ 这是纯数字（IMEI / 电话号码那类），不是 UDID',
+          '✗ All digits — that\'s an IMEI or phone number, not a UDID', false);
+    } else if (/^(C02|[A-Z0-9]{10,12})$/i.test(squashed) && /[A-Za-z]/.test(squashed)
+               && /[0-9]/.test(squashed) && squashed.length <= 12) {
+      say('✗ 这看起来是序列号，不是 UDID —— 在「序列号」那行点一下才会切成 UDID',
+          '✗ That looks like a serial number. Click the "Serial Number" line to switch it to UDID', false);
+    } else {
+      say('还差点 —— UDID 是 40 位十六进制，或 8-16 格式（如 00008030-000A1B2C3D4E5F60）',
+          'Not quite — a UDID is 40 hex chars, or the 8-16 format (e.g. 00008030-000A1B2C3D4E5F60)', null);
+    }
+  });
+  function setLang(l){
+    document.documentElement.setAttribute('data-lang', l);
+    document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
+    document.title = l === 'zh' ? 'FXseek · 我的 UDID' : 'FXseek · My UDID';
+    if (ta.value) ta.dispatchEvent(new Event('input'));
+  }
+})();
+</script>
+</body>
+</html>
