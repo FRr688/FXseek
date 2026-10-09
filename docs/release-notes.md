@@ -1,3 +1,62 @@
+## FXseek 1.0.8
+
+**This is a bug-fix release — please upgrade. In 1.0.6 and 1.0.7 the settings page is broken: you
+hit Save, nothing complains, and nothing is saved.**
+
+### 1. No setting could be persisted (since 1.0.6)
+
+The function that writes settings to disk, `_persist_settings()`, was **called but never defined**.
+It was introduced as a call in `42b42b9` (the 1.0.6 ASR-duration fix) and its body was left out — the
+function has never existed in any commit.
+
+The result: **since 1.0.6, changing the theme, switching language, entering an API key or picking a
+model all silently failed to save.**
+
+- In `load_settings` the call sits inside `try/except: pass`, so the exception vanished;
+- in `save_settings` it is unguarded, so it raised `NameError` and the endpoint returned **HTTP 400**.
+
+And the old front-end did `await (await fetch(...)).json()` — **it never checked the status code**, so
+it took the error JSON and cheerfully popped up "Settings saved". The UI looked fine; leave the page
+and everything reverted.
+
+Both halves are fixed: the function now exists (and writes **atomically** — `.tmp` then `rename`, so a
+kill mid-write can't leave a truncated JSON that would make `load_settings` silently fall back to
+defaults and appear to lose your keys and prompts), and the front-end now checks `res.ok` and reports
+failures honestly.
+
+> Lesson: wrapping the most critical step in `except: pass` is how you turn a failure into silence.
+
+### 2. Official APIs unreachable: wrong URL for Zhipu and Gemini
+
+The endpoint URL was built by asking "does the base end in `/v1`":
+
+```python
+url = (base + "/chat/completions") if base.endswith("/v1") else (base + "/v1/chat/completions")
+```
+
+That only caters to OpenAI. Two built-in presets hit it:
+
+| Preset | Base | Old result | Outcome |
+|---|---|---|---|
+| Zhipu GLM | `https://open.bigmodel.cn/api/paas/v4` | `/api/paas/v4/v1/chat/completions` | **404** |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `/v1beta/openai/v1/chat/completions` | **404** |
+
+A shared `net_util.api_url()` now decides by "**does the base carry a path at all**" — with a path,
+append the suffix directly (these presets already are the full OpenAI-compatible prefix); only a bare
+host (`https://api.deepseek.com`) gets `/v1` inserted. `/models`, `/chat/completions` and
+`/audio/transcriptions` all go through it.
+
+Verified against Zhipu: previously **404 Not Found**, now **401 "token expired or invalid"** — the
+address is right, so the fake key is correctly rejected.
+
+### Upgrade advice
+
+If you are on 1.0.6 or 1.0.7, **please upgrade to 1.0.8** — otherwise no settings change takes effect.
+Your saved configuration is not damaged and will still be read; settings you tried to change while
+broken need to be set once more.
+
+---
+
 ## FXseek 1.0.7
 
 Search got slow. Not "a bit slower than before" — **typing a query and watching nothing happen for

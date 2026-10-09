@@ -6,6 +6,50 @@
 
 ---
 
+## FXseek 1.0.8
+
+**这是一个修复版本，请务必升级 —— 1.0.6 和 1.0.7 的设置页是坏的：点了「保存」不报错、也确实没保存。**
+
+### ① 所有设置都存不下来（1.0.6 起）
+
+设置里用来写盘的函数 `_persist_settings()`，**只有调用、没有定义**——`42b42b9`（1.0.6 的 ASR 时长修复）加调用的时候漏了本体，而它从来没在任何一次提交里被定义过。
+
+后果是**从 1.0.6 起，改主题、换语言、填 API Key、选模型……全都存不下来**：
+
+- `load_settings` 里那处调用包着 `try/except: pass`，异常被静默吞掉；
+- `save_settings` 里那处没有保护，直接抛 `NameError`，接口返回 **HTTP 400**。
+
+而前端旧代码是 `await (await fetch(...)).json()`——**根本不看状态码**，拿到错误 JSON 也照弹「设置已保存」。于是界面上一切正常，退出设置页就恢复原样。
+
+两条都修了：函数本体补上（**原子写**：先写 `.tmp` 再 `rename`，避免写一半被强杀留下截断 JSON，那会让 `load_settings` 静默退回全默认值、用户的 Key 和提示词看着就没了），前端也改成会检查 `res.ok` 并把错误如实弹出来。
+
+> 教训：`except: pass` 包在最要命的那一步上，等于把故障调成静音。
+
+### ② 官方 API 打不通：智谱、Gemini 地址拼错
+
+拼接口地址用的是「基址结尾是不是 `/v1`」：
+
+```python
+url = (base + "/chat/completions") if base.endswith("/v1") else (base + "/v1/chat/completions")
+```
+
+这只照顾了 OpenAI 一家。两个内置预设地址都踩中：
+
+| 预设 | 基址 | 旧代码拼出 | 结果 |
+|---|---|---|---|
+| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `/api/paas/v4/v1/chat/completions` | **404** |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `/v1beta/openai/v1/chat/completions` | **404** |
+
+改动：抽出一个共用的 `net_util.api_url()`，判据换成「**基址里带没带路径**」——带路径就直接接后缀（这些预设地址本来就是 OpenAI 兼容的完整前缀），只有纯主机名（如 `https://api.deepseek.com`）才补 `/v1`。`/models`、`/chat/completions`、`/audio/transcriptions` 三处统一走它。
+
+修完拿智谱实测：原来 **404 Not Found**，现在 **401「令牌已过期或验证不正确」**——地址打对了，假 key 自然被拒。
+
+### 升级建议
+
+1.0.6 或 1.0.7 的用户**强烈建议升级到 1.0.8**，否则任何设置改动都不会生效。已保存的配置本身没有损坏，升级后照常读得到；之前存不下去的那些改动，请重新设置一次。
+
+---
+
 ## FXseek 1.0.7
 
 检索变慢了。不是「比以前慢一点」，是**打完字盯着屏幕几分钟什么都不发生**。第一反应都会怀疑索引量，但这次不是索引的锅。

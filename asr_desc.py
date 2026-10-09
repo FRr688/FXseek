@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from net_util import urlopen_smart
+from net_util import urlopen_smart, api_url
 
 
 class ASRError(Exception):
@@ -297,8 +297,7 @@ def _transcribe_audio_file(base_url: str, api_key: str, model: str,
     if _NO_MAX_TOKENS:
         max_tokens = 0
     base = base_url.rstrip("/")
-    url = (base + "/audio/transcriptions") if base.endswith("/v1") \
-        else (base + "/v1/audio/transcriptions")
+    url = api_url(base, "/audio/transcriptions")
 
     def _build(with_cap: bool) -> bytes:
         boundary = "----dshAsr" + uuid.uuid4().hex

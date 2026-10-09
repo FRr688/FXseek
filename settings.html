@@ -1416,8 +1416,7 @@ async function savePerf(){
     video_density: ($('#segDensity button.on') || {dataset:{v:'auto'}}).dataset.v,
     video_max_frames: parseInt($('#videoMaxFrames').value || '32', 10),
   };
-  await saveSettings(cfg);
-  toast('性能设置已保存');
+  if(await saveSettings(cfg)) toast('性能设置已保存');
 }
 
 async function showCacheStats(){
@@ -1688,8 +1687,7 @@ async function saveAI(){
   const cfg = aiCfgFromForm();
   if(cfg.ai_enabled && !cfg.ai_base_url){ toast('请先填写 API 地址'); return; }
   if(cfg.ai_enabled && !cfg.ai_model){ toast('请先选择或填写模型名'); return; }
-  await saveSettings(cfg);
-  toast('AI 配置已保存');
+  if(await saveSettings(cfg)) toast('AI 配置已保存');
 }
 
 async function saveASR(){
@@ -1703,8 +1701,7 @@ async function saveASR(){
   };
   if(cfg.asr_enabled && !cfg.asr_base_url){ toast('请先填写 API 地址'); return; }
   if(cfg.asr_enabled && !cfg.asr_model){ toast('请先填写模型名'); return; }
-  await saveSettings(cfg);
-  toast('音频转写配置已保存');
+  if(await saveSettings(cfg)) toast('音频转写配置已保存');
 }
 
 async function loadASRModels(){
@@ -1819,8 +1816,24 @@ document.querySelectorAll('#segModelLazy button').forEach(b=>
 ['idleMinutes','idleBatch'].forEach(id=>document.getElementById(id)
   .addEventListener('input', updateIdleHint));
 async function saveSettings(patch){
-  SETTINGS = await (await fetch('/v1/settings',{method:'POST',
-    headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch)})).json();
+  // ★ 必须查 res.ok —— 后端出错时回的是 {error, type} 这种 JSON（HTTP 400），
+  // 旧写法只 await .json() 就当成功了，照样往下弹「设置已保存」。
+  // 1.0.6 / 1.0.7 那次 `_persist_settings` 未定义的事故里，后端明明回了
+  // 400 NameError，界面却一路报成功 —— 用户以为存了，重进全没了。
+  let res, data;
+  try{
+    res = await fetch('/v1/settings',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch)});
+    data = await res.json();
+  }catch(e){
+    toast('保存失败：连不上服务（' + e.message + '）');
+    return null;
+  }
+  if(!res.ok || data.error){
+    toast('保存失败：' + (data.error || ('HTTP ' + res.status)));
+    return null;
+  }
+  SETTINGS = data;
   applyTheme(SETTINGS);
   markSeg('segTheme', SETTINGS.theme); markSeg('segFont', SETTINGS.font_size);
   markSeg('segAnim', SETTINGS.ui_anim || 'auto'); updateAnimHint();

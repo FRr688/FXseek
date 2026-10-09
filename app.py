@@ -110,7 +110,7 @@ DEFAULT_SETTINGS = {
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
     # ★ 版本号唯一来源：改这里就够了 —— build_app.sh / release.sh 都从这一行 grep，
     # tray_helper 的「关于」兜底也从这里读。别在别处再写死版本号。
-    "version": "1.0.7",
+    "version": "1.0.8",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -862,6 +862,39 @@ def _migrate_settings(s: dict) -> bool:
     if changed:
         s["_migrations"] = done
     return changed
+
+
+def _persist_settings(s: dict) -> None:
+    """把设置写回 settings.json（原子写：先写 .tmp 再 rename）。
+
+    ★★ 这个函数曾经**只有调用、没有定义** —— `42b42b9`（1.0.6 的 ASR 时长修复）
+    引入 `_persist_settings(s)` 时漏了本体。后果是**从 1.0.6 起所有设置都存不下来**：
+
+      * `load_settings` 里那处调用包在 `try/except: pass` 里，静默吞掉；
+      * `save_settings` 里那处**没有保护**，直接抛 `NameError` → POST /v1/settings
+        返回 500，而前端只 `await ... .json()` 不查状态码，照样弹「设置已保存」。
+
+    于是界面上一片「已保存」，重进就回到原样 —— 用户 1.0.7 报的就是这个。
+    教训：**新增一个「持久化」旁边的东西时，先把写入这条路整个走通再谈别的**；
+    而且 `except: pass` 包在最要命的那一步上，等于把故障调成静音。
+
+    原子写的理由：settings.json 里冻着 API Key、提示词、语言等全部用户配置，
+    直接 `open(w)` 写一半时被强杀会留下截断的 JSON，`load_settings` 读它时
+    会被 `except` 吃掉、**静默退回全默认值** —— 用户的 Key 和提示词看着就没了。
+    """
+    tmp = SETTINGS_PATH + ".tmp"
+    d = os.path.dirname(SETTINGS_PATH)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(s, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, SETTINGS_PATH)
+    try:
+        os.chmod(SETTINGS_PATH, 0o600)   # 里面有 API Key，别让同机别的账号顺手读到
+    except OSError:
+        pass
 
 
 def load_settings() -> dict:

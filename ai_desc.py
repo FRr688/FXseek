@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from net_util import urlopen_smart
+from net_util import urlopen_smart, api_url
 
 
 class AIError(Exception):
@@ -210,10 +210,7 @@ def list_models(base_url: str, api_key: str = "", kind: str = "") -> list:
     让用户不填 Key 也能看到官方有哪些模型可选。
     """
     base = base_url.rstrip("/")
-    if base.endswith("/v1"):
-        url = base + "/models"
-    else:
-        url = base + "/v1/models"
+    url = api_url(base, "/models")
     cat = _catalog_for(base)
     try:
         d = _get_json(url, api_key)
@@ -288,7 +285,7 @@ def chat_completion(base_url: str, api_key: str, model: str, prompt: str,
                     image=None, max_tokens: int = 220, timeout: int = 120) -> str:
     """调用 chat/completions；image 为 PIL.Image 时走多模态消息。"""
     base = base_url.rstrip("/")
-    url = (base + "/chat/completions") if base.endswith("/v1") else (base + "/v1/chat/completions")
+    url = api_url(base, "/chat/completions")
 
     if image is not None:
         content = [

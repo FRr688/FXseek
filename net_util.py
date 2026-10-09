@@ -50,6 +50,35 @@ def is_local_url(url: str) -> bool:
     return bool(ip.is_loopback or ip.is_private or ip.is_link_local)
 
 
+def api_url(base: str, tail: str) -> str:
+    """把用户填的 API 基址和接口后缀拼成完整地址。
+
+    ★ 别再用「基址结尾是不是 /v1」当判据 —— 那只照顾了 OpenAI 一家。
+    实测翻车的两个官方预设：
+
+      https://open.bigmodel.cn/api/paas/v4      智谱 GLM
+      https://generativelanguage.googleapis.com/v1beta/openai   Gemini
+
+    旧写法给它们补出 `/api/paas/v4/v1/chat/completions`，服务端直接 404
+    （界面上报的就是 `"path":"/v4/v1/chat/completions"`）。
+
+    真正的判据是「基址里带没带路径」：
+      * 带路径（/v1、/v4、/compatible-mode/v1、/v1beta/openai…）→ 直接接后缀。
+        这些预设地址**本来就是** OpenAI 兼容的完整前缀，再补一段只会补错。
+      * 只有主机名（https://api.deepseek.com）→ 才补 /v1，否则少了版本段。
+    """
+    b = (base or "").strip().rstrip("/")
+    if not b:
+        return b
+    try:
+        path = urllib.parse.urlsplit(b).path
+    except Exception:
+        path = ""
+    if path in ("", "/"):
+        return b + "/v1" + tail
+    return b + tail
+
+
 def urlopen_smart(req, timeout=None):
     """urlopen 的替身：目标是本机/局域网就直连，否则照旧走系统代理。"""
     url = ""
