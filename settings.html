@@ -147,6 +147,17 @@ html[data-i18n="en"] .logo .slogan{letter-spacing:.4px;font-size:0.5rem;max-widt
 /* 左标签（可带灰色小字说明）；右侧放控件 */
 .row .k{flex:1 1 auto;min-width:0;font-size:0.8438rem;color:var(--text);line-height:1.45}
 .row .k .sub{display:block;font-size:0.75rem;color:var(--text-3);margin-top:4px;line-height:1.55}
+/* 那一长串统计独占一行（flex-basis:100% 迫使换行），并**钉死两行高度** ——
+   内容从「读取中…」（一行）变成完整统计（两行）时，行高不变，下面的东西就不会跳。 */
+.idlestatline{flex:1 1 100%;min-width:0;min-height:2.75em;margin-top:2px;
+  font-size:0.8125rem;color:var(--text-2);line-height:1.45}
+/* 下载/错误原因独占一行：必须能自动换行 + 会被截断。
+   网络异常的原文能有上千字符，不给它 wrap 就会把整张卡片横向撑破。 */
+.errline{flex:1 1 100%;min-width:0;margin:6px 0 2px;padding:9px 11px;
+  border-radius:9px;background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.22);
+  color:#dc2626;font-size:0.7813rem;line-height:1.55;
+  word-break:break-word;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .row > .seg,.row > .acts,.row > .btn{flex:0 0 auto}
 /* 堆叠行：控件本身较长 / 有多行说明时，标签在上、控件在下 */
 .row.stack{display:block;padding:14px 0}
@@ -701,13 +712,16 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
         </details>
 
         <!-- 「待处理素材」与「等不及空闲」故意都留在折叠块**外面**：
-             先看还剩多少（观察）→ 再决定要不要立刻动手（动作），这两步都不该藏在两层里。 -->
-        <div class="row" style="padding-top:4px">
+             先看还剩多少（观察）→ 再决定要不要立刻动手（动作），这两步都不该藏在两层里。
+             ★ 那串统计（打标 42/42 · 转写 302/302 · …）必须**独占一行**：
+             以前它和「刷新」一起塞在 .acts 里，.acts 是 flex:0 0 auto 不缩，
+             窄窗口下它按 max-content 把左边的「待处理素材」挤成四个字一竖条。 -->
+        <div class="row" style="padding-top:4px;flex-wrap:wrap">
           <div class="k">待处理素材<span class="sub">还没有描述/标签的图片视频，与还没转写的音频</span></div>
           <div class="acts" style="margin-top:0">
-            <span id="idleStat" style="font-size:0.8125rem;color:var(--text-2)">—</span>
             <button data-spin class="btn" onclick="loadIdleStatus()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
           </div>
+          <div class="idlestatline"><span id="idleStat" title="">—</span></div>
         </div>
         <div class="row">
           <div class="k">等不及空闲<span class="sub">立刻逐个补完，不用等上面那个门槛</span></div>
@@ -791,6 +805,54 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           <i class="icn" data-icon="info" data-size="13"></i> 用官方服务商：选「服务商」→ 只粘 API Key 就行。
           用本机 oMLX：服务商选「自定义 / 本地」，地址填 <code>http://127.0.0.1:9977/v1</code>，
           模型点右侧「获取列表」选一个即可，只要是支持转写的 ASR 模型都行（如 <code>Qwen3-ASR</code> 系列）。
+        </div>
+      </div>
+
+      <!-- 增强对齐时间轴（强制对齐，可选） -->
+      <div class="card">
+        <div class="cardhead">
+          <span class="icobox"><i class="icn" data-icon="clock" data-size="17"></i></span><div class="htxt">
+            <h2>增强对齐时间轴</h2>
+            <div class="d">转写完再用强制对齐模型逐字定位，播放时歌词/字幕按字跟着走，而不是整段整段地跳。</div>
+          </div>
+          <div class="seg" id="segAlign" style="margin-left:auto">
+            <button data-v="off">关闭</button>
+            <button data-v="on">开启</button>
+          </div>
+        </div>
+
+        <div id="alignDl" style="display:none">
+          <div class="row" style="padding-top:4px">
+            <div class="k">对齐模型<span class="sub">Qwen3 强制对齐 · 约 1.2 GB</span></div>
+            <div class="acts" style="margin-top:0">
+              <span id="alignDlStat" style="font-size:0.8125rem;color:var(--text-2)">—</span>
+              <button data-spin class="btn accent" id="alignDlBtn" onclick="alignDownload('start')">
+                <i class="icn" data-icon="download" data-size="14"></i><span>下载模型</span></button>
+              <button class="btn" id="alignDlStopBtn" onclick="alignDownload('stop')" style="display:none">
+                <i class="icn" data-icon="close" data-size="14"></i><span>停止</span></button>
+            </div>
+          </div>
+          <div class="row" style="padding-top:0">
+            <div class="k">下载源<span class="sub" id="alignSrcSub">国内镜像快；国外切 HuggingFace 官方</span></div>
+            <div class="acts" style="margin-top:0">
+              <select id="alignSrc" onchange="alignSetSource(this.value)"
+                      style="flex:0 0 auto;width:auto;min-width:170px"></select>
+            </div>
+          </div>
+          <div id="alignDlErr" class="errline" style="display:none"></div>
+          <div id="alignDlHint" class="hintline"></div>
+        </div>
+
+        <div class="row" style="padding-top:4px">
+          <div class="k">对齐进度<span class="sub">已对齐 / 有转写文字的全部素材</span></div>
+          <div class="acts" style="margin-top:0">
+            <span id="alignStat" style="font-size:0.8125rem;color:var(--text-2)">—</span>
+            <button data-spin class="btn" onclick="loadAlignStatus()"><i class="icn" data-icon="refresh" data-size="14"></i><span>刷新</span></button>
+          </div>
+        </div>
+
+        <div class="hintline">
+          <i class="icn" data-icon="info" data-size="13"></i> 开启后由后台队列自动跟随转写：转写完一个就立刻对齐这一个，不用手动点。 对齐在独立子进程里跑完就退出，不会常驻内存。中文歌词效果最好；日文、韩文暂不支持。
         </div>
       </div>
 
@@ -1160,6 +1222,14 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let SETTINGS = {};
 
+/* 少数「先查后拼」的文案得在这里就选好语言：它们带着 <b> 和数字，进不了
+   ZH2EN 词典，也进不了 RULES（数字被 <b> 切走，碎片形状跟着数据变），
+   relabel() 到这儿只会原样放过，英文界面就漏出中文。
+   ★ 代价：这类文案不会自己跟着语言切换变 —— 切语言后必须让渲染它的函数
+     重画一遍（见 applyLang），所以它只该用在「每次都是整块 innerHTML 重写」
+     的地方，别用在持久节点上。 */
+function _AT(zh, en){ return (window.I18N && window.I18N.T) ? window.I18N.T(zh, en) : zh; }
+
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');
   clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2400);}
 
@@ -1193,18 +1263,30 @@ function applyTheme(s){
 function applyLang(v){
   v = (v === 'en') ? 'en' : 'zh';
   document.documentElement.dataset.lang = v;
+  /* setLang 之后要做两件事，缺一不可：
+     ① 重画「先查后拼」的状态行 —— 它们的文案在 render 时就按当时的语言定死了，
+        而且带着 <b> 和数字，refresh() 的词典/RULES 都吃不下（见 _AT 的注释）。
+        这几个函数都是整块 innerHTML 重写，重画不会留下旧译文，来回切是干净的。
+     ② 再全页 refresh 一次，兜住这一拍还没渲染出来的数字卡片与日志。 */
+  const redraw = async () => {
+    try{
+      const jobs = [];
+      if(typeof loadAlignStatus === 'function') jobs.push(loadAlignStatus());
+      if(typeof loadIdleStatus === 'function') jobs.push(loadIdleStatus());
+      await Promise.all(jobs);      // 等它们把新语言的 DOM 写完再补翻，否则翻的是旧 DOM
+    }catch(e){}
+    if(window.I18N && I18N.refresh) I18N.refresh(document.body);
+  };
   if(window.I18N){
     I18N.setLang(v);
-    /* 这一页的数字卡片、日志、状态行都是 JS 先 innerHTML 再回填的：
-       setLang 那一刻它们往往还没渲染出来，等一拍再全页补翻一次。 */
-    if(v === 'en') setTimeout(function(){ if(I18N.refresh) I18N.refresh(document.body); }, 0);
+    setTimeout(redraw, 0);
     return;
   }
   let tries = 0;
   (function waitI18N(){
     if(window.I18N){
       I18N.setLang(v);
-      if(v === 'en') setTimeout(function(){ if(I18N.refresh) I18N.refresh(document.body); }, 0);
+      setTimeout(redraw, 0);
       return;
     }
     if(++tries > 40) return;      // 2 秒还没来就算了，宁可中文也不要卡着
@@ -1271,6 +1353,10 @@ const AI_PROVIDERS = [
    url:'', model:'',
    note:'自己填接口地址，本地服务一般不用 Key（地址要以 /v1 结尾）'},
 ];
+// ★ 这里比 AI_PROVIDERS 短，不是漏了 —— 是多数厂商根本没有语音转写接口。
+// 实测（不带 Key 探 /audio/transcriptions）：通义千问「兼容模式」返回 404
+// （它的 paraformer/sensevoice 只在 DashScope 原生协议里，不是 OpenAI 兼容），
+// Kimi / xAI / Gemini 也都没有。能直接用 OpenAI 兼容转写接口的就下面这几家。
 const ASR_PROVIDERS = [
   {id:'openai',  name:'OpenAI',
    url:'https://api.openai.com/v1',      model:'whisper-1',
@@ -1278,6 +1364,9 @@ const ASR_PROVIDERS = [
   {id:'groq',    name:'Groq',
    url:'https://api.groq.com/openai/v1', model:'whisper-large-v3',
    note:'console.groq.com 申请 Key · whisper-large-v3，速度很快'},
+  {id:'zhipu',   name:'智谱 GLM',
+   url:'https://open.bigmodel.cn/api/paas/v4', model:'glm-asr',
+   note:'bigmodel.cn 申请 Key · glm-asr'},
   {id:'silicon', name:'硅基流动 SiliconFlow',
    url:'https://api.siliconflow.cn/v1',  model:'FunAudioLLM/SenseVoiceSmall',
    note:'siliconflow.cn 申请 Key · SenseVoiceSmall 便宜'},
@@ -1304,15 +1393,19 @@ function detectProvider(list, url){
 function setModelOptions(selId, current, models){
   const sel = $('#' + selId); if(!sel) return;
   const cur = String(current || '').trim();
-  const list = [];
+  const list = [], tag = {};      // tag[id] = 给这一项加的后缀说明
   if(cur) list.push(cur);
   (models || []).forEach(m => {
     const id = String((m && m.id) || m || '').trim();
-    if(id && !list.includes(id)) list.push(id);
+    if(!id || list.includes(id)) return;
+    list.push(id);
+    // 来自内置官方目录的型号：我们逐个实测过它确实存在，打个标记，
+    // 好和「服务商 API 回了一堆型号、但我们认不出能力」的那一批区分开。
+    if(m && m.owned_by === 'official-catalog') tag[id] = '官方目录';
   });
   if(!list.length) list.push('');
   sel.innerHTML = list.map(v =>
-    `<option value="${esc(v)}">${esc(v || '— 点右侧「获取列表」 —')}</option>`).join('');
+    `<option value="${esc(v)}">${esc((v || '— 点右侧「获取列表」 —') + (tag[v] ? ' ·' + tag[v] : ''))}</option>`).join('');
   sel.value = cur || (list[0] || '');
 }
 /** 切换服务商：非自定义时带出地址与推荐模型，并收起「API 地址」那一行。 */
@@ -1361,6 +1454,7 @@ function loadAIFields(){
   $('#asrLang').value = SETTINGS.asr_language || '';
   $('#asrMaxDur').value = SETTINGS.asr_max_duration != null ? SETTINGS.asr_max_duration : 0;
   markSeg('segASR', SETTINGS.asr_enabled ? 'on' : 'off');
+  markSeg('segAlign', SETTINGS.align_enabled ? 'on' : 'off');
   markSeg('segIdleTag', SETTINGS.idle_tag === false ? 'off' : 'on');
   markSeg('segIdleAsr', SETTINGS.idle_asr === false ? 'off' : 'on');
   markSeg('segPolIdle', SETTINGS.polish_idle_only === false ? 'off' : 'on');
@@ -1465,49 +1559,249 @@ function updateIdleHint(){
 }
 
 let _idleLast = null;
+let _alignDone = 0, _alignTotal = 0, _alignPending = 0, _alignRound = 0;
 async function loadIdleStatus(){
   const el = $('#idleStat');
   if(!el) return;
-  el.textContent = '读取中…';
+  // ★「读取中…」只写**第一次**。以前每次进来都先写一遍，而这个函数在有活要干时
+  // 每 8 秒轮一次 —— 状态行就每 8 秒从 100 多字缩成 4 个字再涨回去，整块面板跟着抖。
+  // 刷新时保留上次的数字，用户看到的是「数字跳一下」，不是「版面抽一下」。
+  if(!el.dataset.ready) el.textContent = '读取中…';
   try{
-    const [r, a] = await Promise.all([
-      (await fetch('/v1/ai/status')).json(),
-      (await fetch('/v1/asr/status')).json(),
+    // 真并行：别把 await 写进数组字面量里，那样三次请求是串着走的（白等两个来回）
+    const [r, a, g] = await Promise.all([
+      fetch('/v1/ai/status').then(x => x.json()),
+      fetch('/v1/asr/status').then(x => x.json()),
+      fetch('/v1/align/status').then(x => x.json()),
     ]);
-    const parts = [`打标 <b>${r.tagged}</b>/${r.total}`];
-    parts.push(r.pending ? `待打标 <b>${r.pending}</b>` : '标签齐了');
-    parts.push(`转写 <b>${a.done}</b>/${a.total}`);
-    parts.push(a.pending ? `待转写 <b>${a.pending}</b>` : '转写齐了');
-    const busy = _idleLast ? ` 最后处理「${esc(_idleLast)}」` : '';
-    if(r.running) parts.push(`正在${r.last_kind === 'asr' ? '转写' : '打标'}${busy}`);
-    else if((r.idle_tag || r.idle_asr) && (r.pending || a.pending))
-      parts.push(`本轮已补 ${(r.run_tagged || 0) + (r.run_asr || 0)}/${r.idle_batch || '∞'} · 空闲 ${Math.round(r.idle_for)}s / ${r.idle_minutes * 60}s`);
+    _alignDone = g.aligned || 0;
+    _alignTotal = g.total || 0;
+    _alignPending = g.pending || 0;
+    _alignRound = r.run_align || 0;
+    // 先查后拼的地方得自己挑语言（见 _AT 的注释）：这些串带着 <b> 和数字，
+    // 进不了 ZH2EN 词典也进不了 RULES —— 整行都走 _AT，别再指望 relabel() 兜底。
+    const _T = _AT;
+    const parts = [_T(`打标 <b>${r.tagged}</b>/${r.total}`,
+                      `Tagged <b>${r.tagged}</b>/${r.total}`)];
+    parts.push(r.pending ? _T(`待打标 <b>${r.pending}</b>`, `<b>${r.pending}</b> pending tags`)
+                         : _T('标签齐了', 'tags done'));
+    parts.push(_T(`转写 <b>${a.done}</b>/${a.total}`,
+                  `Transcribed <b>${a.done}</b>/${a.total}`));
+    parts.push(a.pending ? _T(`待转写 <b>${a.pending}</b>`, `<b>${a.pending}</b> pending transcriptions`)
+                         : _T('转写齐了', 'transcriptions done'));
+    // 对齐统计：只有开了才显示，没开就别占地方（这是个可选功能）
+    if(r.idle_align){
+      parts.push(_T(`对齐 <b>${_alignDone}</b>/${_alignTotal}`,
+                    `Aligned <b>${_alignDone}</b>/${_alignTotal}`));
+      if(_alignPending) parts.push(_T(`待对齐 <b>${_alignPending}</b>`,
+                                      `<b>${_alignPending}</b> pending alignment`));
+    }
+    const busy = _idleLast ? _T(` 最后处理「${esc(_idleLast)}」`, ` · last: ${esc(_idleLast)}`) : '';
+    if(r.running){
+      const _k = r.last_kind;
+      parts.push(_k === 'asr' ? _T(`正在转写${busy}`, `Transcribing${busy}`)
+               : _k === 'align' ? _T(`正在对齐${busy}`, `Aligning${busy}`)
+               : _T(`正在打标${busy}`, `Tagging${busy}`));
+    }
+    else if((r.idle_tag || r.idle_asr || r.idle_align) && (r.pending || a.pending || _alignPending)){
+      const _n = (r.run_tagged || 0) + (r.run_asr || 0) + (r.run_align || 0);
+      const _b = r.idle_batch || '∞';
+      const _f = Math.round(r.idle_for), _w = r.idle_minutes * 60;
+      parts.push(_T(`本轮已补 ${_n}/${_b} · 空闲 ${_f}s / ${_w}s`,
+                    `${_n}/${_b} this round · idle ${_f}s / ${_w}s`));
+    }
     // 失败/跳过要说清楚：不然「待转写 187」一直不掉，用户会以为又卡死了。
     // 连败 3 次的素材会被冷藏 15 分钟（期间跳过它先处理后面的），到期自动再试。
-    const _T = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
     if(r.run_fail) parts.push(_T(`本轮失败 <b>${r.run_fail}</b>`, `<b>${r.run_fail}</b> failed this round`));
     if(r.skip_count) parts.push(_T(`暂时跳过 <b>${r.skip_count}</b>（连败 3 次，稍后自动重试）`,
                                    `skipping <b>${r.skip_count}</b> (3 fails, retried later)`));
     el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
     if(r.last_error) el.innerHTML += `<br><span style="color:#dc2626">上次失败：${esc(r.last_error)}</span>`;
+    // 窄窗口下这行会折行，给一个纯文本 title 兜住完整内容（悬停可看全）
+    el.title = el.textContent;
+    el.dataset.ready = '1';
     _idleLast = r.last_path ? r.last_path.split('/').pop() : null;
     renderBackfill(r.backfill, r, a);
     renderIdleBadge(r, a);
     relabel(el);
     // 只在「确实有活在干」时继续轮询；否则 setTimeout(fn,0) 会变成死循环猛刷接口
     if(r.running || (r.backfill && r.backfill.active) ||
-       ((r.idle_tag || r.idle_asr) && (r.pending || a.pending)))
+       ((r.idle_tag || r.idle_asr || r.idle_align) && (r.pending || a.pending || _alignPending)))
       setTimeout(loadIdleStatus, 8000);
   }catch(e){
     el.innerHTML = `<span style="color:#dc2626">读取失败：${esc(e.message)}</span>`;
   }
 }
 
+/* ---------- 增强对齐时间轴 ---------- */
+let _alignTimer = null;
+
+async function loadAlignStatus(){
+  const el = $('#alignStat');
+  if(!el) return;
+  try{
+    const a = await (await fetch('/v1/align/status')).json();
+    const parts = [_AT(`已对齐 <b>${a.aligned}</b>/${a.total}`,
+                       `Aligned <b>${a.aligned}</b>/${a.total}`)];
+    if(a.total === 0) parts[0] = _AT('还没有可对齐的转写文字', 'no transcripts to align yet');
+    else if(a.pending === 0) parts.push(a.na
+      ? _AT(`其余 ${a.na} 个暂不支持`, `${a.na} not supported`)
+      : _AT('全都对齐了', 'all aligned'));
+    else parts.push(_AT(`还剩 <b>${a.pending}</b> 条`, `<b>${a.pending}</b> left`));
+    if(a.na) parts.push(_AT(`暂不支持 <b>${a.na}</b>`, `<b>${a.na}</b> unsupported`));
+    if(a.running && a.current){
+      const nm = esc(a.current.split('/').pop());
+      parts.push(_AT(`正在对齐「${nm}」`, `Aligning “${nm}”`));
+    }
+    else if(a.enabled && a.ready && a.pending){
+      const r = _alignRound || 0;
+      if(r) parts.push(_AT(`本轮已对齐 <b>${r}</b>`, `<b>${r}</b> aligned this round`));
+    }
+    if(a.enabled && a.total && !a.ready)
+      parts.push(`<span style="color:#b45309">${esc(_AT(a.reason || '对齐模型未就绪',
+                                                       'alignment model not ready'))}</span>`);
+    el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+    renderAlignDl(a);
+    // 只在真在干/真在下载时接着轮询，否则会变成死循环猛刷接口
+    clearTimeout(_alignTimer);
+    if(a.running || (a.download && a.download.running))
+      _alignTimer = setTimeout(loadAlignStatus, 3000);
+  }catch(e){
+    el.innerHTML = `<span style="color:#dc2626">${esc(_AT('读取失败：', 'Read failed: '))}${esc(e.message)}</span>`;
+  }
+}
+
+function renderAlignDl(a){
+  const box = $('#alignDl'), st = $('#alignDlStat');
+  if(!box) return;
+  const d = a.download || {};
+  // 只在「开关打开 + 模型没就绪」时才把下载区露出来：
+  // 平时藏起来，不让一个纯可选的 1.2 G 下载占着设置页。
+  const show = !!a.enabled && !d.ready;
+  box.style.display = show ? '' : 'none';
+  if(!show) return;
+  renderAlignSrc(a);
+  const btn = $('#alignDlBtn'), stop = $('#alignDlStopBtn'), hint = $('#alignDlHint');
+  if(d.running){
+    /* ★ 这里显示的是**整个模型**的进度，不是当前那个文件的。
+       清单前十个文件加起来才 4 MB，剩下 1.2 GB 全在 model.safetensors 里，
+       所以按文件报会出现「下到 100% 又跳回 0%」十来次。
+       文件名单独跟在后面，让人知道这会儿在动（小文件阶段进度几乎不动）。 */
+    const fn = (d.file || '').split('/').pop();
+    if(st) st.textContent = _AT(`下载中 ${d.pct || 0}%`, `Downloading ${d.pct || 0}%`)
+      + (fn ? ` · ${fn}${d.count ? _AT(`（${d.index}/${d.count}）`, ` (${d.index}/${d.count})`) : ''}` : '')
+      + (d.speed ? ` · ${fmtBytes(d.speed)}/s` : '')
+      + (d.eta ? _AT(` · 剩余 ${fmtWait(d.eta)}`, ` · ${fmtWait(d.eta, true)} left`) : '');
+    if(btn) btn.style.display = 'none';
+    if(stop) stop.style.display = '';
+  } else {
+    if(btn) btn.style.display = '';
+    if(stop) stop.style.display = 'none';
+    /* 错误只在这里放一句短的 —— 完整那句话另起一行放，见下面的 errLine。
+       以前整段错误塞在这个 <span> 里，长异常会把卡片横向撑破。 */
+    if(d.error) { if(st) st.innerHTML = `<span style="color:#dc2626">${_AT('下载失败', 'Download failed')}</span>`; }
+    else if(d.done) { if(st) st.textContent = _AT('模型已就绪', 'Model ready'); }
+    else if(st) st.textContent = _AT('还没下载', 'Not downloaded');
+  }
+  /* 出错时把下载失败的原因单独铺一整行：它会自动换行、最多四行，
+     不再把「对齐模型 / 下载源」这两行的排版挤乱。 */
+  const errLine = $('#alignDlErr');
+  if(errLine){
+    if(d.error && !d.running){
+      errLine.style.display = '';
+      errLine.textContent = d.error;
+    } else {
+      errLine.style.display = 'none';
+    }
+  }
+  if(hint){
+    if(d.disk_ok === false){
+      hint.innerHTML = `<i class="icn" data-icon="alert" data-size="13"></i> `
+        + `<span style="color:#dc2626">`
+        + _AT(`磁盘空间不足：需要约 ${fmtBytes(d.disk_need)}，当前可用 ${fmtBytes(Math.max(0, d.disk_free || 0))}`,
+              `Not enough disk space: about ${fmtBytes(d.disk_need)} needed, ${fmtBytes(Math.max(0, d.disk_free || 0))} free`)
+        + `</span>`;
+    } else {
+      /* 源名从后端拿，别在这里写死 hf-mirror.com —— 换源后提示就不对了。 */
+      const src = (d.sources || []).find(s => s.id === d.source) || {};
+      const nm = _AT(src.label, src.label_en) || 'hf-mirror.com';
+      hint.innerHTML = `<i class="icn" data-icon="info" data-size="13"></i> `
+        + _AT(`首次开启要下载约 1.2 GB 的对齐模型（当前从 ${nm}，断网可重试）。下完之后就全自动了，不用再管这里。`,
+              `The first time you turn this on it downloads the ~1.2 GB alignment model (currently from ${nm}; retry if your connection drops). After that it is fully automatic — nothing more to do here.`);
+    }
+    relabel(hint);
+  }
+}
+
+/* 渲染下载源下拉。只在「开关开着且模型没就绪」时才被调到。 */
+function renderAlignSrc(a){
+  const sel = $('#alignSrc'), sub = $('#alignSrcSub');
+  if(!sel) return;
+  const d = a.download || {};
+  const list = d.sources || [];
+  const cur = d.source || '';
+  // 只在选项真的变了时重建 —— 8 秒一轮的轮询每次都重建会把用户正在
+  // 打开的 select 关掉。
+  if(sel.dataset.sig !== list.map(s => s.id).join(',') + '|' + cur){
+    sel.dataset.sig = list.map(s => s.id).join(',') + '|' + cur;
+    sel.innerHTML = list.map(s =>
+      `<option value="${esc(s.id)}">${esc(_AT(s.label, s.label_en) || s.id)}</option>`).join('');
+    relabel(sel);
+  }
+  sel.value = cur;
+  // 正在下载时不给换：后端本来就只对「下一次下载」生效，这里说清楚，
+  // 免得用户以为点了没反应。
+  sel.disabled = !!d.running;
+  if(sub){
+    sub.textContent = d.running
+      ? _AT('正在下载，换源从下一次重试开始生效',
+           'Downloading — a source change applies from the next retry')
+      : _AT('国内镜像快；国外切 HuggingFace 官方',
+           'Faster from China on the mirror; use HuggingFace official elsewhere');
+  }
+}
+
+/* 换下载源。只影响下一次下载，不打断正在跑的那次。 */
+async function alignSetSource(v){
+  try{
+    const r = await (await fetch('/v1/align/download', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'source', source:v})
+    })).json();
+    if(r && r.error) toast(r.error);
+    else if(r && r.message) toast(r.message);
+  }catch(e){
+    toast(_AT('操作失败：连不上服务（', 'Failed: cannot reach the service (') + e.message + '）');
+  }finally{
+    loadAlignStatus();
+  }
+}
+
+async function alignDownload(action){
+  const btn = $('#alignDlBtn');
+  if(action === 'start' && btn){ btn.disabled = true; }
+  try{
+    const r = await (await fetch('/v1/align/download', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action})
+    })).json();
+    if(r && r.error) toast(r.error);
+    else if(r && r.message) toast(r.message);
+  }catch(e){
+    toast(_AT('操作失败：连不上服务（', 'Failed: cannot reach the service (') + e.message + '）');
+  }finally{
+    if(btn) btn.disabled = false;
+    loadAlignStatus();
+  }
+}
+
 /* ---------- 智能纠偏（LLM 把转写文字读顺） ---------- */
 let _polTimer = null;
 
-function fmtWait(sec){
+// en=true 出英文。走 _AT 的地方两个串都要拼，所以「等多久」这个片段也得会两种话。
+function fmtWait(sec, en){
   sec = Math.max(0, Math.round(sec || 0));
+  if(en) return sec >= 60 ? `${Math.floor(sec/60)}m ${String(sec%60).padStart(2,'0')}s` : `${sec}s`;
   if(sec >= 60) return `${Math.floor(sec/60)} 分 ${String(sec%60).padStart(2,'0')} 秒`;
   return `${sec} 秒`;
 }
@@ -1548,7 +1842,7 @@ async function loadPolishStatus(){
         /* 空闲门：正在等用户停手。给个倒计时，否则用户会以为卡住了 */
         const left = Math.max(0, Math.round((p.need_idle || 0) - (p.idle_sec || 0)));
         parts.push(_T(`正在等你闲下来 · 还有 ${fmtWait(left)}`,
-                      `waiting for you to step away · ${fmtWait(left)} left`));
+                      `waiting for you to step away · ${fmtWait(left, true)} left`));
       } else {
         const cur = p.current ? `「${esc(p.current.split('/').pop())}」` : '';
         parts.push(_T(`正在优化${cur}（本批 ${p.done}/${p.total}）`,
@@ -1708,7 +2002,7 @@ async function loadASRModels(){
   const base = $('#asrBase').value.trim();
   const key = $('#asrKey').value;
   if(!base){ toast('请先填写 API 地址'); return; }
-  const custom = detectProvider(ASR_PROVIDERS, base) === 'custom';
+  const custom = isCustomProvider('asrProvider', ASR_PROVIDERS, base);
   $('#asrStatus').textContent = '正在获取模型列表…';
   try{
     const r = await (await fetch('/v1/ai/models',{method:'POST',
@@ -1717,7 +2011,8 @@ async function loadASRModels(){
     if(!r.ok){ $('#asrStatus').innerHTML = `<span style="color:#dc2626">${esc(r.message||'获取失败')}</span>`; return; }
     if(!r.models.length){ $('#asrStatus').innerHTML = `<span style="color:#dc2626">${custom ? '没有获取到任何模型。' : '该地址没有发现语音转写类模型（whisper / sensevoice / asr 等）。若用本地服务，请确认已加载 ASR 模型。'}</span>`; return; }
     setModelOptions('asrModel', $('#asrModel').value.trim() || r.models[0].id, r.models);
-    $('#asrStatus').innerHTML = ` 发现 <b>${r.models.length}</b> 个${custom ? '' : '语音转写'}模型，已列出：选一个再点「保存配置」`;
+    const note = r.note ? ` <span style="color:#b45309">${esc(r.note)}</span>` : '';
+    $('#asrStatus').innerHTML = ` 发现 <b>${r.models.length}</b> 个${custom ? '' : '语音转写'}模型，已列出：选一个再点「保存配置」${note}`;
     relabel($('#asrStatus'));
   }catch(e){
     $('#asrStatus').innerHTML = `<span style="color:#dc2626">请求失败：${esc(e.message)}</span>`;
@@ -1741,11 +2036,25 @@ async function testASR(){
   }
 }
 
+/**
+ * 这一家要不要参与「视觉 / 转写」过滤。
+ * ★ 两道判据都往「不过滤」偏 —— 过滤猜错一次，用户要的型号就从下拉里消失了：
+ *   ① 下拉里选了「自定义 / 本地」→ 不参与过滤（用户明确要求）；
+ *   ② 地址对不上任何内置预设（用户手打了一个别家的）→ 同样不参与，
+ *      哪怕下拉还停在某个官方项上（比如他把地址换成了自建代理）。
+ * 只有「下拉选了官方 + 地址也确实是那家」时才按 kind 过滤。
+ */
+function isCustomProvider(selId, list, base){
+  const v = ($('#' + selId) || {}).value;
+  if(v === 'custom') return true;                   // ①
+  return detectProvider(list, base) === 'custom';   // ②
+}
+
 async function loadAIModels(){
   const base = $('#aiBase').value.trim();
   const key = $('#aiKey').value;
   if(!base){ toast('请先填写 API 地址'); return; }
-  const custom = detectProvider(AI_PROVIDERS, base) === 'custom';
+  const custom = isCustomProvider('aiProvider', AI_PROVIDERS, base);
   $('#aiStatus').textContent = '正在获取模型列表…';
   try{
     const r = await (await fetch('/v1/ai/models',{method:'POST',
@@ -1755,7 +2064,8 @@ async function loadAIModels(){
     if(!r.models.length){ $('#aiStatus').innerHTML = `<span style="color:#dc2626">${custom ? '没有获取到任何模型。' : '该地址没有发现能看图的模型（vl / vision / 4v 等）。若用本地服务，请确认已加载视觉模型。'}</span>`; return; }
     // 已存的模型名排第一并保持选中，拉到的全部模型接在后面供挑
     setModelOptions('aiModel', $('#aiModel').value.trim() || r.models[0].id, r.models);
-    $('#aiStatus').innerHTML = ` 发现 <b>${r.models.length}</b> 个${custom ? '' : '能看图的'}模型，已列出：选一个再点「保存配置」`;
+    const note = r.note ? ` <span style="color:#b45309">${esc(r.note)}</span>` : '';
+    $('#aiStatus').innerHTML = ` 发现 <b>${r.models.length}</b> 个${custom ? '' : '能看图的'}模型，已列出：选一个再点「保存配置」${note}`;
     relabel($('#aiStatus'));
   }catch(e){
     $('#aiStatus').innerHTML = `<span style="color:#dc2626">请求失败：${esc(e.message)}</span>`;
@@ -1784,6 +2094,18 @@ document.querySelectorAll('#segAI button').forEach(b=>
   b.onclick = ()=>{ markSeg('segAI', b.dataset.v); });
 document.querySelectorAll('#segASR button').forEach(b=>
   b.onclick = ()=>{ markSeg('segASR', b.dataset.v); });
+document.querySelectorAll('#segAlign button').forEach(b=>
+  b.onclick = async ()=>{
+    const on = b.dataset.v === 'on';
+    markSeg('segAlign', b.dataset.v);
+    if(on && ($('#segASR button.on') || {dataset:{v:'off'}}).dataset.v !== 'on')
+      toast(_AT('记得把上面的「音频转写」也打开 —— 对齐是跟在转写后面的',
+                'Turn on “Audio transcription” above too — alignment runs after it'));
+    if(await saveSettings({align_enabled: on}))
+      toast(on ? _AT('增强对齐时间轴已开启', 'Enhanced alignment timeline is on')
+               : _AT('增强对齐时间轴已关闭', 'Enhanced alignment timeline is off'));
+    loadAlignStatus();
+  });
 document.querySelectorAll('#segTier button').forEach(b=>
   b.onclick = ()=>{ markSeg('segTier', b.dataset.v); });
 document.querySelectorAll('#segMatch button').forEach(b=>
@@ -2061,7 +2383,7 @@ function relabel(root){
   if(window.I18N && I18N.lang() === 'en' && I18N.refresh) I18N.refresh(root || document.body);
 }
 
-async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadPolishStatus(); loadMcp(); loadAbout(); relabel(); }
+async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadPolishStatus(); loadAlignStatus(); loadMcp(); loadAbout(); relabel(); }
 
 /* ── 关于 ──────────────────────────────────────────────────── */
 let AB_INFO = null;

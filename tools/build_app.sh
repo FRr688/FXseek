@@ -54,7 +54,7 @@ mkdir -p "$RES"
 
 # 2a. Python 源码与前端资源（白名单，避免漏进杂物）
 for f in app.py launcher.py model_dl.py paths.py embed.py indexer.py fingerprint.py \
-         fastsearch.py ai_desc.py asr_desc.py asr_polish.py voice_intent.py net_util.py heif_support.py \
+         fastsearch.py ai_desc.py asr_desc.py asr_polish.py aligner.py voice_intent.py net_util.py heif_support.py \
          seed.py serve.py \
          run_daemon.py mcp_server.py mcp_agents.py tray_helper.py recorder.py requirements.txt; do
   # 注：README.md 不进包 —— 运行期没人读它，仓库里留着给 GitHub 首页看就行

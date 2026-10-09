@@ -352,23 +352,20 @@ class Prep:
 
     # ---- 给 model_dl 的 progress 回调 ----
     def progress(self, ev):
-        """把「单文件」进度换算成「整包」进度。
+        """把进度事件排版成准备窗口要的那几行。
 
-        model_dl 的每个事件都是针对当前这个文件的（done/total 只算该文件），
-        直接显示会看到「0 MB / 0 MB」这种没意义的数字——因为第一个文件是
-        5000 字节的 README.md，四舍五入就是 0.00 MB。
-        这里自己累计：已完成的文件按期望大小整块计入，正在下的按实时字节计入。
+        ★ 事件里的 done / total / pct / speed / eta 现在已经是「整个模型」的
+        口径了 —— model_dl.download_model 统一折算过（它按清单顺序把前面文件的
+        期望大小整块累加，再用最近几秒的滑窗算速度）。以前它报的是单文件进度，
+        所以这里自己按 MODEL_FILES 又累加了一遍；现在还照旧累加就会算重，
+        界面会显示成「1.9 GB 的模型下到 3.8 GB」。
         """
-        pct = ev.get("pct") or 0
-        done = ev.get("done") or 0
-        total = ev.get("total") or 0
+        got = int(ev.get("done") or 0)
+        all_bytes = int(ev.get("total") or 0) or TOTAL_BYTES or 1
         sp = ev.get("speed") or 0
-        state = ev.get("state") or ""
+        overall = int(ev.get("pct") or 0)
 
-        # index/count 只有 "start" 那一刻带着（model_dl 在后头的 downloading/done
-        # 事件里不发这两个字段）。之前这里直接读 ev，于是下载主文件时读到 0，界面
-        # 挂着「正在下载第 1 / 13 个文件」不动——因为清单里第一个就是 README.md。
-        # 所以自己记住最近一次见到的序号，后续事件沿用。
+        # index/count 现在每个事件都带着了，但老事件流没有，所以照旧兜一下。
         idx = ev.get("index") or 0
         cnt = ev.get("count") or 0
         if idx:
@@ -377,22 +374,8 @@ class Prep:
             idx, cnt = self._idx, self._cnt
         fn = ev.get("file") or ""
 
-        # 已下完的整块体积（按清单顺序，前面 i-1 个文件）
-        base = 0
-        if idx:
-            for f in MODEL_FILES[:idx - 1]:
-                base += EXPECTED_SIZES.get(f, 0)
-
-        if state == "done":
-            # 这个文件下完了：整块计入
-            got = base + EXPECTED_SIZES.get(fn, 0)
-        else:
-            # 正在下：前面整块 + 当前文件已下字节
-            got = base + done
-
-        all_bytes = TOTAL_BYTES or 1
         got = max(0, min(got, all_bytes))
-        overall = int(got * 100.0 / all_bytes)
+        overall = max(0, min(100, overall))
 
         # 剩余时间按整包算，比按单文件算靠谱
         eta = 0

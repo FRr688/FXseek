@@ -10,6 +10,12 @@ html{font-size:16px}
 html[data-font="small"]{font-size:14.5px}
 html[data-font="large"]{font-size:17.5px}
 :root{
+  /* 歌词/字幕高亮的配色（播放面板里可换，存在设置 lyric_color / lyric_style）。
+     -d 是暗底那一档（夜间模式、视频字幕固定用它），-l 是白天模式的暗一点那档。
+     JS 只改这四个变量，CSS 不用动。 */
+  --lyric-hi-d:#3d7eff; --lyric-glow-d:rgba(61,126,255,.30);
+  --lyric-hi-l:#2563eb; --lyric-glow-l:rgba(37,99,235,.22);
+  --lyric-hi:var(--lyric-hi-d); --lyric-glow:var(--lyric-glow-d);
   /* 亮色已整体降亮度：大面积纯白长时间看刺眼，
      改为「页面浅灰 + 卡片近白」两级，保留层次但不晃眼 */
   --bg:#eef1f5;                /* 页面底 */
@@ -33,6 +39,11 @@ html[data-font="large"]{font-size:17.5px}
   --side-glow-2:rgba(236,72,153,.12);
 }
 /* 夜晚主题（与设置页一致） */
+/* 白天模式把高亮换成暗一点的那一档（默认 :root 用的是亮档，配夜间/视频）。
+   注意本项目的「白天」是默认主题，没有 data-theme="light" 的变量块，这条是新加的。 */
+body[data-theme="light"]{
+  --lyric-hi:var(--lyric-hi-l); --lyric-glow:var(--lyric-glow-l);
+}
 body[data-theme="dark"]{
   --bg:#16181d; --bg-side:#1b1e24; --bg-card:#1f232a;
   --bg-hover:#262b33; --bg-sel:#2b313a;
@@ -965,6 +976,12 @@ body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
 .mv-lyrics .lh{position:relative;display:flex;align-items:center;justify-content:center;
   min-height:26px;font-size:0.6875rem;letter-spacing:3px;color:var(--mv-text2);
   text-align:center;margin:2px 0 14px;text-transform:uppercase}
+/* 「已优化对齐时间轴」小徽章：挂在表头标题右边。表头本身带 3px 字距和
+   uppercase，这里必须全部还原，否则一串大字距的英文大写很丑。 */
+.mv-lyrics .laligned{margin-left:8px;padding:1px 7px;border-radius:999px;
+  font-size:0.6875rem;letter-spacing:0;text-transform:none;font-weight:500;
+  color:#8b5cf6;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.28);
+  white-space:nowrap;cursor:default}
 /* 工具组绝对定位在右侧，不参与标题居中 —— 否则按钮一多标题就被挤偏 */
 .mv-lyrics .ltools{position:absolute;right:0;top:0;display:flex;align-items:center;gap:6px;
   text-transform:none;letter-spacing:0}
@@ -978,6 +995,31 @@ body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
 /* 「智能优化」是主动作，给一点品牌色，和「重新转写」区分开 */
 .mv-lyrics .lre.lopt{color:#a78bfa;border-color:rgba(167,139,250,.45)}
 .mv-lyrics .lre.lopt:hover{color:#c4b5fd;border-color:#a78bfa;background:rgba(167,139,250,.12)}
+/* 高亮外观设置：工具组里的一枚纯图标按钮 + 一个浮层。
+   ★ z-index 必须压过 #viewer（430，全屏时 900）—— 它挂在 body 上、
+   不是 viewer 的子节点，层级给低了会被播放面板整个盖住。 */
+.lyrpop-mask{position:fixed;inset:0;z-index:1200}
+.lyrpop{position:fixed;z-index:1201;min-width:212px;padding:12px 13px;border-radius:13px;
+  background:var(--bg-card);border:1px solid var(--border);box-shadow:0 16px 44px rgba(0,0,0,.30);
+  text-transform:none;letter-spacing:0;text-align:left}
+.lyrpop .lp-t{font-size:0.7188rem;color:var(--text-3);margin-bottom:7px;font-weight:600}
+.lyrpop .lp-t + .lp-t{margin-top:13px}
+.lyrpop .lp-seg{display:flex;gap:5px;margin-bottom:3px}
+.lyrpop .lp-seg button{flex:1 1 0;height:27px;border-radius:8px;border:1px solid var(--border);
+  background:transparent;color:var(--text-2);cursor:pointer;font-family:inherit;
+  font-size:0.7188rem;font-weight:600;letter-spacing:0;transition:.15s;white-space:nowrap}
+.lyrpop .lp-seg button:hover{border-color:var(--text-3);color:var(--text)}
+.lyrpop .lp-seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.lyrpop .lp-seg button[disabled]{opacity:.42;cursor:default}
+.lyrpop .lp-sw{display:flex;gap:9px;align-items:center}
+.lyrpop .lp-sw i{display:block;width:26px;height:26px;border-radius:50%;cursor:pointer;
+  border:2px solid transparent;box-shadow:inset 0 0 0 2px var(--bg-card);transition:.15s}
+.lyrpop .lp-sw i:hover{transform:scale(1.12)}
+.lyrpop .lp-sw i.on{border-color:var(--text);transform:scale(1.12)}
+/* 高亮关掉时色板整块变灰：颜色这时不生效，但还是能点（点了等于把高亮打开）。 */
+.lyrpop .lp-sw.dim{opacity:.4}
+.lyrpop .lp-sw.dim i:hover{transform:none}
+.lyrpop .lp-note{margin-top:11px;font-size:0.6562rem;color:var(--text-3);line-height:1.5}
 /* 原始 / 优化 二选一（只在存在优化版时才出现） */
 .mv-lyrics .lseg{display:inline-flex;align-items:center;gap:2px;height:26px;padding:2px;
   border-radius:8px;background:var(--mv-hover);border:1px solid var(--mv-bd)}
@@ -998,9 +1040,38 @@ body[data-theme="light"] .vwstage img{box-shadow:0 18px 50px rgba(16,24,40,.22)}
   transition:color .22s ease,opacity .22s ease,transform .22s ease;
   letter-spacing:.3px;font-weight:500;white-space:pre-wrap;word-break:break-word}
 .mv-lyrics .lr:hover{opacity:.95}
-.mv-lyrics .lr.on{opacity:1;color:#3d7eff;font-weight:650;transform:scale(1.045);
-  text-shadow:0 0 18px rgba(61,126,255,.28)}
-body[data-theme="light"] .mv-lyrics .lr.on{color:#2563eb}
+.mv-lyrics .lr.on{opacity:1;color:var(--lyric-hi);font-weight:650;transform:scale(1.045);
+  text-shadow:0 0 18px var(--lyric-glow)}
+/* 逐字高亮（卡拉OK）：唱过的字用主色，正在唱的那个字再亮一档，还没唱的就是普通颜色。
+   整行高亮时不生成 .w，走上面那条 .on 的规则 —— 两套互不干扰。
+   ★ 两条踩过的坑，都写在这里免得以后又被「优化」回去：
+   1) **不许改 font-weight**。字重一变字宽就变，而歌词行是居中排版
+      （text-align:center），一行里随便哪个字变宽，整行都会重新居中 ——
+      每换一个字就重排一次，播放时看起来就是「文字在抖」。
+   2) **不许压暗没唱到的字**。原来是 opacity:.42，叠在 .lr 自己的 .72 上，
+      整页歌词会掉到三成不透明度，看着就像「全都灰了」。用户要的是
+      「现在唱到哪儿」，不是「没唱的都灰掉」。 */
+.mv-lyrics .lr .w{transition:color .15s linear,text-shadow .15s linear}
+.mv-lyrics .lr.wordmode .w{color:var(--mv-text);text-shadow:none}
+.mv-lyrics .lr.wordmode .w.done{color:var(--lyric-hi)}
+.mv-lyrics .lr.wordmode .w.now{color:var(--lyric-hi);
+  text-shadow:0 0 16px var(--lyric-glow)}
+/* 逐字模式下当前行不再放大加粗：.on 的 transform:scale 会带着整行一起缩放，
+   加上 font-weight 变化，换行时同一段文字会「跳」一下。 */
+.mv-lyrics .lr.wordmode.on{font-weight:500;transform:none}
+/* 视频字幕的逐字高亮：字幕是白字压在**画面**上（永远是暗底），所以固定用亮色那一档，
+   不跟着应用主题走 —— 白天模式下用暗色会糊在画面里看不见。
+   和歌词同一套规矩：不改字重（字幕居中，改字重会整体重排）。
+   没唱到的字保持原本的白色，不压暗 —— 字幕一压暗就整句都看不清了。 */
+.mv-subline .w{transition:color .15s linear,text-shadow .15s linear}
+.mv-subline.wordmode .w.done{color:var(--lyric-hi-d)}
+.mv-subline.wordmode .w.now{color:var(--lyric-hi-d);
+  text-shadow:0 0 14px rgba(0,0,0,.55)}
+/* 整行高亮时字幕整体上色。★ 必须 :not(.wordmode) —— 逐字模式下没唱到的字
+   靠「继承 .mv-subline 的白色」保持普通，这里一上色它们就跟着变蓝了。
+   以前压根没有这条规则：paintSub 只在逐字模式里给 span 上色，整行模式一句
+   撒手不管，字幕永远是白的 —— 用户看到的就是「面板里的『整行』管不到字幕」。 */
+.mv-subline.on:not(.wordmode){color:var(--lyric-hi-d)}
 .mv-lyrics .lgap{height:12px}
 .mv-lyrics .lempty{margin:auto;text-align:center;color:var(--mv-text2);
   font-size:0.8438rem;line-height:2;max-width:520px;padding:0 10px}
@@ -1792,7 +1863,14 @@ async function applyThemeFromSettings(){
     font = s.font_size || 'medium';
     anim = s.ui_anim || 'auto';
     lg = s.lang || 'zh';
+    /* 歌词/字幕高亮的外观跟着设置走（播放器里改的那份也会写回设置）。
+       顺手把服务端这份写回 localStorage：下次开页时 lyricApplyCfg() 在
+       settings 请求回来之前就会先跑一次，本地缓存对不上就会闪一下旧颜色。 */
+    if(s.lyric_color) LYRIC_CFG.color = s.lyric_color;
+    if(s.lyric_style) LYRIC_CFG.style = lyricStyleOf(s.lyric_style);
+    try{ localStorage.setItem(LYRIC_CFG_KEY, JSON.stringify(LYRIC_CFG)); }catch(e){}
   }catch(e){}
+  lyricApplyCfg();
   if(theme === 'auto'){
     const h = new Date().getHours();
     theme = (h >= 7 && h < 19) ? 'light' : 'dark';
@@ -4574,6 +4652,288 @@ function mvLyricsSplit(txt, maxLen){
   return lines;
 }
 
+/* 算出每行在原文里的起始下标（lines 与它是等长的）。
+   mvLyricsSplit 会 trim、按标点断句，字符本身保持原序，
+   所以用 indexOf 从上次结束处顺序找就行；实在找不到
+   （理论上不会）就退回游标，宁可偏一点也不能算成 NaN。 */
+function mvLineOffsets(raw, lines){
+  const t = String(raw || '');
+  const out = [];
+  let cur = 0;
+  (lines || []).forEach(ln => {
+    if(!ln){ out.push(cur); return; }
+    let i = t.indexOf(ln, cur);
+    if(i < 0) i = Math.min(cur, t.length);
+    out.push(i);
+    cur = i + ln.length;
+  });
+  return out;
+}
+
+/* 按对齐数据算「当前该高亮第几个非空行」—— 歌词页和视频字幕共用。
+   做法：二分找到最后一个 start <= t 的词，取它的字符偏移，
+   再看这个偏移落在哪一行里（lineOffs 与 lines 等长）。
+   对齐条目之间可能有静音空档，落在空档里就沿用上一个词，比突然熄火自然。
+   返回 -1 表示还没到第一个词（交给「按行数均分」那套兜底）。 */
+function mvAlignIndex(t, items){
+  if(!items || !items.length) return -1;
+  const first = +(items[0] || [])[1] || 0;
+  if(t < first) return -1;
+  let lo = 0, hi = items.length - 1, ai = 0;
+  while(lo <= hi){
+    const mid = (lo + hi) >> 1;
+    if((+(items[mid] || [])[1] || 0) <= t){ ai = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return ai;
+}
+
+function mvAlignOrdinal(t, items, lines, offs){
+  if(!items || !items.length || !offs || !offs.length || !lines || !lines.length) return -1;
+  const ai = mvAlignIndex(t, items);
+  if(ai < 0) return -1;
+  const off = +(items[ai] || [])[3] || 0;
+  let k = -1, best = -1;
+  for(let i = 0; i < lines.length; i++){
+    if(!lines[i]) continue;
+    k++;
+    if(offs[i] <= off) best = k; else break;
+  }
+  return best;
+}
+
+/* 把一行歌词切成「词」span，好让唱到的字单独变色。
+   每个 span 记着自己在 align_items 里的绝对下标（data-ai），
+   重画时只切 class，不重建 DOM。返回 null = 这行没有对齐数据，保持纯文本。 */
+function mvLineSpans(line, li, lines, offs, items, raw){
+  const s = offs[li], e = s + String(line || '').length;
+  const idxs = [];
+  for(let i = 0; i < items.length; i++){
+    const o = +(items[i] || [])[3];
+    if(Number.isFinite(o) && o >= s && o < e) idxs.push(i);
+  }
+  if(!idxs.length) return null;
+  const out = [];
+  for(let n = 0; n < idxs.length; n++){
+    const off = +(items[idxs[n]] || [])[3];
+    const next = (n + 1 < idxs.length) ? +(items[idxs[n + 1]] || [])[3] : e;
+    /* 取到下一个词之前的所有字符（中间的空格/标点跟着前一个词，读起来才连） */
+    const piece = raw.slice(off, Math.max(off, next));
+    if(!piece) continue;
+    const sp = document.createElement('span');
+    sp.className = 'w';
+    sp.dataset.ai = String(idxs[n]);
+    sp.textContent = piece;
+    out.push(sp);
+  }
+  return out.length ? out : null;
+}
+
+/* ---- 歌词/字幕高亮的外观：配色 + 逐字/整行 ----
+   存在设置里（lyric_color / lyric_style），跨文件沿用；本地再缓存一份，
+   这样播放器不等设置请求回来就能用对颜色。 */
+const LYRIC_COLORS = [
+  { id:'blue',   zh:'经典蓝', en:'Classic blue', d:'#3d7eff', gd:'rgba(61,126,255,.30)',
+    l:'#2563eb', gl:'rgba(37,99,235,.22)' },
+  { id:'violet', zh:'星空紫', en:'Nebula',       d:'#a78bfa', gd:'rgba(167,139,250,.32)',
+    l:'#7c3aed', gl:'rgba(124,58,237,.24)' },
+  { id:'teal',   zh:'湖水青', en:'Lagoon',       d:'#2dd4bf', gd:'rgba(45,212,191,.30)',
+    l:'#0d9488', gl:'rgba(13,148,136,.24)' },
+  { id:'amber',  zh:'暖阳橙', en:'Sunset',       d:'#fbbf24', gd:'rgba(251,191,36,.30)',
+    l:'#d97706', gl:'rgba(217,119,6,.24)' },
+  { id:'rose',   zh:'樱花粉', en:'Sakura',       d:'#fb7185', gd:'rgba(251,113,133,.32)',
+    l:'#e11d48', gl:'rgba(225,29,72,.24)' },
+];
+const LYRIC_STYLES = [
+  { id:'word', zh:'逐字', en:'Word' },
+  { id:'line', zh:'整行', en:'Line' },
+  /* 关掉：文字照常显示，只是不再跟着唱到哪儿变色。
+     注意这跟视频字幕的开关不是一回事 —— 字幕该显示还显示，只是不高亮。 */
+  { id:'off',  zh:'关闭', en:'Off'  },
+];
+const LYRIC_CFG_KEY = 'fxseek.lyricCfg';
+/* 把任意来路的 style 值收成一个合法值：word（默认）/ line / off。
+   设置文件是手改得动的，本地缓存也可能留着一个已经删掉的旧值。 */
+function lyricStyleOf(v){
+  return (v === 'line' || v === 'off') ? v : 'word';
+}
+
+let LYRIC_CFG = (() => {
+  try{
+    const v = JSON.parse(localStorage.getItem(LYRIC_CFG_KEY) || '{}');
+    return { color: v.color || 'blue', style: lyricStyleOf(v.style) };
+  }catch(e){ return { color:'blue', style:'word' }; }
+})();
+
+/* 高亮整个关掉了？歌词页/字幕页都拿它走「文字照常显示、只是不上色」的分支。 */
+function lyricOff(){ return LYRIC_CFG.style === 'off'; }
+
+function lyricColorOf(id){
+  return LYRIC_COLORS.find(c => c.id === id) || LYRIC_COLORS[0];
+}
+
+/* 只改 CSS 变量，不碰 DOM 结构 —— 正在播放时也能实时换色。 */
+function lyricApplyCfg(){
+  const c = lyricColorOf(LYRIC_CFG.color);
+  const r = document.documentElement.style;
+  r.setProperty('--lyric-hi-d', c.d);  r.setProperty('--lyric-glow-d', c.gd);
+  r.setProperty('--lyric-hi-l', c.l);  r.setProperty('--lyric-glow-l', c.gl);
+}
+
+/* 改设置：本地立即生效 + 落盘。落盘失败也不回滚 —— 用户就在看这个播放器，
+   先把颜色给他换上，比为了「一致」把界面弹回去强。 */
+async function lyricSetCfg(patch){
+  Object.assign(LYRIC_CFG, patch);
+  try{ localStorage.setItem(LYRIC_CFG_KEY, JSON.stringify(LYRIC_CFG)); }catch(e){}
+  lyricApplyCfg();
+  try{
+    await fetch('/v1/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      /* ★ 落盘的键名是 lyric_color / lyric_style，不是本地的 color / style —— 
+         以前直接 post LYRIC_CFG 出去，后端认不出这两个键就默默丢了，
+         换台机器／清了缓存之后颜色会莫名其妙弹回默认。 */
+      body: JSON.stringify({ lyric_color: LYRIC_CFG.color, lyric_style: LYRIC_CFG.style }),
+    });
+  }catch(e){}
+  /* 结构变了（逐字↔整行）必须重画：span 是有还是没有，跟渲染时一致。
+     音频面板注册 window.__mvRerender，视频面板注册各自 box._mvSubRerender
+     （视频和音频可能同时开着，所以用的是「广播」而不是一个全局槽）。 */
+  if(typeof window.__mvRerender === 'function') window.__mvRerender();
+  document.querySelectorAll('#viewer').forEach(b => {
+    if(b._mvSubRerender) b._mvSubRerender();
+  });
+}
+
+/* 高亮外观浮层：一枚调色按钮弹出来的小面板。
+   用 fixed 定位 + 按锚点算坐标：歌词面板自己会滚动、窄屏时工具组还会换行，
+   用 absolute 挂在按钮里迟早跑偏。 */
+function lyricPopover(anchor){
+  const old = document.querySelector('.lyrpop');
+  if(old){
+    const same = old._anchor === anchor && anchor.isConnected;
+    document.querySelectorAll('.lyrpop, .lyrpop-mask').forEach(x => x.remove());
+    if(same) return;                 // 再点一次同一枚按钮 = 收起
+  }
+
+  const mask = document.createElement('div');
+  mask.className = 'lyrpop-mask';
+  mask.onclick = () => { mask.remove(); pop.remove(); };
+
+  const pop = document.createElement('div');
+  pop.className = 'lyrpop';
+
+  const t1 = document.createElement('div');
+  t1.className = 'lp-t';
+  t1.textContent = I18N.T('高亮样式', 'Highlight style');
+  pop.appendChild(t1);
+
+  /* 说明文字随「样式」实时变，所以先建好节点、留一个刷新的闭包。
+     anchor.dataset.aligned 有三态：'1' 能逐字 · 'polished' 有对齐数据但正看优化版
+     · 空 这个文件压根没对齐。 */
+  const alignedState = anchor.dataset.aligned || '';
+  const canWord = alignedState === '1';
+  const note = document.createElement('div');
+  note.className = 'lp-note';
+  const setNote = () => {
+    note.textContent = lyricOff()
+      ? I18N.T('已关闭高亮：歌词和字幕照常显示，只是不再跟着唱到哪儿变色。',
+               'Highlighting is off — lyrics and subtitles still show, they just no longer follow along.')
+      : canWord
+        ? I18N.T('逐字高亮按对齐模型给的每个字的时间走；前奏和间奏里不猜、不高亮。',
+                 'Word highlighting follows the per-character timings from the alignment model; nothing is guessed during intros and interludes.')
+        : alignedState === 'polished'
+          ? I18N.T('这段已经对齐过了，但你现在看的是「优化」版 —— 那是模型重排过的文字，对不上时间轴。切回「原始」就能逐字跟唱。',
+                   'This item is aligned, but you are reading the polished text — the model rewrote it, so the timings no longer line up. Switch back to Original for word-by-word highlighting.')
+          : I18N.T('这段还没做增强对齐。去「设置 → 智能服务 → 增强对齐时间轴」打开它。',
+                   'This item is not word-aligned yet. Turn on "Enhanced alignment timeline" in Settings → Smart services.');
+  };
+
+  const seg = document.createElement('div');
+  seg.className = 'lp-seg';
+  LYRIC_STYLES.forEach(s => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = I18N.T(s.zh, s.en);
+    /* 「优化」版实际渲染的是整行（逐字对不上），这时把「整行」标成当前 ——
+       否则界面一边告诉你逐字不可用、一边把逐字画成选中，等于自己撒谎。 */
+    const shownStyle = (alignedState === 'polished' && LYRIC_CFG.style === 'word') ? 'line' : LYRIC_CFG.style;
+    if(shownStyle === s.id) b.className = 'on';
+    /* 「逐字」在两种情况下是空头支票，都置灰，免得用户以为坏了：
+       ① 这个文件没对齐过；② 对齐过、但你现在看的是「优化」版（模型重排过，
+       字符偏移对不上原文）。第一种要先去设置里开对齐，第二种切回「原始」就行。 */
+    if(s.id === 'word' && !canWord){
+      b.disabled = true;
+      b.title = alignedState === 'polished'
+        ? I18N.T('「优化」版是模型重排过的文字，对不上时间轴；切回「原始」就能逐字',
+                 'The polished text was rewritten by the model, so it no longer matches the timings — switch back to Original for word-by-word')
+        : I18N.T('这段还没做增强对齐，只能整行高亮',
+                 'Not word-aligned yet — only whole-line highlighting is available');
+    }
+    b.onclick = () => {
+      if(LYRIC_CFG.style === s.id) return;
+      [...seg.children].forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      /* 高亮关掉时颜色也没意义了，整块色板跟着变灰（但还能点，点了会自动打开高亮）。 */
+      sw.classList.toggle('dim', s.id === 'off');
+      /* ★ 顺序要紧：setNote 读的就是 LYRIC_CFG，必须先落配置再刷说明，
+         否则点了「关闭」说明文字还写着「逐字高亮按对齐模型…」（实测踩过）。 */
+      lyricSetCfg({ style: s.id });
+      setNote();
+    };
+    seg.appendChild(b);
+  });
+  pop.appendChild(seg);
+
+  const t2 = document.createElement('div');
+  t2.className = 'lp-t';
+  t2.textContent = I18N.T('高亮颜色', 'Highlight colour');
+  pop.appendChild(t2);
+
+  const sw = document.createElement('div');
+  sw.className = 'lp-sw';
+  LYRIC_COLORS.forEach(c => {
+    const i = document.createElement('i');
+    i.style.background = c.d;
+    i.title = I18N.T(c.zh, c.en);
+    if(LYRIC_CFG.color === c.id) i.className = 'on';
+    i.onclick = () => {
+      [...sw.children].forEach(x => x.classList.remove('on'));
+      i.classList.add('on');
+      /* 高亮是关着的时候点颜色 = 想把它打开。自动挑一档：能逐字就逐字，
+         不能就整行（挑逐字的话反而什么都不亮，看着像坏了）。 */
+      if(lyricOff()){
+        const st = canWord ? 'word' : 'line';
+        [...seg.children].forEach(x => x.classList.toggle('on',
+          LYRIC_STYLES.find(s => s.id === st) &&
+          x.textContent === I18N.T(LYRIC_STYLES.find(s => s.id === st).zh,
+                                   LYRIC_STYLES.find(s => s.id === st).en)));
+        sw.classList.remove('dim');
+        LYRIC_CFG.style = st;
+        setNote();
+      }
+      lyricSetCfg({ color: c.id });
+    };
+    sw.appendChild(i);
+  });
+  pop.appendChild(sw);
+
+  sw.classList.toggle('dim', lyricOff());
+  setNote();
+  pop.appendChild(note);
+
+  document.body.appendChild(mask);
+  document.body.appendChild(pop);
+  pop._anchor = anchor;
+  /* 优先弹在按钮下方并右对齐；贴到视口外就翻到上方/左边 */
+  const r = anchor.getBoundingClientRect();
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = Math.min(r.right - pw, window.innerWidth - pw - 10);
+  let top = r.bottom + 8;
+  if(top + ph > window.innerHeight - 10) top = Math.max(10, r.top - ph - 8);
+  pop.style.left = Math.max(10, left) + 'px';
+  pop.style.top = top + 'px';
+}
+
 /* 歌词页显示「原始」还是「优化」—— 全局记一个偏好，跨文件沿用。
    默认：有优化版就看优化版（那是用户特意跑出来的），没有就只能看原文。 */
 const MV_LMODE_KEY = 'fxseek.lyricMode';
@@ -4590,10 +4950,27 @@ function mvLyricsLoad(box, a){
   if(!el) return;
   const enc = box.dataset.enc || '';
   let lines = [], rows = [], active = -1, lastUserScroll = 0;
+  let activeItem = -1;      // 逐字高亮：当前唱到第几个对齐条目
   /* 两份文字：srcOrig = ASR 原文（永不改动），srcClean = LLM 优化版。
      当前显示哪份由 mode 决定，切换只影响渲染，不动数据库。 */
   let srcOrig = '', srcClean = '', kindName = '';
   let mode = mvLyricsModeGet();
+  /* 强制对齐数据（可选）：align_items 是 [[词, 起, 止, 字符偏移], …]，
+     字符偏移指向 asr_text 的原始下标。有它就能「按字跟着走」，
+     没有就退回原来那套「行数均分时长」的近似高亮。 */
+  let alignItems = [], alignOk = false;
+  /* 优化版的对齐数据：同一批时间戳，但偏移已经由后端（difflib）映射到
+     asr_clean 的坐标上。优化只是一份改过错别字、补过标点的稿子，映射后逐字
+     照样准；映射不出来（两段差得太远）就是空数组，这时「优化」版照旧退回整行。 */
+  let alignItemsClean = [];
+  /* 当前显示的这份文字该用哪套偏移。★ 优化版**不许**回落到原文那份 ——
+     两串字符下标根本不是一回事，拿原文的偏移去切优化版只会指哪错哪；
+     映射不出来就返回空数组，让上层退回整行高亮（宁可不猜也不猜错）。 */
+  function alignFor(useClean){
+    return useClean ? alignItemsClean : alignItems;
+  }
+  let lineOffs = [];      // 每行在原文里的起始下标，和 lines 一一对应
+  let lineText = '';      // 算 lineOffs 用的那份原文（取消首尾空白后）
 
   const render = () => {
     el.innerHTML = '';
@@ -4609,7 +4986,13 @@ function mvLyricsLoad(box, a){
       return;
     }
     const showClean = mode === 'clean' && !!srcClean;
-    lines = mvLyricsSplit(showClean ? srcClean : srcOrig);
+    const srcShown = showClean ? srcClean : srcOrig;
+    lines = mvLyricsSplit(srcShown);
+    lineText = String(srcShown || '').replace(/\r\n?/g, '\n').trim();
+    lineOffs = mvLineOffsets(lineText, lines);
+    /* 当前这份文字对应的对齐数据：优化版用映射过的那份。 */
+    const items = alignFor(showClean);
+    const wantWords = alignOk && items.length && LYRIC_CFG.style === 'word';
 
     const wrap = document.createElement('div');
     wrap.className = 'lrwrap';
@@ -4618,6 +5001,19 @@ function mvLyricsLoad(box, a){
     const ht = document.createElement('span');
     ht.textContent = I18N.T('转写文字', 'Transcript');
     head.appendChild(ht);
+
+    /* 对齐过的才挂徽章 —— 没对齐的别挂，免得用户以为漏跑了什么。
+       徽章文字走「中文原文 + 就地 refresh」而不是 I18N.T(zh,en)：T 是按当前语言挑死的，
+       用户开着英文界面重新打开预览再切回中文，挑死的英文就换不回来了（实测会卡住）。
+       交给词典翻译，i18n.js 的 walker 会记住原文，来回切都还原得回去。 */
+    if(alignOk && items.length){
+      const ab = document.createElement('span');
+      ab.className = 'laligned';
+      ab.textContent = '已优化对齐时间轴';
+      ab.title = '这段文字用强制对齐模型逐字定位过，高亮会跟着字走，不再是整段跳';
+      head.appendChild(ab);
+      if(window.I18N && I18N.refresh) I18N.refresh(ab);
+    }
 
     const tools = document.createElement('div');
     tools.className = 'ltools';
@@ -4636,7 +5032,12 @@ function mvLyricsLoad(box, a){
           b.title = m === 'orig'
             ? I18N.T('显示语音识别的原始文字，一个字都没改过', 'Show the raw ASR text, untouched')
             : I18N.T('显示智能优化后的文字', 'Show the AI-polished text');
-          b.onclick = () => { mvLyricsModeSet(m); mode = m; render(); };
+          /* 切原始/优化要连带把底部字幕也换过来 —— 两边共用这一份偏好，
+             不通知的话会出现「面板已经换成优化版，字幕还在念原文」。 */
+          b.onclick = () => {
+            mvLyricsModeSet(m); mode = m; render();
+            if(box._mvSubReload) box._mvSubReload();
+          };
           seg.appendChild(b);
         });
       tools.appendChild(seg);
@@ -4661,13 +5062,43 @@ function mvLyricsLoad(box, a){
     rb.onclick = () => mvLyricsTranscribe(box, a, rb, true);
     tools.appendChild(rb);
 
+    /* 高亮外观（配色 / 逐字还是整行）。放在最后，不动前面三个主动作的位置。 */
+    const cb = document.createElement('button');
+    cb.className = 'lre';
+    cb.type = 'button';
+    cb.innerHTML = icon('palette', 14) +
+      '<span>' + I18N.T('高亮', 'Highlight') + '</span>';
+    cb.title = I18N.T('调整歌词高亮的颜色和样式（逐字 / 整行）',
+                      'Adjust the lyric highlight colour and style (word by word / whole line)');
+    /* 「逐字」能不能用，看的是**当前这份文字**有没有偏移对得上的对齐数据：
+       原文用 align_items，优化版用后端映射出来的 align_items_clean。
+       优化版映射不出来时 items 为空 → 维持旧的「置灰 + 切回原始」三态。 */
+    if(alignOk && items.length){
+      cb.dataset.aligned = '1';
+    }
+    cb.onclick = () => lyricPopover(cb);
+    tools.appendChild(cb);
+
     head.appendChild(tools);
     wrap.appendChild(head);
 
-    rows = lines.map(t => {
+    rows = lines.map((t, li) => {
       const d = document.createElement('div');
       if(!t){ d.className = 'lgap'; }
-      else { d.className = 'lr'; d.textContent = t; }
+      else {
+        d.className = 'lr';
+        /* 逐字高亮只有在「看原文 + 有对齐数据 + 选了逐字」时才切 span：
+           优化版是 LLM 重排过的，字符偏移对不上原文。 */
+        const spans = wantWords
+          ? mvLineSpans(t, li, lines, lineOffs, items, lineText) : null;
+        if(spans){
+          d.classList.add('wordmode');
+          spans.forEach(sp => d.appendChild(sp));
+          d._ws = spans;
+        } else {
+          d.textContent = t;
+        }
+      }
       wrap.appendChild(d);
       return d;
     });
@@ -4691,22 +5122,61 @@ function mvLyricsLoad(box, a){
     }
 
     el.appendChild(wrap);
-    active = -1;
+    active = -1; activeItem = -1;
     paintActive();
   };
+
+  /* 按对齐数据算「当前该高亮第几个非空行」（实现在 mvAlignOrdinal 里，
+     视频字幕共用同一份）。返回 -1 表示还没唱到第一个词，交给均分那套兜底。 */
+  function alignOrdinal(t){
+    return mvAlignOrdinal(t, alignFor(mode === 'clean' && !!srcClean), lines, lineOffs);
+  }
 
   function paintActive(){
     const d = a.duration || 0;
     if(!d || !lines.length){ return; }
-    const nonEmpty = rows.filter(r => r.classList.contains('lr')).length || 1;
-    let idx = Math.min(nonEmpty - 1, Math.floor((a.currentTime / d) * nonEmpty));
-    if(idx === active) return;
+    /* 用**当前这份文字**的对齐数据：原文走 align_items，优化版走映射过的
+       align_items_clean。映射不出来时 items 为空 —— 那就退回均分，也就是
+       「优化」版以前的行为。
+       ★ 有对齐数据就完全信它：前奏那几十秒 aln 返回 -1，就老老实实
+       谁都不高亮。别退回均分 —— 均分在前奏里会乱点一行，等于骗人。 */
+    const items = alignFor(mode === 'clean' && !!srcClean);
+    const canAlign = alignOk && items.length;
+    const wordMode = canAlign && !lyricOff() && LYRIC_CFG.style === 'word';
+    let idx, wi = -1;
+    if(canAlign){
+      wi = mvAlignIndex(a.currentTime, items);
+      idx = (wi < 0) ? -1
+        : mvAlignOrdinal(a.currentTime, items, lines, lineOffs);
+    } else {
+      const nonEmpty = rows.filter(r => r.classList.contains('lr')).length || 1;
+      idx = Math.min(nonEmpty - 1, Math.floor((a.currentTime / d) * nonEmpty));
+    }
+    /* 「关闭高亮」：文字照常滚、照常看，只是哪一行都不上色。 */
+    if(lyricOff()) idx = -1;
+    /* 逐字模式下「同一个词」也要能触发重画：行没变但唱到下一个字了。
+       否则高亮会一直停在行首那个字上。 */
+    if(idx === active && (!wordMode || wi === activeItem)) return;
     active = idx;
+    activeItem = wordMode ? wi : -1;
     let k = -1;
     rows.forEach(r => {
       if(!r.classList.contains('lr')) return;
       k++;
-      r.classList.toggle('on', k === idx);
+      const on = (k === idx);
+      r.classList.toggle('on', on);
+      if(!r._ws) return;
+      if(on && wordMode){
+        r._ws.forEach(sp => {
+          const ai = +sp.dataset.ai;
+          sp.classList.toggle('done', ai < wi);
+          sp.classList.toggle('now', ai === wi);
+        });
+      } else {
+        /* 不是当前行（或切回整行模式）：把逐字的着色全部撤掉，
+           让这一行回到 .lr 的普通颜色。 */
+        r._ws.forEach(sp => sp.classList.remove('done', 'now'));
+      }
     });
     /* 用户没在手动滚动（6 秒内）才自动跟随，别抢滚动条 */
     if(Date.now() - lastUserScroll > 6000){
@@ -4719,12 +5189,50 @@ function mvLyricsLoad(box, a){
   const onTime = () => paintActive();
   a.addEventListener('timeupdate', onTime);
   a.addEventListener('loadedmetadata', onTime);
-  mvOn(() => a.removeEventListener('timeupdate', onTime));
+  /* timeupdate 只有 ~4Hz，逐字高亮会一顿一顿的。播放时另起一条 rAF 循环，
+     限到 ~15fps（够顺又不烧 CPU）；暂停就停掉，不留空转。 */
+  let rafId = 0, lastPaint = 0;
+  const tick = () => {
+    rafId = 0;
+    if(a.paused || a.ended) return;
+    const now = performance.now();
+    if(now - lastPaint > 66){ lastPaint = now; paintActive(); }
+    rafId = requestAnimationFrame(tick);
+  };
+  const onPlay = () => { if(!rafId) rafId = requestAnimationFrame(tick); };
+  a.addEventListener('play', onPlay);
+  a.addEventListener('playing', onPlay);
+  const onStop = () => { if(rafId){ cancelAnimationFrame(rafId); rafId = 0; } };
+  a.addEventListener('pause', onStop);
+  a.addEventListener('ended', onStop);
+  /* 播放器里改「逐字/整行」要立刻重画 —— 只有当前打开的这个注册。 */
+  window.__mvRerender = render;
+  mvOn(() => {
+    a.removeEventListener('timeupdate', onTime);
+    a.removeEventListener('loadedmetadata', onTime);
+    a.removeEventListener('play', onPlay);
+    a.removeEventListener('playing', onPlay);
+    a.removeEventListener('pause', onStop);
+    a.removeEventListener('ended', onStop);
+    onStop();
+    if(window.__mvRerender === render) window.__mvRerender = null;
+  });
 
   fetch('/v1/detail?path=' + enc).then(r => r.json()).then(d => {
     const m = (d && d.meta) || {};
     srcOrig  = (d && (d.asr_text || m.asr_text)) || '';
     srcClean = (d && (d.asr_clean || m.asr_clean)) || '';
+    /* 对齐数据可能是数组，也可能是数据库里存的那串 JSON */
+    const pick = (v) => {
+      if(typeof v === 'string'){ try{ return JSON.parse(v); }catch(e){ return null; } }
+      return v;
+    };
+    const ai = pick(m.align_items), aic = pick(m.align_items_clean);
+    alignItems = (Array.isArray(ai) && ai.length) ? ai : [];
+    /* 优化版那份：后端按 difflib 把偏移映射到 asr_clean 上（没有就是空数组，
+       这时「优化」版照旧只有整行高亮）。 */
+    alignItemsClean = (Array.isArray(aic) && aic.length) ? aic : [];
+    alignOk = !!(m.align_ok) && alignItems.length > 0;
     const k = (d && (d.asr_clean_kind || m.asr_clean_kind)) || '';
     kindName = (k === 'song') ? I18N.T('按歌词校对', 'checked as lyrics')
              : (k === 'dialogue') ? I18N.T('按对话整理', 'arranged as dialogue')
@@ -4878,8 +5386,14 @@ function mvSubInit(box, v){
   const stage = box.querySelector('#mvSubStage');
   const cc = box.querySelector('#mvCC');
   if(!stage || !cc) return;
-  let lines = [], idx = -1, on = mvSubPref(), busy = false;
+  let lines = [], idx = -1, idxItem = -1, on = mvSubPref(), busy = false;
   let clean = '';              // asr_clean：有的话字幕用优化版（更通顺、对话还带说话人）
+  /* 和歌词页同一套：有强制对齐数据就按字定位，没有就按行数均分。
+     alignItems 的偏移冲着 asr_text；alignItemsClean 是后端映射到 asr_clean 的
+     那一份 —— 字幕跟面板看哪一份文字，就用哪一份偏移（见 alignForSub）。 */
+  let alignItems = [], alignItemsClean = [], alignOk = false,
+      lineOffs = [], lineText = '', subUseClean = false;
+  const alignForSub = () => (subUseClean ? alignItemsClean : alignItems);
 
   const paintCC = () => {
     cc.classList.toggle('busy', busy);
@@ -4910,10 +5424,48 @@ function mvSubInit(box, v){
     const el = box.querySelector('#mvSubLine');
     if(!el) return;
     const d = v.duration || 0, n = lines.length || 1;
-    let k = d ? Math.min(n - 1, Math.floor((v.currentTime || 0) / d * n)) : 0;
-    if(k === idx) return;
-    idx = k;
-    el.textContent = (lines[k] || '').trim();
+    /* 同上：对齐数据在就全信它，前奏/间奏返回 -1 就不显示字幕 */
+    const items = alignForSub();
+    const canAlign = alignOk && items.length;
+    const wordMode = canAlign && !lyricOff() && LYRIC_CFG.style === 'word';
+    let k, wi = -1;
+    if(canAlign){
+      wi = mvAlignIndex(v.currentTime || 0, items);
+      k = (wi < 0) ? -1 : mvAlignOrdinal(v.currentTime || 0, items, lines, lineOffs);
+    } else {
+      k = d ? Math.min(n - 1, Math.floor((v.currentTime || 0) / d * n)) : 0;
+    }
+    if(k === idx && (!wordMode || wi === idxItem)) return;
+    const lineChanged = (k !== idx);
+    idx = k; idxItem = wordMode ? wi : -1;
+    /* 换行时必须重建 span（每行的词不一样）；同一行里唱到下一个字只切 class。 */
+    if(lineChanged){
+      el.innerHTML = '';
+      el.classList.remove('wordmode');
+      el.textContent = (lines[k] || '').trim();
+      const t = (lines[k] || '').trim();
+      const spans = wordMode ? mvLineSpans(t, k, lines, lineOffs, items, lineText) : null;
+      if(spans){
+        el.textContent = '';
+        el.classList.add('wordmode');
+        spans.forEach(sp => el.appendChild(sp));
+        el._ws = spans;
+      } else {
+        el._ws = null;
+      }
+    }
+    if(el._ws && wordMode){
+      el._ws.forEach(sp => {
+        const ai = +sp.dataset.ai;
+        sp.classList.toggle('done', ai < wi);
+        sp.classList.toggle('now', ai === wi);
+      });
+      el.classList.remove('on');
+    } else {
+      /* 整行模式：整条字幕上主色（和右侧面板的 .lr.on 一个意思）。
+         没有对齐数据时 k 来自均分估算 —— 面板也是这么干的，两边保持一致。 */
+      el.classList.toggle('on', !lyricOff() && k >= 0);
+    }
   };
 
   const renderStage = () => {
@@ -4924,11 +5476,14 @@ function mvSubInit(box, v){
                'Once transcribed, the text follows the video as subtitles.') +
         `<i>${I18N.T('点右下角「立即转写这段视频」开始。',
                      'Click "Transcribe this video" at the bottom right to start.')}</i></div>`;
-      idx = -1;
+      idx = -1; idxItem = -1;
       return;
     }
+    /* 字幕层上只留一行字，不再放「已优化对齐时间轴」徽章 ——
+       那枚徽章已经在右侧「转写文字」面板顶部有了，压在画面上重复又挡视线。
+       想确认有没有对齐，看高亮是逐字还是整行就够了。 */
     stage.innerHTML = on ? '<div class="mv-subline" id="mvSubLine"></div>' : '';
-    idx = -1;
+    idx = -1; idxItem = -1;
     if(on) paintSub();
   };
 
@@ -4938,10 +5493,28 @@ function mvSubInit(box, v){
       const m = (d && d.meta) || {};
       const orig = (d && (d.asr_text || m.asr_text)) || '';
       clean = (d && (d.asr_clean || m.asr_clean)) || '';
-      /* 有智能优化版就用它当字幕（错别字少、对话还带说话人）；原文照旧留在库里，
-         面板上看不到但搜得到，也可以随时「还原」。 */
-      lines = mvLyricsSplit(clean || orig, 20);   // 字幕一行窄一些，读着不累
-    }catch(e){ clean = ''; lines = []; }
+      /* 字幕跟着右侧「文字」面板看同一份文字（共用 fxseek.lyricMode 偏好）。
+         对齐偏移是冲着 asr_text 算出来的，只有看原文时才能逐字定位；看优化版
+         （LLM 重排过）就对不上了，那就退回整行。
+         ★ 原来这里写死「有优化版就用优化版」，于是同一份转写的两个界面各看各的：
+         面板能逐字跟唱、底部字幕却永远不动 —— 用户看到的就是「一个视频的字幕
+         能跟着高亮走，另一个不行」。 */
+      const showClean = mvLyricsModeGet() === 'clean' && !!clean;
+      const srcShown = showClean ? clean : (orig || clean);
+      lines = mvLyricsSplit(srcShown, 20);   // 字幕一行窄一些，读着不累
+      subUseClean = showClean;
+      lineText = String(srcShown || '').replace(/\r\n?/g, '\n').trim();
+      lineOffs = mvLineOffsets(lineText, lines);
+      const pick = (v) => {
+        if(typeof v === 'string'){ try{ return JSON.parse(v); }catch(e){ return null; } }
+        return v;
+      };
+      const ai = pick(m.align_items), aic = pick(m.align_items_clean);
+      alignItems = (Array.isArray(ai) && ai.length) ? ai : [];
+      alignItemsClean = (Array.isArray(aic) && aic.length) ? aic : [];
+      alignOk = !!m.align_ok && alignItems.length > 0;
+    }catch(e){ clean = ''; lines = []; alignItems = []; alignItemsClean = [];
+               alignOk = false; lineOffs = []; subUseClean = false; }
     paintCC();
     renderStage();
   };
@@ -4981,8 +5554,34 @@ function mvSubInit(box, v){
   box._mvSubReload = load;
 
   v.addEventListener('timeupdate', paintSub);
-  v.addEventListener('seeked', () => { idx = -1; paintSub(); });
-  v.addEventListener('loadedmetadata', () => { idx = -1; paintSub(); });
+  v.addEventListener('seeked', () => { idx = -1; idxItem = -1; paintSub(); });
+  v.addEventListener('loadedmetadata', () => { idx = -1; idxItem = -1; paintSub(); });
+  /* 和歌词页一样：timeupdate 只有 ~4Hz，逐字字幕会一顿一顿的。
+     播放时另起一条 rAF 循环（限 ~15fps），暂停就停掉。 */
+  let sRaf = 0, sLast = 0;
+  const sTick = () => {
+    sRaf = 0;
+    if(v.paused || v.ended) return;
+    const now = performance.now();
+    if(now - sLast > 66){ sLast = now; paintSub(); }
+    sRaf = requestAnimationFrame(sTick);
+  };
+  const sOnPlay = () => { if(!sRaf) sRaf = requestAnimationFrame(sTick); };
+  const sOnStop = () => { if(sRaf){ cancelAnimationFrame(sRaf); sRaf = 0; } };
+  v.addEventListener('play', sOnPlay);
+  v.addEventListener('playing', sOnPlay);
+  v.addEventListener('pause', sOnStop);
+  v.addEventListener('ended', sOnStop);
+  /* 在播放器里换「逐字 / 整行」要立刻重画字幕（音频面板可能同时开着，别抢它的钩子）。 */
+  box._mvSubRerender = () => { idx = -1; idxItem = -1; renderStage(); };
+  mvOn(() => {
+    v.removeEventListener('play', sOnPlay);
+    v.removeEventListener('playing', sOnPlay);
+    v.removeEventListener('pause', sOnStop);
+    v.removeEventListener('ended', sOnStop);
+    sOnStop();
+    box._mvSubRerender = null;
+  });
   load();
 }
 
@@ -5285,6 +5884,9 @@ function openPreview(enc, name, kind, startAt){
   const url = '/v1/file?path=' + enc;
   const old = document.getElementById('viewer'); if(old) old.remove();
   mvTeardown();
+  /* 换一个素材就把「高亮外观」浮层收掉 —— 它是 fixed 挂在 body 上的，
+     不跟着 viewer 一起消失；留着的话会变成点开新素材还压着的幽灵面板。 */
+  document.querySelectorAll('.lyrpop, .lyrpop-mask').forEach(x => x.remove());
 
   const TEXT_RE = /\.(txt|md|markdown|json|csv|tsv|log|py|js|mjs|ts|tsx|jsx|css|scss|html|htm|xml|yaml|yml|ini|conf|cfg|sh|bash|zsh|sql|java|c|cpp|h|go|rs|rb|php|swift|kt|toml|env|gitignore)$/i;
   const PDF_RE  = /\.pdf$/i;

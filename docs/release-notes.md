@@ -1,3 +1,114 @@
+## FXseek 1.0.9
+
+**The lyrics now know *when* each word is sung.** Transcription always told you *what* was said; this
+release adds the *timing*, so the highlight follows individual words instead of jumping a whole line at
+a time — and it is honest about silence instead of guessing.
+
+### New: word-level timing for any transcript
+
+Turn it on under **Settings → Smart services → Word-level alignment**. The first time, it downloads a
+forced-alignment model (**Qwen3-ForcedAligner-0.6B, ~1.2 GB**); after that it is fully automatic.
+
+The problem it solves is easy to miss. A transcript is one block of text with no per-character timing, so
+the old player divided the duration by the number of lines and hoped for the best. On the sample track
+the first character is actually sung at **22.0 s** — so for a fifth of the song the highlight was proudly
+pointing at line 3 of a song nobody had started singing.
+
+- **It follows transcription automatically.** The background queue used to alternate between tagging and
+  transcription; it now rotates three kinds of work, and alignment sits directly downstream of
+  transcription — finish transcribing a file and the same window usually aligns it too. No button to
+  press.
+- **It runs as a one-shot subprocess.** Alignment is a batch job you need once per file, so the model
+  never stays in memory. It exits as soon as the file is done.
+- **Nothing is highlighted during an instrumental intro, on purpose.** When alignment data exists the
+  player trusts it completely and *never* falls back to the even split. A wrong guess is worse than no
+  guess: one visible lie makes the whole timeline untrustworthy.
+- **Best on Chinese lyrics.** Japanese and Korean are not supported yet — those are skipped and logged
+  as skipped rather than silently failing.
+- Measured here: a 60.4 s Chinese track, 200 characters → **87 timed items in 2.89 s**; an 8 s clip,
+  24 characters → **21 items in 2.72 s**.
+
+### New: highlight style and colour
+
+A **palette button** next to the transcript opens the highlight settings:
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| Style | **word-by-word** / **whole-line** / **off** | word-by-word |
+| Colour | blue · violet · teal · amber · rose | blue |
+
+Audio and the video subtitle overlay share one setting, it applies **live during playback**, and "off"
+still shows the subtitles — they simply stop changing colour.
+
+### Fixed: the polished transcript lost its highlighting
+
+Polishing rewrites the text, and the timing offsets were computed against the **original** — two
+different strings, so the same index points at a different character. The old UI worked around this by
+**disabling word-by-word highlighting whenever the polished text was on screen**, which is why turning
+polishing on made the feature look broken.
+
+The original and the polished transcript now each keep **their own offset table**
+(`align_items_clean`), produced by walking the original→polished diff. The edit is normally a spell-fix
+and a punctuation pass, so the mapping is very nearly exact: across the nine polished items in this
+library the two strings are **0.9658–1.0 similar**, the remap takes **0–17 ms**, and **0 of 354**
+remapped offsets point at the wrong character. It **refuses to guess** when the polish was a rewrite
+rather than a correction, and falls back to whole-line highlighting — an empty table means "whole line
+only", never "use the wrong coordinates".
+
+### Fixed: whole-line highlighting never touched the video subtitles
+
+The subtitle overlay only ever coloured per-word spans. The whole-line branch computed the line index,
+set the text, and stopped — so the panel turned blue while the subtitles stayed white. Also fixed in the
+same pass: the subtitle overlay now follows the panel's **Original / Polished** switch (they used to
+disagree, which is why word-by-word worked on one video and not another), un-sung characters keep their
+normal colour instead of being dimmed to ~30 %, and the lyrics no longer jitter while a line is being
+sung (a bold-on-the-current-word rule was changing glyph widths in a centre-aligned line, re-centring
+the whole row on every word).
+
+### Fixed: "no vision model found at this address"
+
+Two separate bugs made a perfectly good provider look empty:
+
+- The vision/ASR filter was nested **inside** `if catalog_exists:` — so it only ran for providers with a
+  built-in catalogue, and every custom or local address ignored it entirely.
+- **Some providers simply don't list their vision line in `/models`.** Zhipu's endpoint returns 11
+  text-only IDs, none of them containing `vl` / `vision` / `4v`; feeding each one a red pixel returns
+  `HTTP 400 … messages.content.type 参数非法`.
+
+The model list is now the **union of the live `/models` response and the built-in catalogue**, the
+filter applies based on **which provider you picked**, and **custom / local addresses are deliberately
+never filtered** — there is no basis on which to guess that vendor's naming, so everything is listed with
+a note saying exactly that. A wrong "none found" locks you out; a longer list costs you one glance.
+Catalogue corrected against live probing: `glm-4v-air` does not exist (removed), `glm-4.6v` added.
+
+### Fixed: the settings page
+
+- **The status line no longer flickers.** It was re-writing itself as "读取中…" on every 8-second poll,
+  which resized the row and made the whole panel jump. The statistics also moved to their own line:
+  sitting in the button row, a long sentence stretched the row and squeezed the label next to it into a
+  four-character vertical strip.
+- **A network error can no longer wreck the layout.** A failed download used to dump ~1000 characters of
+  `requests` exception into a `<span>` inside a flex row — flex items do not wrap, so it measured
+  **1971 px inside an 838 px row** and painted over everything. Errors are pared down to one line
+  (`hf-mirror.com 超时 (connect timeout=25)`) and clamped to four lines in their own full-width block.
+- **The alignment model download gained a source picker** (domestic mirror / HuggingFace official), and
+  each mirror gets **two attempts** before being declared dead — a mirror that times out once frequently
+  answers the second time. If the selected source fails and the fallback works, it switches over.
+- **Download progress is the whole model, not the current file.** It used to show the progress of
+  whichever file was in flight, which read as "24 KB/s · 29 s left" on a 1.2 GB model.
+
+### Install
+
+1. Download `FXseek-1.0.9.dmg`, double-click to mount, and drag `FXseek.app` into *Applications*
+2. **Delete any older copy first** (`/Applications/FXseek.app`) — installing over it leaves stale files behind
+3. **On first launch use right-click → Open** (the app is not notarised, so Gatekeeper blocks it once)
+4. Requires macOS 13 or newer + Apple Silicon (M-series)
+5. The first launch downloads a ~1.8 GB model; after that it works **fully offline**
+
+Free for noncommercial use (PolyForm Noncommercial 1.0.0); **commercial use requires a licence** — see [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md).
+
+---
+
 ## FXseek 1.0.8
 
 **This is a bug-fix release — please upgrade. In 1.0.6 and 1.0.7 the settings page is broken: you

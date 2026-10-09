@@ -490,6 +490,18 @@
   "以音搜素材": "Search by audio",
   "AI 打标": "AI tagging",
   "音频转写": "Audio transcription",
+  "增强对齐时间轴": "Enhanced alignment timeline",
+  "转写完再用强制对齐模型逐字定位，播放时歌词/字幕按字跟着走，而不是整段整段地跳。":
+    "Once transcribed, a forced-alignment model pins every character to a timestamp, so lyrics and subtitles follow along word by word instead of jumping line by line.",
+  "对齐模型": "Alignment model",
+  "Qwen3 强制对齐 · 约 1.2 GB": "Qwen3 forced alignment · about 1.2 GB",
+  "下载模型": "Download model",
+  "对齐进度": "Alignment progress",
+  "已对齐 / 有转写文字的全部素材": "Aligned / every asset that has a transcript",
+  "开启后由后台队列自动跟随转写：转写完一个就立刻对齐这一个，不用手动点。 对齐在独立子进程里跑完就退出，不会常驻内存。中文歌词效果最好；日文、韩文暂不支持。":
+    "Once on, the background queue follows transcription automatically: as soon as one asset is transcribed it is aligned right away, with nothing to click. Alignment runs in its own subprocess and exits when done, so it never sits in memory. It works best on Chinese lyrics; Japanese and Korean are not supported yet.",
+  "已优化对齐时间轴": "Timeline aligned",
+  "这段文字用强制对齐模型逐字定位过，高亮会跟着字走，不再是整段跳": "This transcript was word-aligned, so the highlight follows individual words instead of jumping a line at a time.",
   "同一首歌": "Same song",
   "哼唱检索": "Humming search",
   "语音检索": "Voice search",

@@ -37,12 +37,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
-BUSINESS = ["paths", "indexer", "embed", "ai_desc", "asr_desc", "fingerprint",
+BUSINESS = ["paths", "indexer", "embed", "ai_desc", "asr_desc", "asr_polish",
+            "aligner", "fingerprint",
             "fastsearch", "voice_intent", "recorder", "model_dl", "seed",
-            "serve", "mcp_server", "mcp_agents", "tray_helper"]
+            "serve", "mcp_server", "mcp_agents", "tray_helper",
+            "net_util", "heif_support"]
 
 THIRD = ["webview", "AppKit", "Foundation", "AVFoundation", "PyObjCTools",
          "requests", "certifi", "numpy", "PIL", "mlx", "mlx.core", "mlx_vlm",
+         "mlx_audio", "scipy", "sentencepiece", "zstandard",
          "transformers", "tokenizers", "safetensors", "huggingface_hub",
          "openpyxl", "xlrd", "olefile", "pptx", "pdfplumber", "pdfminer",
          "jinja2", "cryptography", "bs4", "lxml", "yaml"]

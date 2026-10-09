@@ -47,6 +47,7 @@ sys.path.insert(0, HERE)
 import asr_polish
 import embed as we
 import heif_support  # noqa: F401  注册 HEIC/HEIF 解码器（缩略图、打标都要）
+import aligner as aln
 import indexer as ix
 import model_dl
 import paths as P
@@ -59,6 +60,7 @@ _STATE = {"model": None, "processor": None, "model_path": None,
           "last_user_req": 0.0,   # 最近一次「用户真的在操作」的请求时间
           "ai_tagging": None,     # 正在手动/自动打标的文件路径
           "asr_running": None,    # 正在手动/自动转写的文件路径
+          "align_running": None,  # 正在后台对齐的文件路径
           "model_unloaded": 0}    # 累计「按需卸载」次数（诊断用）
 
 # 模型按需加载的锁：两个请求同时发现模型没加载时，只让一个真去 load()，
@@ -69,9 +71,11 @@ _MODEL_LOCK = threading.Lock()
 # 它们只代表「界面开着」不代表「用户在用」。如果拿它们刷新闲置计时，
 # 设置页每 8 秒轮询一次 /v1/ai/status 就会把计时不断清零 ——
 # 用户看到「空闲 2s / 300s」永远涨不上去，闲置自动打标/转写再也不会触发。
-_QUIET_PATHS = ("/health", "/v1/ai/status", "/v1/asr/status", "/v1/idle/status")
+_QUIET_PATHS = ("/health", "/v1/ai/status", "/v1/asr/status",
+                "/v1/align/status", "/v1/idle/status")
 # 闲置自动处理的运行状态（不落盘，重启清零）
-_IDLE = {"run_tagged": 0, "run_asr": 0, "last_path": None, "last_ts": None,
+_IDLE = {"run_tagged": 0, "run_asr": 0, "run_align": 0,
+         "last_path": None, "last_ts": None,
          "last_error": None, "window": None, "turn": 0, "last_kind": None,
          # 失败账本 {realpath: {"n": 连败次数, "ts": 最后失败时间, "msg": 原因}}。
          # 同一个文件连败 _FAIL_MAX 次就冷藏 _FAIL_COOL 秒 —— 否则它会一直
@@ -110,7 +114,7 @@ DEFAULT_SETTINGS = {
     "cache_limit_mb": 1024,   # 预览缓存上限(MB)
     # ★ 版本号唯一来源：改这里就够了 —— build_app.sh / release.sh 都从这一行 grep，
     # tray_helper 的「关于」兜底也从这里读。别在别处再写死版本号。
-    "version": "1.0.8",
+    "version": "1.0.9",
     # 点窗口关闭按钮时怎么办：ask = 每次问；quit = 直接退出；tray = 直接最小化到菜单栏。
     # 由 launcher.py 的关闭确认框写入（勾了「记住我的选择」才会变成 quit/tray）。
     "close_action": "ask",
@@ -145,6 +149,23 @@ DEFAULT_SETTINGS = {
     #   ASR 是本地跑的、不要钱，只在空闲时跑，实测 37 分钟的歌 = 6.2 分钟处理，
     #   完全可以接受；真嫌慢的人再自己填一个秒数。
     "asr_max_duration": 0,       # 超过该秒数的音频跳过转写（0=不限）
+    # ---- 增强对齐时间轴（把转写文字逐字钉到音频时间轴上）----
+    # 默认关闭：要额外下 1.2 G 的强制对齐模型；只有「歌词/字幕跟着唱走」这类
+    # 场景才有肉眼收益，图片库用户白下一个 G 是纯浪费。
+    # 开启后由后台队列自动跟随转写（asr 一完成就对齐同一素材），不用手动点。
+    "align_enabled": False,
+    # 对齐模型的下载源，取 model_dl.SOURCES 的键（mirror = hf-mirror.com，
+    # hugging = huggingface.co）。国外用户切到官方源快得多，和「首次下载模型」
+    # 的准备窗口共用同一套源定义。
+    "align_source": "mirror",
+    # ---- 歌词/字幕高亮外观 ----
+    # 颜色取 LYRIC_COLORS 里的 id（blue / violet / teal / amber / rose），
+    # 样式取 word（逐字，要该素材有对齐数据才生效）或 line（整行）。
+    # ★ 播放面板本身只吃 localStorage 缓存就能立刻上色，这两个键是给
+    # 「换台机器/清了缓存」和设置页读取用的 —— 但必须在这里登记，
+    # 否则 save_settings() 会把前端 POST 上来的值直接丢掉。
+    "lyric_color": "blue",
+    "lyric_style": "word",
     # ---- 智能纠偏（转写文字的 LLM 校对）----
     # 默认「只在空闲时跑」：批量纠偏要反复打本地大模型，用户正敲键盘/搜东西的时候
     # 抢 GPU 会明显卡顿。判定门槛与闲置补全完全一致（距上次用户操作 idle_minutes 分钟）。
@@ -555,7 +576,11 @@ def _idle_loop():
             st = load_settings()
             idle_tag = bool(st.get("idle_tag")) and bool(st.get("ai_enabled"))
             idle_asr = bool(st.get("idle_asr")) and bool(st.get("asr_enabled"))
-            if not (idle_tag or idle_asr):
+            # 对齐**不是**独立的开关：它跟着「增强对齐时间轴」走，且只在转写
+            # 开着时才有意义（没转写文本就没有可对齐的东西）。
+            idle_align = (bool(st.get("align_enabled")) and idle_asr
+                          and aln.available()[0])
+            if not (idle_tag or idle_asr or idle_align):
                 continue
             # 打标/转写/纠偏/建索引互斥 —— 顺带把正在跑的「智能纠偏」也算进来，
             # 否则用户点了「优化全部」之后，闲置补全还会照旧开跑，两边同时打 oMLX。
@@ -575,7 +600,8 @@ def _idle_loop():
                 want_kind = man.get("what") or "both"
                 idle_tag = idle_tag and want_kind in ("tag", "both")
                 idle_asr = idle_asr and want_kind in ("asr", "both")
-                if not (idle_tag or idle_asr):
+                idle_align = idle_align and want_kind in ("align", "both")
+                if not (idle_tag or idle_asr or idle_align):
                     _IDLE["manual"] = None      # 开关在跑的过程中被关掉了
                     continue
                 need, limit, total_run = 0.0, 0, 0
@@ -591,17 +617,27 @@ def _idle_loop():
                     _IDLE["window"] = win
                     _IDLE["run_tagged"] = 0
                     _IDLE["run_asr"] = 0
+                    _IDLE["run_align"] = 0
                     _IDLE["run_fail"] = 0
                 limit = int(st.get("idle_batch", 10) or 10)
                 # 失败也占名额：不然同一批失败文件会被无限重试、
                 # 计数永远停在 0/10（用户看到的就是「卡住不动」）
                 total_run = (_IDLE.get("run_tagged", 0) + _IDLE.get("run_asr", 0)
+                             + _IDLE.get("run_align", 0)
                              + _IDLE.get("run_fail", 0))
                 if limit > 0 and total_run >= limit:
                     continue
 
-            # 轮流取：上一次是打标签，这次就先看转写，反之亦然
-            order = ["tag", "asr"] if (_IDLE.get("turn", 0) % 2 == 0) else ["asr", "tag"]
+            # 三态轮流：打标 → 转写 → 对齐 → 打标 …（_IDLE["turn"] 每完成一个 +1）。
+            # ★ 对齐刻意排在转写**后面**：转写刚出来的文本立刻对齐，既不重复读盘，
+            #   也保证「刚转写完的文件」是队列里最优先对齐的那个。打标排在最前是
+            #   因为图片往往是大头（用户库里 1190 张图 vs 300 个音视频）。
+            # 用「偏好顺序」而不是硬指派：某一类暂时没待办就自然落到下一类，
+            # 不会因为对齐全做完了就空转一轮。
+            phase = _IDLE.get("turn", 0) % 3
+            order = (["tag", "asr", "align"] if phase == 0 else
+                     ["asr", "align", "tag"] if phase == 1 else
+                     ["align", "tag", "asr"])
             job = None
             all_cooled = False
             for want in order:
@@ -609,6 +645,8 @@ def _idle_loop():
                     pend = ix.ai_tag_status()["pending"]
                 elif want == "asr" and idle_asr:
                     pend = _asr_pending_list()
+                elif want == "align" and idle_align:
+                    pend = aln.pending_list()
                 else:
                     continue
                 if not pend:
@@ -637,7 +675,7 @@ def _idle_loop():
                 continue
 
             kind, path, left = job
-            label = "打标" if kind == "tag" else "转写"
+            label = {"tag": "打标", "asr": "转写", "align": "对齐"}.get(kind, kind)
             tag = "立即补全" if manual_on else f"闲置{label}"
             if manual_on:
                 _IDLE["last_path"] = path
@@ -652,7 +690,8 @@ def _idle_loop():
                       f"（剩 {left} 个，本轮第 {total_run + 1}/{limit}）")
             try:
                 r = (ai_tag_one(path, st) if kind == "tag"
-                     else asr_transcribe_one(path, st))
+                     else asr_transcribe_one(path, st) if kind == "asr"
+                     else align_one(path, st))
             except Exception as e:
                 # 单个文件炸了不许带走整批：包装成普通失败，交给下面的账本
                 r = {"ok": False, "message": f"{type(e).__name__}: {e}"}
@@ -660,7 +699,8 @@ def _idle_loop():
             if r.get("ok"):
                 _clear_fail(path)
                 _IDLE["consec_fail"] = 0
-                key = "run_tagged" if kind == "tag" else "run_asr"
+                key = {"tag": "run_tagged", "asr": "run_asr",
+                       "align": "run_align"}[kind]
                 _IDLE[key] = _IDLE.get(key, 0) + 1
                 _IDLE["last_error"] = None
                 if manual_on:
@@ -668,9 +708,13 @@ def _idle_loop():
                 if kind == "tag":
                     print(f"[{tag}] 完成 {os.path.basename(path)}"
                           f" · {len(r.get('tags') or [])} 个标签 · {r.get('seconds')}s")
-                else:
+                elif kind == "asr":
                     print(f"[{tag}] 完成 {os.path.basename(path)}"
                           f" · {r.get('chars')} 字 · {r.get('seconds')}s")
+                else:
+                    print(f"[{tag}] 完成 {os.path.basename(path)}"
+                          f" · {len(r.get('items') or [])} 条时间轴"
+                          f" · {r.get('chunks')} 块 · {r.get('elapsed')}s")
             else:
                 msg = r.get("message") or "未知错误"
                 _IDLE["last_error"] = msg
@@ -2202,7 +2246,8 @@ def ai_models(body: dict) -> dict:
     if not base:
         return {"ok": False, "models": [], "message": "请先填写 API 地址"}
     try:
-        return {"ok": True, "models": ai_desc.list_models(base, key or "", kind=kind)}
+        r = ai_desc.list_models_ex(base, key or "", kind=kind)
+        return {"ok": True, "models": r["models"], "note": r["note"]}
     except ai_desc.AIError as e:
         return {"ok": False, "models": [], "message": str(e)}
 
@@ -2329,6 +2374,257 @@ def asr_status() -> dict:
     }
 
 
+# ------------------------------------------------------ 增强对齐时间轴
+# 转写只告诉我们「这段音频说了什么」，不告诉我们「哪个字在第几秒」。
+# 强制对齐（Qwen3-ForcedAligner）把「文字 ↔ 时间」钉起来，播放面板的高亮才能
+# 从「按行数均分」变成「跟着唱走」。
+#
+# ★ 三条设计红线：
+#   1. 独立子进程跑完就退（`aligner.run_worker`）—— 0.6B 模型加激活值峰值好几 G，
+#      跑完必须把内存还给系统；主进程里跑会一直攥着不放。
+#   2. 只跟随后台转写，**不进「重新转写」「智能优化」那两条手动链路**：手动场景
+#      用户是盯着看的，多等十几秒对齐没有收益；后台是白捡的。
+#   3. `align_chars` 锚定 asr_text 的字数 —— 重新转写后字数对不上，旧时间轴自动
+#      失效、重新排队（判据在 `aligner.align_status`）。
+def align_cfg_from_settings(st: dict = None) -> dict:
+    """把设置里的对齐相关键组装成 aligner 要的配置。"""
+    st = st or load_settings()
+    return {
+        "enabled": bool(st.get("align_enabled")),
+        "language": (st.get("asr_language") or "").strip(),
+    }
+
+
+def align_one(path: str, st: dict = None) -> dict:
+    """给单个音频/视频做强制对齐（后台队列调用）。
+
+    与 `asr_transcribe_one` 的区别：那边管「说什么」，这边管「什么时候说」。
+    对齐必须先有转写文本，所以这里是从索引里读 `meta.asr_text`，读不到就直接说
+    「还没转写」—— 免得用户以为对齐坏了。
+    """
+    if _STATE["busy"]:
+        return {"ok": False, "message": "正在建索引，等它跑完再对齐"}
+    if not _path_allowed(path) or not os.path.exists(path):
+        return {"ok": False, "message": "文件不存在或不可访问"}
+    st = st or load_settings()
+    if not st.get("align_enabled"):
+        return {"ok": False, "message": "增强对齐时间轴还没开启（设置 → 智能服务）"}
+    ok, why = aln.available()
+    if not ok:
+        return {"ok": False, "message": why}
+    # 读转写原文：对齐吃的是 asr_text，不是优化版 asr_clean（后者是 LLM 重写的，
+    # 字数和断句都对不上，拿它对齐会整条错位）。
+    txt = ""
+    try:
+        con = sqlite3.connect(ix.DB_PATH)
+        try:
+            row = con.execute(
+                "SELECT meta FROM items WHERE path=? AND chunk_idx<?"
+                " ORDER BY chunk_idx LIMIT 1", (path, ix.AI_TAG_BASE)).fetchone()
+        finally:
+            con.close()
+        if row and row[0]:
+            txt = (json.loads(row[0]).get("asr_text") or "").strip()
+    except Exception:
+        txt = ""
+    if not txt:
+        return {"ok": False, "message": "这个素材还没有转写文字，先转写再对齐"}
+    lang = aln.normalize_language(st.get("asr_language"), txt)
+    if lang.lower() in aln.UNSUPPORTED_LANGS:
+        # 日/韩分词要额外的 nagisa / soynlp，venv 里没有 —— 与其让 ImportError
+        # 炸穿整个闲置队列，不如标成「对不了」直接跳过（下次也不会再排队）。
+        r = {"ok": True, "skipped": True,
+             "reason": "暂不支持 %s 的逐字对齐（缺分词依赖）" % lang}
+        aln.apply_result(path, r)
+        aln.log("%s · 跳过：%s" % (os.path.basename(path), r["reason"]))
+        # 跳过也要记一笔：不然队列啃到一首日文歌，操作日志里一片空白，
+        # 用户会以为对齐根本没跑（这条踩过坑）。
+        op_log("时间轴对齐", f"{os.path.basename(path)} · 跳过：{r['reason']}", level="warn")
+        return r
+    dur = aln._probe_duration(path)
+    _STATE["align_running"] = path
+    try:
+        r = aln.run_worker(path, txt, lang, dur, aln.model_dir())
+    finally:
+        _STATE["align_running"] = None
+    if r.get("ok") and not r.get("skipped"):
+        try:
+            aln.apply_result(path, r)
+        except Exception as e:
+            aln.log("%s · 写库失败：%s" % (os.path.basename(path), e))
+            op_log("时间轴对齐", f"{os.path.basename(path)} · 写库失败：{e}", level="warn")
+            return {"ok": False, "message": "对齐写库失败：%s" % e}
+        op_log("时间轴对齐", f"{os.path.basename(path)} · {len(r.get('items') or [])} 条"
+                              f" · {r.get('chunks')} 块 · {r.get('elapsed')}s")
+    else:
+        # 失败也要留痕，否则日志里只有成功的那几个，出问题无从查起。
+        op_log("时间轴对齐", f"{os.path.basename(path)} · 对齐失败："
+                            f"{r.get('message') or r.get('error') or '未知原因'}",
+               level="warn")
+    return r
+
+
+def align_status() -> dict:
+    """已对齐 / 未对齐统计 + 正在对齐的文件（设置页与播放面板都要看）。"""
+    st = load_settings()
+    try:
+        s = aln.align_status()
+    except Exception:
+        s = {"total": 0, "aligned": 0, "pending": 0, "na": 0, "items": []}
+    ok, why = aln.available()
+    return {
+        "total": s["total"], "aligned": s["aligned"], "pending": s["pending"],
+        "na": s["na"], "items": s["items"][:200],
+        "running": bool(_STATE.get("align_running")),
+        "current": _STATE.get("align_running"),
+        "enabled": bool(st.get("align_enabled")),
+        "ready": ok, "reason": why,
+        "model": aln.model_dir() or "",
+        "download": _align_dl_view(),
+    }
+
+
+# 对齐模型的下载状态。1.2 G 要下几分钟，做成后台线程 + 轮询（和嵌入模型
+# 在启动时那一次不同：那边可以阻塞，这边是用户在设置页点一下就得有反馈）。
+_ALIGN_DL = {"running": False, "stop": False, "pct": 0, "file": "",
+             "index": 0, "count": 0,
+             "speed": 0, "eta": 0, "error": None, "done": False,
+             "started": None, "finished": None}
+_ALIGN_DL_LOCK = threading.Lock()
+
+
+def _align_sources() -> list:
+    """给前端选下载源用的列表：顺序就是 model_dl.SOURCES 的声明顺序（mirror 在前）。"""
+    return [dict(id=k, label=v.get("label"), label_en=v.get("label_en"))
+            for k, v in model_dl.SOURCES.items()]
+
+
+def _align_source() -> str:
+    """当前选的下载源。手改过设置文件、或那个源已经从 SOURCES 里删了，都退回默认。"""
+    v = (load_settings() or {}).get("align_source")
+    return v if v in model_dl.SOURCES else model_dl.DEFAULT_SOURCE
+
+
+def _align_dl_view() -> dict:
+    d = _ALIGN_DL
+    free = model_dl.disk_free(model_dl.model_dir_for(P.DATA_DIR,
+                                                     model_dl.SPEC_ALIGNER))
+    need = model_dl.SPEC_ALIGNER.min_free_bytes
+    return {
+        "running": bool(d.get("running")), "stop": bool(d.get("stop")),
+        "pct": int(d.get("pct") or 0), "file": d.get("file") or "",
+        "index": int(d.get("index") or 0), "count": int(d.get("count") or 0),
+        "speed": d.get("speed") or 0, "eta": d.get("eta") or 0,
+        "error": d.get("error"), "done": bool(d.get("done")),
+        "started": d.get("started"), "finished": d.get("finished"),
+        # 下载源：国外用户走 huggingface.co 比 hf-mirror.com 快得多，
+        # 和「首次下载模型」的准备窗口是同一套源（model_dl.SOURCES）。
+        "source": _align_source(), "sources": _align_sources(),
+        # 磁盘余量给前端提前拦一道：下载中途写满盘比直接拒绝难收拾得多。
+        "disk_free": free, "disk_need": need,
+        "disk_ok": (free < 0 or free >= need),
+        "ready": bool(model_dl.model_ready(P.DATA_DIR, model_dl.SPEC_ALIGNER)),
+    }
+
+
+def align_download(action: str = "status", source: str = None) -> dict:
+    """对齐模型下载：start / stop / status / source。
+
+    为什么不是「开关一开就自动下」：1.2 G 的下载在用户不知情时启动、还占着带宽，
+    体验很差。设置页开关打开后先显示一张「需要下载模型」的卡片，用户点「下载」
+    才真正开始 —— 但下完之后开关就是全自动的（对齐由后台队列接管）。
+    """
+    global _ALIGN_DL
+
+    if action == "status":
+        return _align_dl_view()
+
+    # 换源：只改下一次下载用哪个，不打断正在跑的那次（半截文件已经落盘了，
+    # 换源重来更亏）—— 和 launcher 准备窗口里 choose_source 的做法一致。
+    if action == "source":
+        if source not in model_dl.SOURCES:
+            return dict(_align_dl_view(), ok=False,
+                        error="不认识的下载源：%s" % source)
+        save_settings({"align_source": source})
+        return dict(_align_dl_view(), ok=True,
+                    message="已切换到%s" % (model_dl.SOURCES[source].get("label")
+                                        or source))
+
+    if action == "stop":
+        with _ALIGN_DL_LOCK:
+            if _ALIGN_DL.get("running"):
+                _ALIGN_DL["stop"] = True
+        return _align_dl_view()
+
+    if action != "start":
+        return {"ok": False, "error": "未知动作：%s" % action}
+
+    if model_dl.model_ready(P.DATA_DIR, model_dl.SPEC_ALIGNER):
+        return dict(_align_dl_view(), ok=True, message="模型已就绪")
+
+    with _ALIGN_DL_LOCK:
+        if _ALIGN_DL.get("running"):
+            return dict(_align_dl_view(), ok=True, message="已经在下载了")
+        v = _align_dl_view()
+        if not v["disk_ok"]:
+            return {"ok": False, "error": "磁盘空间不足：还需 %.1f GB，可用 %.1f GB"
+                    % ((v["disk_need"]) / 1073741824.0,
+                       max(0, v["disk_free"]) / 1073741824.0)}
+        _ALIGN_DL.update({"running": True, "stop": False, "pct": 0,
+                          "file": "", "index": 0, "count": 0,
+                          "speed": 0, "eta": 0, "error": None,
+                          "done": False, "started": time.time(),
+                          "finished": None})
+
+    def _work():
+        dest = model_dl.model_dir_for(P.DATA_DIR, model_dl.SPEC_ALIGNER)
+        os.makedirs(dest, exist_ok=True)
+        # ★ 在这里取源，不是在线程外：下载真的开始那一刻的设置为准。
+        src = _align_source()
+
+        def _prog(ev):
+            # ★ pct / speed / eta 都是「整个模型」的口径，由 model_dl 折算好；
+            #   这里只管存下来，不要再按单文件自己算一遍。
+            _ALIGN_DL["pct"] = ev.get("pct") or 0
+            _ALIGN_DL["file"] = ev.get("file") or ""
+            _ALIGN_DL["index"] = ev.get("index") or 0
+            _ALIGN_DL["count"] = ev.get("count") or 0
+            _ALIGN_DL["speed"] = ev.get("speed") or 0
+            _ALIGN_DL["eta"] = ev.get("eta") or 0
+
+        def _cancel():
+            return bool(_ALIGN_DL.get("stop"))
+
+        try:
+            aln.log("对齐模型开始下载：源=%s 目标=%s" % (src, dest))
+            ok = model_dl.download_model(dest, source=src,
+                                         progress=_prog, cancel=_cancel,
+                                         spec=model_dl.SPEC_ALIGNER)
+            _ALIGN_DL["done"] = bool(ok)
+            if not ok:
+                _ALIGN_DL["error"] = ("已停止" if _ALIGN_DL.get("stop")
+                                      else "下载未完成，可在设置页重试")
+            else:
+                aln.log("对齐模型下载完成：%s" % dest)
+        except Exception as e:
+            # ★ 一定要压短再存。requests 的原始异常能有一千多字符，直接丢给
+            #   设置页会把那张卡片横向撑破（实测过：一长条红字横穿整个面板）。
+            #   model_dl.brief_err 会把连接池前缀、Caused by、hex 地址那堆
+            #   机器噪音剥掉，只留「超时」这类有用的部分。
+            #   RuntimeError 是我们自己抛给用户看的话，不必再加类型名；
+            #   别的异常（真出 bug 了）留个类型名方便排查。
+            _ALIGN_DL["error"] = model_dl.brief_err(
+                str(e) if isinstance(e, RuntimeError)
+                else "%s: %s" % (type(e).__name__, e), 200)
+            aln.log("对齐模型下载失败：%s" % e)
+        finally:
+            _ALIGN_DL["running"] = False
+            _ALIGN_DL["finished"] = time.time()
+
+    threading.Thread(target=_work, name="align-dl", daemon=True).start()
+    return dict(_align_dl_view(), ok=True, message="已开始下载")
+
+
 # ------------------------------------------------------ 转写文字智能纠偏
 # 用已配置的 LLM 把 ASR 生文字读顺。结果是**另存** asr_clean，asr_text 原文
 # 一个字不动 —— 用户常常正是照着他听到的那个错字去搜，改掉原文等于把那条
@@ -2413,6 +2709,9 @@ def _model_in_use() -> str:
     p = _STATE.get("asr_running")
     if p and os.path.splitext(p)[1].lower() not in ix.VIDEO_EXT:
         return "转写"
+    # 对齐跑在**独立子进程**里，主进程一份 WeMM 都不碰（它只读 asr_text、
+    # 只写 meta），所以不阻止按需卸载 —— 对齐期间把 2 GB 嵌入模型还回去
+    # 正是「内存管理融进同一条队列」想要的效果。
     if _POLISH.get("running"):
         return "智能纠偏"
     man = _IDLE.get("manual")
@@ -2443,6 +2742,9 @@ def _heavy_running(exclude: str = "") -> str:
         return "打标签"
     if _STATE.get("asr_running") and _is_local_url(st.get("asr_base_url")):
         return "转写"
+    # 对齐一定是本地跑的（MLX 权重 + 激活值峰值好几 G），永远算重活。
+    if _STATE.get("align_running"):
+        return "时间轴对齐"
     if _POLISH.get("running") and exclude != "polish":
         return "智能纠偏"
     man = _IDLE.get("manual")
@@ -2654,12 +2956,15 @@ def ai_tag_status() -> dict:
         "pending": len(s["pending"]), "items": s["pending"][:200],
         "idle_tag": bool(st.get("idle_tag")),
         "idle_asr": bool(st.get("idle_asr")),
+        "idle_align": bool(st.get("align_enabled")) and bool(st.get("asr_enabled")),
         "idle_minutes": st.get("idle_minutes", 5),
         "idle_batch": st.get("idle_batch", 10),
         "idle_for": round(idle_for, 1),
-        "running": bool(_STATE.get("ai_tagging") or _STATE.get("asr_running")),
+        "running": bool(_STATE.get("ai_tagging") or _STATE.get("asr_running")
+                        or _STATE.get("align_running")),
         "run_tagged": _IDLE.get("run_tagged", 0),
         "run_asr": _IDLE.get("run_asr", 0),
+        "run_align": _IDLE.get("run_align", 0),
         "run_fail": _IDLE.get("run_fail", 0),
         "skip_count": _cooled_count(),
         "failed_total": len(_IDLE.get("fail", {})),
@@ -2876,6 +3181,22 @@ def file_detail(path: str) -> dict:
     for kk, vv in index_meta.items():
         if kk not in meta:
             meta[kk] = vv
+    # 优化版（asr_clean）也要能逐字：对齐偏移是从 asr_text 算的，视觉上却默认
+    # 显示优化版，两串字符下标对不上 —— 所以后端用 difflib 映射一份
+    # align_items_clean 出来。懒算：第一次打开这个文件时算一次写回库里，
+    # 之后 `align_items_clean_src` 与 `asr_clean_at` 一致就直接用（重新优化过
+    # 会因时间戳变化而自动重算，不用另设失效逻辑）。
+    if meta.get("align_items") and (meta.get("asr_clean") or "").strip() \
+            and meta.get("align_items_clean") is None:
+        src = int(meta.get("asr_clean_at") or 0)
+        if int(meta.get("align_items_clean_src") or -1) != src:
+            try:
+                mapped = aln.mapped_items(path)
+            except Exception:
+                mapped = None
+            if mapped:
+                meta["align_items_clean"] = mapped
+            meta["align_items_clean_src"] = src
     return {
         "path": path,
         "name": os.path.basename(path),
@@ -3894,6 +4215,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, ai_tag_status())
         elif u.path == "/v1/asr/status":
             self._json(200, asr_status())
+        elif u.path == "/v1/align/status":
+            # 设置页的「已对齐 / 未对齐」统计与下载进度都走这里。
+            # ★ 必须同时在 _QUIET_PATHS 里，否则这个 8 秒一次的轮询
+            #   会把闲置计时清零，自动打标/转写再也等不到空闲。
+            self._json(200, align_status())
         elif u.path == "/v1/mcp/status":
             self._json(200, mcp_state())
         elif u.path == "/v1/server/state":
@@ -4536,6 +4862,11 @@ class Handler(BaseHTTPRequestHandler):
                 # 「立即补全」：立刻、不等空闲地把待打标/待转写的补完。
                 # action = start | stop | status（默认 status，只读）
                 res = ai_backfill(body.get("action", "status"), body.get("what", "tag"))
+            elif u.path == "/v1/align/download":
+                # 对齐模型的下载控制。action = start | stop | status | source
+                # （默认 status，只读）。source 只在 action=source 时用。
+                res = align_download(body.get("action", "status"),
+                                     body.get("source"))
             elif u.path == "/v1/asr/transcribe":
                 # 立即给一个音频/视频转写（详情页按钮）。同步返回，同上。
                 res = asr_transcribe_one(body.get("path", ""))
