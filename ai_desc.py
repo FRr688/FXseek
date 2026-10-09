@@ -60,11 +60,13 @@ OFFICIAL_CATALOGS = {
         "sensevoice-v1": "asr",
     },
     "open.bigmodel.cn": {
-        # 智谱 GLM-4V 系列（能看图）
-        "glm-4v-plus": "vision", "glm-4v-flash": "vision",
-        "glm-4v": "vision", "glm-4v-air": "vision",
-        "glm-4.5v": "vision",
+        # ★ 智谱的 /models 只列纯文本型号，视觉线全靠这份目录兜住。
+        # 实测：glm-4v-flash 喂一张纯色图能正确答出颜色；而 glm-4.5 / glm-5.3
+        # 全部拒收图片（HTTP 400 "messages.content.type 参数非法，取值范围 ['text']"）。
+        "glm-4v-flash": "vision", "glm-4v-plus": "vision", "glm-4v": "vision",
+        "glm-4.5v": "vision", "glm-4.6v": "vision",
         "glm-asr": "asr",
+        # glm-4v-air 与 glm-5v 实测已下架（HTTP 400 模型不存在），不要再列。
     },
     "api.moonshot.cn": {
         # Kimi 视觉型号
@@ -168,17 +170,34 @@ def _get_json(url: str, api_key: str = "", timeout: int = 15) -> dict:
         raise AIError(str(e))
 
 
+# ★ 这两组关键词只是「粗筛」—— 它们永远不完整，绝不能当「拒绝服务」的理由。
+# 现实里「名字里看不出能力」的服务商越来越多：智谱的 /models 干脆只列纯文本型号
+# （实测 glm-4.5 / glm-5.3 全部拒收图片，报 "messages.content.type 参数非法"），
+# 能看图的 glm-4v-flash 根本不在返回里。所以 list_models 必须做并集 + 兜底。
+_VISION_NEG = (
+    "whisper", "transcribe", "tts", "asr", "speech", "paraformer", "sensevoice",
+    "funasr", "embedding", "rerank", "moderation", "audio", "realtime",
+    "cogview", "cogvideo", "dall-e", "stable-diffusion", "flux", "kolors",
+    "voice", "image-generation",
+)
+_VISION_HINT = (
+    "vision", "vl", "vlm", "multimodal", "omni", "qvq", "internvl", "minicpm-v",
+    "llava", "idefics", "pixtral", "cogvlm", "moondream", "paligemma", "mllama",
+    "florence", "molmo", "yi-vision", "step-1v", "glm-4v", "glm-4.5v",
+)
+# 「数字（可带小数点）+ v」：glm-4v / glm-4.5v / glm-4.6v / step-1v / qwen-1v。
+# ★ 别写死 "4v" —— 智谱已经出到 glm-4.6v，写死就只能匹配 4 那一代。
+_NUMV_RE = re.compile(r"\d+(?:\.\d+)?v(?:\b|[-._])")
+
+
 def is_vision_model(mid: str) -> bool:
     """粗筛「能看图」的模型名。本地/未知模型宁可多留，由用户自己判断。"""
     s = (mid or "").lower()
     if not s:
         return False
-    if any(k in s for k in ("whisper", "transcribe", "tts", "audio", "asr",
-                            "speech", "paraformer", "sensevoice", "funasr",
-                            "embedding", "rerank", "moderation")):
-        return False                       # 明确的语音/文本类，剔除
-    if any(k in s for k in ("vl", "vision", "4v", "qvq", "internvl", "minicpm-v",
-                            "llava", "idefics", "pixtral", "multimodal")):
+    if any(k in s for k in _VISION_NEG):
+        return False                       # 明确的语音/文本/生图类，剔除
+    if any(k in s for k in _VISION_HINT) or _NUMV_RE.search(s):
         return True                        # 名字里明示视觉
     if s.startswith("gemini") or s.startswith("gpt-4o") or s.startswith("chatgpt-4o"):
         return True                        # Gemini / GPT-4o 系原生多模态
@@ -189,60 +208,115 @@ def is_vision_model(mid: str) -> bool:
     return False
 
 
+_ASR_HINT = (
+    "whisper", "asr", "transcribe", "transcription", "speech-to-text",
+    "sensevoice", "paraformer", "funasr", "voxtral", "parakeet", "canary",
+    "audio-preview", "-stt", "stt-",
+)
+_ASR_NEG = ("tts", "text-to-speech", "speech-synthesis", "voice-clone", "cosyvoice")
+
+
 def is_asr_model(mid: str) -> bool:
     """粗筛「语音转写」模型名。TTS（合成）不算转写。"""
     s = (mid or "").lower()
     if not s:
         return False
-    if "tts" in s and "asr" not in s:
+    if any(k in s for k in _ASR_NEG) and "asr" not in s:
         return False                       # 语音合成，不是转写
-    if any(k in s for k in ("whisper", "asr", "transcribe", "sensevoice",
-                            "paraformer", "funasr", "speech-to-text", "stt")):
+    if any(k in s for k in _ASR_HINT):
         return True
     return False
 
 
-def list_models(base_url: str, api_key: str = "", kind: str = "") -> list:
-    """列出服务端可用模型（用于设置页下拉）。
+def _list_models_impl(base_url: str, api_key: str = "", kind: str = ""):
+    """返回 (模型列表, 提示文案)。
 
-    kind: ""=不过滤 / "vision"=只留能看图的 / "asr"=只留语音转写的。
-    无 Key 或请求失败时回落到「官方免 Key 目录」（_catalog_for），
-    让用户不填 Key 也能看到官方有哪些模型可选。
+    提示文案非空时前端要原样显示 —— 它解释的是「为什么这个列表长这样」。
     """
     base = base_url.rstrip("/")
-    url = api_url(base, "/models")
     cat = _catalog_for(base)
+    note = ""
     try:
-        d = _get_json(url, api_key)
+        d = _get_json(api_url(base, "/models"), api_key)
         items = d.get("data") or d.get("models") or []
-        out = []
+        live = []
         for m in items:
             if isinstance(m, dict):
-                out.append({"id": m.get("id") or m.get("name") or "",
-                            "owned_by": m.get("owned_by", "")})
-        out = [m for m in out if m["id"]]
+                mid = m.get("id") or m.get("name") or ""
+                if mid:
+                    live.append({"id": mid, "owned_by": m.get("owned_by", "")})
     except AIError:
         # 网络/鉴权失败 → 官方目录兜底（仅官方域名有目录）
         if not cat:
             raise
-        out = _catalog_entries(cat)
-        out = [{"id": m["id"], "owned_by": "official-catalog"} for m in out]
-    # 只对「官方目录命中的服务商」按类型过滤；自定义/本地 API 模型名千奇百怪，
-    # 过滤反而误伤（漏掉能看图的型号），故一律全量返回交给用户自己挑。
-    if cat:
-        if kind == "vision":
-            out = [m for m in out if is_vision_model(m["id"])
-                   or (cat.get(m["id"]) == "vision")]
-        elif kind == "asr":
-            out = [m for m in out if is_asr_model(m["id"])
-                   or (cat.get(m["id"]) == "asr")]
+        live = []
+        note = "该地址连不上或 Key 无效，下面是内置官方目录。"
+
+    # ★ 在线列表与官方目录取「并集」，而不是「在线失败才用目录」。
+    # 智谱就是活例子：它的 /models 只列纯文本型号（实测 glm-4.5 / glm-5.3 全部拒收
+    # 图片），能看图的 glm-4v-flash 压根不在返回里 —— 只信在线列表，视觉型号永远筛不出来。
+    have = {m["id"] for m in live}
+    out = list(live)
+    for mid in (cat or {}):
+        if mid not in have:
+            out.append({"id": mid, "owned_by": "official-catalog"})
+
+    if kind in ("vision", "asr") and not cat:
+        # ★ 自定义 / 本地地址**不参与过滤**：没有内置目录，我们就没有任何依据
+        # 判断这家怎么给模型命名 —— 猜错一次，用户要的型号就从下拉里消失了。
+        # 全部列出，让他自己挑（右侧「测试连接」能立刻验证选中的那个行不行）。
+        note = ("自定义 / 本地地址不参与过滤，已列出全部 %d 个模型 —— "
+                "我们无从判断这家怎么命名模型。挑一个后用「测试连接」确认。"
+                % len(out))
+    elif kind in ("vision", "asr"):
+        match = is_vision_model if kind == "vision" else is_asr_model
+        zh = "看图" if kind == "vision" else "语音转写"
+        keep = [m for m in out
+                if match(m["id"]) or (cat or {}).get(m["id"]) == kind]
+        if not live:
+            # 只有内置目录（地址连不上 / Key 无效）：目录说什么就是什么，不猜。
+            out = keep
+        elif keep and any(match(m["id"]) for m in live):
+            # 在线列表自己标了能力 → 这份过滤可信，按它裁。
+            out = keep
+        elif keep:
+            # 在线列表里一个名字都没标这类能力 → 这家不靠名字标能力。
+            # 只留命中的会把当前旗舰（智谱 glm-5.3 之类）藏起来，那正是用户的抱怨。
+            # 把确定命中的排最前，其余一并列出并说明，让人自己挑。
+            # 「其余」要排掉明确属于另一类的（列 ASR 时不该混进一堆视觉型号）。
+            other = is_asr_model if kind == "vision" else is_vision_model
+            out = keep + [m for m in out
+                          if m not in keep and not other(m["id"])]
+            note = ("该服务商的模型名里没有%s标记，只认出 %d 个（已排在最前），"
+                    "其余一并列出供你确认。" % (zh, len(keep)))
+        elif out:
+            # 一个都没认出来 ≠ 该服务商没有这类模型，只说「没有发现」会把人挡在门外。
+            note = ("没能从模型名里认出%s型号，已列出全部 %d 个 —— 不少服务商"
+                    "（如智谱 GLM-4.5 起）把能力并进了基础型号，名字里不留标记，"
+                    "请自行挑选后用「测试连接」确认。" % (zh, len(out)))
+
     # 去重（在线列表 + 目录可能重叠）
     seen, uniq = set(), []
     for m in out:
         if m["id"] not in seen:
             seen.add(m["id"])
             uniq.append(m)
-    return uniq
+    return uniq, note
+
+
+def list_models(base_url: str, api_key: str = "", kind: str = "") -> list:
+    """列出服务端可用模型（用于设置页下拉）。
+
+    kind: ""=不过滤 / "vision"=只留能看图的 / "asr"=只留语音转写的。
+    在线列表与内置官方目录取并集；目录命中时用户不填 Key 也能看到有哪些模型可选。
+    """
+    return _list_models_impl(base_url, api_key, kind)[0]
+
+
+def list_models_ex(base_url: str, api_key: str = "", kind: str = "") -> dict:
+    """同 list_models，但多带一个 note（说明这份列表为什么长这样）。"""
+    models, note = _list_models_impl(base_url, api_key, kind)
+    return {"models": models, "note": note}
 
 
 def test_connection(base_url: str, api_key: str = "", model: str = "") -> dict:
