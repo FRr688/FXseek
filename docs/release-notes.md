@@ -1,3 +1,137 @@
+## FXseek 1.1.1 (preview, not released)
+
+**This one only touches the work-mode UI.** No data changes, no protocol changes, nothing on the phone
+side — it is a reskin you can roll back to 1.1.0 whenever you like.
+
+### Work mode
+
+- **A wire runs across the very top of the screen.** Search results hang on it as postcards, and
+  **Finish** flies them one by one into a `FXseek` folder that pops its lid open on landing.
+- **A cartoon baboon walks the wire.** It cycles through a slow crawl, a flat-out run and a few hops,
+  and its feet follow the wire's sag wherever it is.
+- **Clicking anywhere outside the panel now dismisses it.** Only the panel's own widgets used to be
+  hit-tested; every other click fell straight through to the desktop and the page never heard about it,
+  so the panel stuck around.
+- **The output folder is no longer on the Desktop.** macOS refuses to let any program move a Desktop
+  icon, and with "show hidden files" on, `chflags hidden` does not hide it either — both routes are
+  dead ends. The real folder now lives in `~/Library/Application Support/FXseek/收工/`, and the FXseek
+  folder you see on the Desktop is drawn by the app: **click it to open the real one in Finder**. There
+  is also an *Open output folder* item in the menu-bar panel.
+- **The two UIs can no longer appear at once.** Entering work mode really does hide the main window, and
+  it re-checks a moment later (the hide is asynchronous and there was a gap).
+
+### Known issues (deferred)
+
+- The filter chips still crowd each other in a narrow window.
+- Switching the index source does not update the count badge.
+- Auto-hide is still "fire on the timer" rather than "fire based on state".
+
+## FXseek 1.1.0
+
+**The phone is part of the library now.** This release ships the iOS app for the first time, and the
+desktop build is the other half of the same feature. The two find each other on your Wi-Fi, the phone's
+own photos and voice memos become an ordinary index source on the desktop, and a job runs on whichever
+machine is actually awake instead of whichever one happens to hold the file.
+
+Both halves are numbered **1.1.0**. Until now the desktop was at 1.0.12 and the app at 3.8, which made
+"are we in sync?" a question nobody could answer.
+
+### The iOS app
+
+- **Browse and search the whole library from the phone.** The same waterfall wall, the same three search
+  modes: text, **image** (pick a photo, find visually similar material) and **voice** (record a clip, find
+  that recording again). Results carry a 手机 badge when the file lives on the phone and a 电脑 badge when
+  it does not — one list, two machines.
+- **Play in place.** Images, video, audio. Transcribed tracks get the same lyric/subtitle panel as the
+  desktop. The phone is a client; it never copies the library down to itself.
+- **A dashboard** that answers "what is the computer doing right now": the three queues (tag / transcribe
+  / align), the item count, the vector count, and whether anything is stuck.
+
+### Pairing
+
+Open **Settings → Computer connection** on the phone. The desktop advertises `_fxseek._tcp` over Bonjour,
+so it appears under **its own name** — the row reads `FA的Mac mini`, not a hard-coded `FXseek`. That
+matters the moment you have two Macs on the same network. Type the 6-digit code from **desktop → Settings
+→ Phone connection** and you are paired; the phone stores a token and either side can revoke it.
+
+The name travels in the Bonjour TXT record, so a client that has never spoken to the computer still has
+something human to show. It falls back through `scutil ComputerName → HostName → LocalHostName → whoami →
+"FXseek"`, and the client prefers the TXT value over the service instance name — which macOS escapes into
+`FAM-gM^ZM^DMac mini` for a machine called `FA的Mac mini`. What you see in the list is what you would see
+in *About This Mac*.
+
+### The phone as an index source
+
+Phone material appears in the desktop sidebar as its own source, with live counts and **working kind
+filters** — click 视频 and you get the videos, not the whole list. Thumbnails are generated on demand and
+cached; the phone sends a manifest so the desktop can draw a count without walking the library.
+
+Original files are never moved. The desktop asks for what it needs, when it needs it.
+
+### Handing work to the desktop (外派)
+
+The phone can tag and transcribe by itself — point it at any OpenAI-compatible vision model or ASR
+service and it works **with the computer switched off**. But a phone is not where you want a 1.8 GB model
+to live, so it can also **hand a batch over**: tick the items, press 外派打标 / 外派转写 / 外派对齐, and the
+desktop runs them and writes the results back. Whichever side has a provider configured is the side that
+does the work.
+
+### Offline search on the phone
+
+The desktop's own search runs on WeMM-Embedding-2B (~2 GB). No phone will carry that, so the app uses a
+second, smaller model — **EmbeddingGemma 2 (EG2), 740 M parameters**, split into text / vision / audio
+towers that load on demand.
+
+The trap is that two different models define two different vector spaces: feed WeMM vectors to an EG2
+searcher and you get noise, with no error message to tell you so. So the desktop computes a **second EG2
+vector table for the entire library**, and the phone pulls it incrementally by revision
+(`/v1/mobile/vectors?since=…`). Phone-local material is vectorised on the phone itself. Pull once, and
+image search, voice search and semantic text search keep working **with no Wi-Fi at all**. Both sides can
+fetch EG2 from a domestic mirror or HuggingFace, so you never have to touch a terminal.
+
+> Fixed along the way: if the phone could not reach the computer but *did* have a local index, it refused
+> to search anyway. The check was `if let client = app.client`, and `client` survives a dropped
+> connection — only `connected` goes false. So the app took the desktop path, failed, and **returned**,
+> never falling through to the on-device index sitting underneath it. Both paths are tried now, and the
+> message names whichever one actually failed.
+
+### Also on the desktop
+
+- **Right-click works, and text can be selected.** A WebKit default was injecting `body{user-select:none}`
+  into every page, so nothing on screen could be copied. Selection is on, and WebKit's stock context menu
+  is filtered down to the entries that mean something here — copy, paste and friends, without the
+  *Reload / Back / Inspect Element* noise.
+- **Two hidden costs that grew with the library are gone.** Search and transcription did work proportional
+  to the number of items on *every* call; on a 383-item library a single search took **223 s**. Both are
+  bounded now — the same search answers in **0.1–5.5 s**.
+- **Long audio and video transcribe.** The default duration cap is gone and a skip-marker that could never
+  retry was fixed, so a 90-minute recording is no longer silently dropped.
+- **Model-type filtering fixes** for the "no vision model found at this address" report.
+
+### Known limits
+
+- The desktop app is **ad-hoc signed and not notarised**. Gatekeeper blocks the first launch; right-click
+  → Open.
+- The phone app is built for **iOS 15+** and installs from an `.ipa`. There is no App Store listing, and
+  no Android app yet.
+- Audio search matches **the same recording**, not the same song. A hummed or re-sung version will not
+  match — that is a fingerprint, not a melody detector.
+- The phone's offline index covers what it has pulled. Wide semantic search across a very large library is
+  still better done on the desktop.
+
+### Install
+
+1. Download `FXseek-1.1.0.dmg`, double-click to mount, and drag `FXseek.app` into *Applications*
+2. **Delete any older copy first** (`/Applications/FXseek.app`) — installing over it leaves stale files behind
+3. **On first launch use right-click → Open** (the app is not notarised, so Gatekeeper blocks it once)
+4. Requires macOS 13 or newer + Apple Silicon (M-series)
+5. The first launch downloads a ~1.8 GB model; after that it works **fully offline**
+6. For the phone: install `FXseekMobile-1.1.0.ipa`, then open **Settings → Computer connection** on both sides
+
+Free for noncommercial use (PolyForm Noncommercial 1.0.0); **commercial use requires a licence** — see [COMMERCIAL.md](https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md).
+
+---
+
 ## FXseek 1.0.9
 
 **The lyrics now know *when* each word is sung.** Transcription always told you *what* was said; this

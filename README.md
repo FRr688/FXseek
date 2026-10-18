@@ -1,191 +1,198 @@
 # FXseek
 
-**A self-contained, fully local media library for macOS — find the photos, videos, audio and documents on your disk by describing them, by speaking (or humming), or by showing it a reference image.**
+**一个自包含、完全跑在本机的 macOS 素材库 —— 用一句话描述画面、用说话（或者干脆哼一段），也可以直接丢一张参考图，就能找到硬盘里的图片、视频、音频和文档。配上 iPhone，媒体库跟着你在家里走。**
 
-Indexing, tagging and transcription all run **on your own machine**; nothing leaves it. There is no Python to install and no dependency to manage — the app ships with its own runtime and a built-in multimodal model.
+索引、打标、转写**全部在你自己的机器上完成，素材不出网**；不用装 Python，也不用管依赖 ——
+应用自带独立运行时和内置多模态模型。
 
-**English** · [简体中文](docs/README.zh-CN.md)
+**简体中文** · [English](README.en.md)
 
 ```
-"a picture with balloons"     → finds that photo, and tells you why it matched
-hold to speak "find the dog"  → voice → intent → search
-hum a chorus                  → acoustic fingerprint pinpoints that track
-drop in a reference image     → similar assets; videos jump to the matching frame
+「有气球的画面」        → 找到那张图，并告诉你它为什么匹配
+按住说「找狗的照片」     → 语音 → 意图 → 检索
+哼一段副歌             → 哼唱搜索：声学指纹直接定位那首歌
+丢一张参考图进来        → 以图搜图；命中视频时直接跳到那一帧
 ```
 
 ---
 
-![FXseek main window · dark theme](docs/demo/01-night-zh.jpg)
+![FXseek 主界面 · 夜间主题（简体中文）](docs/demo/01-night-zh.jpg)
 
-## Three demos
+## 三段演示
 
-**① Search by describing the picture** — type "dog" or "knitwear"; results carry a **match score**, and double-clicking the search box brings up your history:
-![Text search over image content](docs/demo/search.gif)
+**① 打字就能搜画面** —— 输入「狗」「针织衫」，结果带**匹配度角标**；搜索框里双击还能唤出搜索历史：
+![文字检索画面演示](docs/demo/search.gif)
 
-▶ [Full demo · 45 s (with audio, 1600×900)](../../releases/download/v1.0.3/FXseek-search-demo.mp4)
+▶ [完整演示 · 45 秒（有声，1600×900）](../../releases/download/v1.0.3/FXseek-search-demo.mp4)
 
-**② Make it yours** — light / dark theme and 简体中文 / English switch in one click; thumbnail wall, list view and detail pane whenever you want them:
-![UI tour](docs/demo/ui-tour.gif)
+**② 界面随你** —— 白天 / 夜间主题、简体中文 / English，点一下就换；缩略图墙、列表视图、详情区随意切换：
+![界面展示](docs/demo/ui-tour.gif)
 
-▶ [Full demo · 22 s (with audio)](../../releases/download/v1.0.3/FXseek-ui-tour.mp4)
+▶ [完整演示 · 22 秒（有声）](../../releases/download/v1.0.3/FXseek-ui-tour.mp4)
 
-**③ Memory Lane** — an ambient gallery that keeps only photos and videos, drifting slowly in staggered columns; click any tile and it fades away:
-![Memory Lane](docs/demo/memory-lane.gif)
+**③ 漫步时光** —— 只留图片与视频，按列交错缓缓滚动；点任意一张，它会优雅地淡出：
+![漫步时光 · 回忆长廊](docs/demo/memory-lane.gif)
 
-▶ [Full demo · 30 s (with audio)](../../releases/download/v1.0.3/FXseek-memory-lane.mp4)
+▶ [完整演示 · 30 秒（有声）](../../releases/download/v1.0.3/FXseek-memory-lane.mp4)
 
-> The full videos (with audio, 1600×900) live in [Releases](../../releases) next to the installer.
-> The GIFs are downscaled to 620px for load time — see the videos above, or the stills below, for detail.
+> 完整演示视频（有声 · 1600×900）与安装包一起放在 [Releases](../../releases)；
+> 动图为了加载速度压到 620px，看细节请点上面的完整视频或下面的原图。
 
-### Stills (easier on the eyes)
+### 静态截图（看得更清楚）
 
-| Light theme · English | Memory Lane |
+| 白天主题 · English | 漫步时光 · 回忆长廊 |
 |---|---|
-| ![Light theme (English)](docs/demo/02-daylight-en.jpg) | ![Memory Lane](docs/demo/03-memory-lane.jpg) |
+| ![白天主题（English）](docs/demo/02-daylight-en.jpg) | ![漫步时光](docs/demo/03-memory-lane.jpg) |
 
-## What it does
+## 能做什么
 
-| | Capability |
+| | 能力 |
 |---|---|
-| 🔍 **Search by describing the picture** | Not just filenames: vector search understands *what is in the frame* ("water at sunset", "sweat on a palm"), then re-ranks. |
-| 🎙 **Voice search** | Hold a key, say what you want. **Humming** goes through an acoustic fingerprint (Chromaprint). Fingerprint first, intent routing, two fallbacks. |
-| 🖼 **Search by image / by audio** | Hand it one picture or one clip and get similar assets back; when it hits a video, the cover *is* the matching frame. |
-| 🗂 **30+ formats** | 8 image, 8 video, 8 audio formats, plus PDF / Office / WPS / plain text / archive listings. |
-| 🎬 **More than search** | Thumbnail wall, built-in player, recent uploads, trash. |
-| 📜 **One transcript panel, audio and video alike** | The player has a collapsible **Transcript** panel — audio calls it the lyric view, video slides it out beside the picture (and the video actually *gives up width* rather than hiding text behind it). Same component, so both get the *Original / Polished* switch, *Re-polish*, *Re-transcribe* and *Revert*. The video **subtitle overlay** is driven from the same transcript, so polishing updates the subtitles too. The right-hand detail pane is read-only: it shows the text and points you at the player instead of stacking a row of buttons. |
-| 🪄 **AI polish for transcripts** | Transcription is never perfect. Hand a transcript to your local chat model and it *fixes typos, restores punctuation, and labels who is speaking* — songs get lyrics treatment, interviews get `Speaker A:`. **The original is always kept**: the polished text sits beside it, both are searchable, and one click reverts. "Polish all" has an **idle gate** (on by default): it waits until you have stopped using the app for `idle_minutes`, pauses the moment you come back, and picks up where it left off — so it never fights your keyboard for the GPU. |
-| 🎯 **Word-level alignment for transcripts** | Polishing fixes the *text*; this fixes the *timing*. A forced-alignment model (Qwen3-ForcedAligner-0.6B, ~1.2 GB, downloaded the first time you turn it on) locates every character inside the audio, so the lyric highlight and the video subtitles follow individual words instead of jumping one whole line at a time. It is honest about silence: if the first word lands at 0:22, **nothing is highlighted for the first 22 seconds** — the old even-split guess would happily point at line 3 of a song that hadn't started yet. Runs as a one-shot subprocess when the background queue has nothing better to do, so the model never sits in memory. Best on Chinese lyrics; Japanese and Korean are not supported yet. |
-| 🎨 **Highlight style and colour** | A palette button next to the transcript switches the highlight between **word-by-word**, **whole-line**, and **off** (subtitles still show — they just stop changing colour), with five presets that sit inside the app's existing palette. Audio and video share one setting and it applies live during playback. "Word-by-word" is greyed out only when there is genuinely nothing to follow — and both the **original** and the **polished** transcript get their own timing (the offsets are remapped across the edit with a diff), so turning polishing on no longer costs you word-level highlighting |
-| ✨ **Memory Lane** | A one-click "corridor of memories": photos and videos only, drifting in staggered columns; click one to let it fade out. |
-| 🤖 **Hook it up to local AI agents** | A built-in MCP server, with one-click detection and setup for 6 agents (DSH, Codex, Claude Code, …). |
-| 🌗 **Everyday comfort** | Bilingual UI, light/dark themes (optionally following the time of day), index-source management, a local HTTP API. |
-| 🔄 **Update check** | *About → Check for updates* compares your build against GitHub Releases. If it can't reach GitHub (offline, blocked, rate-limited) it says so plainly and reveals a **releases** button that opens the page in your browser — it never fakes a "you're up to date". |
-| 🪶 **Light on memory** | The ~3.5 GB multimodal model is **loaded on demand** — launching the app costs a few tens of MB, not gigabytes, so an 8 GB Mac stays responsive. It loads on your first search (a second or two) and is **released again after it has been idle** (default 5 min, configurable); searching repeatedly within that window reuses the one copy. |
+| 🔍 **文字搜画面** | 不只搜文件名：向量检索看得懂**画面里有什么**（「夕阳下的水面」「手心里的汗珠」），再做深度精排。 |
+| 🎙 **语音 / 哼唱搜索** | 按住一个键，说出你想要什么；**哼唱搜索**直接走声学指纹（Chromaprint）。指纹优先、意图分流、两路兜底。 |
+| 🖼 **以图搜图 / 以音搜素材** | 给一张图或一段音频，拿回库里相似的素材；命中视频时，封面**就是**那一帧。 |
+| 📱 **iPhone App** | 在手机上通过 Wi-Fi 浏览、检索（文字 / 以图 / 以音）和播放整个库；手机自己的照片和语音备忘录在电脑端就是一个普通的索引源，打标和转写两边都能跑。**手机保留一份本地索引，断网也能以图搜图、以音搜素材和语义检索 —— 端侧离线可用。** |
+| 🗂 **30+ 格式** | 图片 8 种、视频 8 种、音频 8 种，外加 PDF / Office / WPS / 纯文本 / 压缩包清单。 |
+| 🎬 **不只是搜** | 缩略图墙、内置播放器、最近上传、回收站。 |
+| 📜 **音频视频共用一套转写面板** | 播放器里有可折叠的**转写**面板 —— 音频叫歌词页，视频则在画面旁滑出（而且视频是**真的让出宽度**，不是把文字盖在上面）。同一个组件，所以两边都有*原文 / 优化*切换、*重新优化*、*重新转写*和*还原*。视频**字幕**由同一份转写驱动，优化完字幕一起更新。右侧详情栏是只读的：它展示文本，并把你引向播放器，而不是再堆一排按钮。 |
+| 🪄 **转写 AI 润色** | 转写从来不是完美的。把一段转写交给你的本地对话模型，它会*改错字、补标点、标出谁在说话* —— 歌曲按歌词处理，访谈得到 `Speaker A:`。**原文永远保留**：优化后的文本并排放在旁边，两份都能搜，一键还原。「全部优化」带**空闲闸门**（默认开）：等你不碰应用 `idle_minutes` 之后才跑，你一回来就暂停，回来后接着上次继续 —— 绝不跟你的键盘抢 GPU。 |
+| 🎯 **转写逐字对齐** | 润色修的是*文字*，这一步修的是*时间*。强制对齐模型（Qwen3-ForcedAligner-0.6B，约 1.2 GB，第一次开启时下载）把每个字定位到音频里，于是歌词高亮和视频字幕跟着**单个字**走，而不是整行整行地跳。它对静音很诚实：如果第一个字落在 0:22，**前 22 秒什么都不会高亮** —— 旧的均分猜法会理直气壮地指着一首还没开始唱的歌的第 3 行。它在后台队列没别的事可做时以一次性子进程运行，所以模型不常驻内存。中文歌词效果最好；暂不支持日语和韩语。 |
+| 🎨 **高亮样式与配色** | 转写旁边的调色盘按钮把高亮切成**逐字**、**整行**和**关闭**（字幕照常显示，只是不再变色），另有五套落在应用现有配色里的预设。音频与视频共用一个设置，播放时实时生效。「逐字」只在确实没有东西可跟时才置灰 —— 而且**原文**和**优化后**的转写各有自己的时间轴（偏移量用 diff 重新映射过），所以打开润色不再以丢掉逐字高亮为代价。 |
+| ✨ **漫步时光** | 一键进入「回忆长廊」：只留图片和视频，按列交错缓缓滚动；点一张，让它优雅地淡出。 |
+| 🤖 **接给本机 AI Agent** | 内置 MCP server，6 个 Agent（DSH、Codex、Claude Code……）一键检测与配置。 |
+| 🌗 **日常体验** | 中英双语界面、深浅色主题（可跟随时间）、索引源管理、本地 HTTP API。 |
+| 🔄 **检查更新** | *关于 → 检查更新* 拿你的版本号和 GitHub Releases 比对。连不上 GitHub（离线、被墙、限流）它会直说，并露出一个 **releases** 按钮用浏览器打开 —— 它从不会假装「你已是最新」。 |
+| 🪶 **内存友好** | 约 3.5 GB 的多模态模型是**按需加载**的 —— 启动只要几十 MB，不是几个 GB，8 GB 的 Mac 也照样流畅。第一次搜索时加载（一两秒），空闲一段时间后**再释放**（默认 5 分钟，可配置）；这段时间里反复搜索复用同一份。 |
 
-> The quiet but important part: **not a single search request ever leaves this machine.** The bundled
-> WeMM-Embedding-2B model runs locally, and transcription only ever talks to the local or self-hosted
-> service *you* point it at.
+> 低调但重要的一点：**没有一条检索请求会离开这台机器。** 隐私优先不是一句口号 ——
+> 内置的 WEMM-Embedding-2B 在本地跑，转写也只连你自己指定的本地 / 自建服务。
 
-## Download
+## 技术一览
 
-1. Grab `FXseek-1.0.9.dmg` from [Releases](../../releases)
-2. **Delete any older copy first**: `/Applications/FXseek.app` (installing over it leaves stale files behind)
-3. Open the dmg and drag `FXseek.app` into *Applications*
-4. On first launch it **downloads the built-in model (~1.8 GB)** automatically, with a progress bar; it tries a mirror first and falls back to the official source
-5. The app is not notarised by Apple, so if Gatekeeper blocks the first launch, **right-click → Open** (or allow it under *System Settings → Privacy & Security*)
+- **两套端侧嵌入模型，可切换、可并存** —— 桌面检索走 **WEMM-Embedding-2B**（wemm-2b，2048 维，精度更高）；
+  手机端离线检索走 **EG2 / EmbeddingGemma 2**（Google 的 740M 多模态编码器：文本 270M + 视觉 170M + 音频 300M，
+  768 维，MLX 8bit 权重约 1.2 GB，iPhone 上可用 Core ML 走 ANE）。两者**不是同一个向量空间**，
+  所以桌面会用同一个 EG2 把全库再算一遍、按版本增量同步给手机 —— 手机因此**端侧离线**也能以图搜图、
+  以音搜素材和语义检索，而桌面自己的检索仍然走 WEMM，互不干扰。
+- **三级检索管线**：文件名 → 向量 → 深度重排（deep re-rank），长尾描述也能命中。
+- **混合打分**：向量 + 关键词 + 类型 / 时间过滤；空查询、冷缓存都有兜底，不会卡住。
+- **逐字时间轴**：Qwen3-ForcedAligner-0.6B 强制对齐，歌词高亮与视频字幕跟到字，且对静音诚实。
+- **零上传**：推理全在本机，密钥、素材、索引都不出设备；局域网模式下手机看到的也是你自己电脑上的库。
 
-**Requires**: Apple Silicon (M-series) + macOS 13 or newer. Verified on an Apple M4.
+## 下载
 
-### Downloading from mainland China
+1. 到 [Releases](../../releases) 下载 `FXseek-1.1.0.dmg`（手机端是仓库里的 `FXseekMobile/dist/FXseekMobile-1.1.0.ipa`，见下方[手机端](#-手机端iphone--ipad)）
+2. **安装前先删掉旧版**：`/Applications/FXseek.app`（直接覆盖会留下旧文件）
+3. 打开 dmg，把 `FXseek.app` 拖进「应用程序」
+4. 首次启动会**自动下载内置模型（约 1.8 GB）**，默认走国内镜像、失败自动换官方源，带进度条
+5. 未做 Apple 开发者签名，第一次打开若被拦，请**右键 → 打开**（或到「系统设置 → 隐私与安全性」里允许）
 
-GitHub's release CDN can be slow or unreachable there. These mirrors serve the exact same file:
+**要求**：Apple Silicon（M 系列）+ macOS 13 或更高。已在 Apple M4 上验证。
 
-| Route | Link |
+### 国内加速下载
+
+GitHub 的下载线路在国内可能很慢甚至连不上。下面几个镜像给的是**完全相同的文件**：
+
+| 线路 | 地址 |
 |---|---|
-| ⚡ Mirror 1 | `https://ghfast.top/https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
-| ⚡ Mirror 2 | `https://hk.gh-proxy.com/https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
-| ⚡ Mirror 3 | `https://ghproxy.net/https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
-| 🌐 Direct | `https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
+| ⚡ 加速 1 | `https://ghfast.top/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
+| ⚡ 加速 2 | `https://hk.gh-proxy.com/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
+| ⚡ 加速 3 | `https://ghproxy.net/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
+| 🌐 官方直链 | `https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
 
-The mirrors are third-party proxies — they may be unavailable at any time. If none of them work, try the
-direct link, or use any GitHub accelerator you trust by prefixing it to the direct URL.
+镜像都是第三方代理，随时可能失效；如果都打不开，就用官方直链，或者拿你信得过的 GitHub 加速前缀
+拼在直链前面。建议**先试加速、慢就换直链**。
 
-**File integrity** (283.6 MB / 297,394,752 bytes):
+**完整性核对**（文件 349.5 MB / 366,472,614 字节）：
 
 ```bash
-shasum -a 256 ~/Downloads/FXseek-1.0.3.dmg
-# 3035320aeeaa016260153a54aac27c6918ad961f1e2d56be3b19385bcf46729c
+shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
+# 应为 daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
 ```
 
-## Building from source
+## 📱 手机端（iPhone / iPad）
 
-The repository holds **source only**. To build a runnable `.app` / `.dmg` you need three things in the
-repository root — `venv/`, `bin/` and `model/` — all of which are `.gitignore`d.
-**Full step-by-step instructions, including two pitfalls we actually hit**, are in
-→ [docs/building.md](docs/building.md).
+电脑装上 FXseek 之后，手机也能用同一个库：**局域网直连**，在手机上浏览、检索（文字 / 以图 / 以音）和播放
+整个素材库；**手机 ⇄ 电脑互传** —— 手机自己的照片、录音、文件可以直接传进电脑的索引源，电脑上的素材也能
+存到手机里带走；手机保留一份**本地索引**，所以出了家门、断网也照样能搜（端侧离线）。
+配对走 6 位一次性配对码换长期令牌，回环以外的请求都要令牌，**库本身不出局域网**。
+
+### 装到 iPhone 上（5 步，小白版）
+
+全程免费，不需要开发者账号。装好后有效期 **7 天**，到期重签一次即可（用 AltStore 会自动续签）。
+
+1. **下载安装包** —— [`FXseekMobile/dist/FXseekMobile-1.1.0.ipa`](FXseekMobile/dist/FXseekMobile-1.1.0.ipa)（约 25 MB，[直链](https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa)）。手机端**免费、只发安装包，源码不公开**（Release 建好后附件里也会放同一份）
+2. **装一个签名工具** —— [Sideloadly](https://sideloadly.io)（通用最稳，插线签一次）· [AltStore](https://altstore.io)（自动续签，同一个 Wi-Fi）· [TrollStore](https://github.com/opa334/TrollStore)（iOS ≤ 16.6.1，装完永久有效）
+3. **把 App 签进手机** —— 数据线连上 iPhone、手机上点「信任此电脑」；打开 Sideloadly，把 ipa 拖进窗口；**Apple ID** 填你平时下 App 的那个账号（密码只发给苹果官方签名服务）；点 **Start**，出现 **Done** 就成了
+4. **手机上允许它** —— 设置 → 通用 → **VPN 与设备管理** → 选你的 Apple ID → **信任**；（iOS 16+）设置 → 隐私与安全性 → 拉到底 → **开发者模式** → 打开，手机重启一次
+5. **试一下** —— 打开 FXseek → 底部「**本机素材**」→ 先放一两首歌或几张图进去 → 播放 → 按锁屏键，看锁屏上有没有「上一首 / 下一首」
+
+> ⚠️ **如果签名工具报 `Login failed (-80045)`：不是你弄错了。** 2026 年 10 月 12 日起苹果的账号验证接口在拒签，
+> 全球所有侧载工具（Sideloadly / AltStore / SideStore…）都报同一个错，报错点在「登录」那一步、还没走到签名。
+> 先把 Sideloadly 的 anisette 从 Local 换成 Remote，或者用 [iloader](https://github.com/nab138/iloader/releases) 装同一个 ipa；
+> 别对同一个账号连续重试（苹果会限流）。细节见[用户装包指引](FXseekMobile/dist/用户装包指引.md)。
+
+- 📖 图文详情与常见问题：[`FXseekMobile/dist/用户装包指引.md`](FXseekMobile/dist/用户装包指引.md)
+- 🧩 **免电脑安装**（AltStore 源）：把下面这一行贴进 AltStore 的 `Browse → Sources → +`，之后就能一键安装、自动续签：
+
+```
+https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
+```
+
+  源文件就是仓库里的 [`FXseekMobile/dist/altstore.json`](FXseekMobile/dist/altstore.json)（`.ipa` 与图标也在同一个目录）。
+
+**手机端完整性核对**（文件 24.9 MB / 26,142,315 字节，构建 37）：
 
 ```bash
-bash tools/build_app.sh          # .app only
-bash tools/build_app.sh --dmg    # .app + .dmg
-hdiutil verify dist/FXseek-1.0.3.dmg     # must print VALID
+shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
+# 应为 e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+```
 
-# Dev mode: run the server directly; edits to ui.html / settings.html apply on refresh
+## 从源码构建
+
+仓库只放源码，构建前需要自备三样东西（都已被 `.gitignore` 忽略）：
+`venv/`（自包含 CPython 3.11 + 依赖）、`bin/`（ffmpeg / ffprobe / fpcalc）、`model/`（可让首次启动自动下载）。
+**完整步骤与两个真实踩过的坑**见 → [docs/building.md](docs/building.md)。
+
+```bash
+bash tools/build_app.sh          # 只出 .app
+bash tools/build_app.sh --dmg    # 出 .app + .dmg
+hdiutil verify dist/FXseek-1.1.0.dmg     # 必须打印 VALID
+
+# 开发模式：直接起服务，改 ui.html / settings.html 刷新即生效
 ./venv/cpython-3.11/bin/python3.11 app.py --port 8231
 
-# Dependency audit (run this before touching the packaging slim-down list)
+# 依赖体检（改打包瘦身列表前务必先跑，见文档里的「空壳元数据」坑）
 ./venv/cpython-3.11/bin/python3.11 tools/audit_deps.py
 ```
 
-## Project layout
+## 项目结构
 
-| Path | What it is |
+| 路径 | 说明 |
 |---|---|
-| `app.py` | HTTP server + web UI + search API (stdlib only; the front end is re-read from disk per request, so edits apply on refresh) |
-| `indexer.py` / `fastsearch.py` | Index construction + three-stage retrieval (filename → vectors → deep re-rank) |
-| `embed.py` / `serve.py` | Model loading and self-check / OpenAI-compatible local embedding service |
-| `voice_intent.py` / `fingerprint.py` / `recorder.py` | Spoken-intent classification (pure numpy), acoustic fingerprinting, microphone capture |
-| `model_dl.py` | First-launch model download (two sources, resumable, with progress) |
-| `mcp_server.py` / `mcp_agents.py` / `fxseek_skill/` | Exposes the library to local AI agents |
-| `launcher.py` / `tray_helper.py` | Native launcher (Mach-O, so microphone permission is attributed correctly) and menu-bar helper |
-| `ui.html` / `settings.html` / `i18n.js` / `icons.js` | Front end (no build step, plain JS) |
-| `tools/` | Packaging scripts, dependency audit, native launcher source, sample-asset generator |
-| `docs/` | [Building guide](docs/building.md) · [engineering notes](docs/手册.md) *(Chinese)* · [demo assets](docs/demo/) |
+| `app.py` | HTTP 服务 + Web UI + 检索 API（纯标准库；每请求从磁盘读前端，改完刷新即生效） |
+| `indexer.py` / `fastsearch.py` | 索引构建 + 三级检索（文件名 → 向量 → 深度重排） |
+| `embed.py` / `serve.py` | 模型加载与自检 / OpenAI 兼容的本地向量服务 |
+| `eg2.py` / `mobile.py` | EG2 向量表与增量同步（手机端离线检索）/ 手机配对、mDNS 广播与局域网鉴权 |
+| `voice_intent.py` / `fingerprint.py` / `recorder.py` | 语音意图判别（纯 numpy）、声学指纹、麦克风采集 |
+| `model_dl.py` | 首次启动的模型下载（双源 + 断点 + 进度，含手机向量模型 EG2） |
+| `mcp_server.py` / `mcp_agents.py` / `fxseek_skill/` | 把媒体库接给本机 AI Agent |
+| `launcher.py` / `tray_helper.py` | 原生启动器（Mach-O，保证麦克风权限归属正确）、菜单栏 |
+| `ui.html` / `settings.html` / `i18n.js` / `icons.js` | 前端（零构建、原生 JS） |
+| `tools/` | 打包脚本、依赖体检、原生启动器源码、示例素材生成 |
+| `FXseekMobile/dist/` | 手机端的**安装包与安装指引**（`FXseekMobile-1.1.0.ipa`、`altstore.json`、`用户装包指引.md`）；**App 源码不公开**，这里的 `eg2.py` / `mobile.py` 是电脑端那一侧（离线向量表与局域网同步协议） |
+| `docs/` | [工程手册](docs/手册.md)（设计取舍与踩坑）· [构建指南](docs/building.md) · [运行时与二进制](docs/运行时与二进制.md) · [手机版接口协议](docs/手机版协议.md) · [演示素材](docs/demo/) |
 
-## Troubleshooting
+## 许可（重要）
 
-The most common failures, their root cause, and the release that fixed them. More detail lives in the
-[engineering notes](docs/手册.md) *(Chinese)*.
-
-| Symptom | Root cause | Fixed in |
-|---|---|---|
-| Background transcription stops dead, and **one failed file halts the whole queue** | A service-wide outage (connection failure / 504 / timeout / `database is locked`) was recorded against each individual file, so 200 pending jobs each got blacklisted and the queue froze | **1.0.3** |
-| Transcription of a local model (oMLX / Ollama / LM Studio) fails with `504` or a timeout | The request went through the **system proxy** (dev-sidecar, corporate proxy, accelerators) while the model lives on `127.0.0.1`. Short requests survive; long audio uploads get cut by the proxy's own 60-second timeout | **1.0.2** |
-| One song takes **minutes to transcribe**, or the result is a wall of repeated lyrics | The local ASR falls into a repetition loop and never stops, generating up to the `max_tokens` ceiling (measured: 130–220 s for a single window) | **1.0.3** |
-| Want **subtitles** on a video and can't find a switch | The player now has a *Subtitles* toggle: with a transcript it shows/hides the overlay; without one it turns into "Transcribe this video" | **1.0.3** |
-| The version shown in *About* doesn't match the installer (stuck on v1.0.0) | The version had been persisted alongside user settings, and saving never updated it — so the stale value in the data directory shadowed the real one | **1.0.3** |
-| The **menu-bar icon disappears** after a while | Liveness probes went through the system proxy (false "service is dead"); the self-exit code was 0 while the restarter only accepts 2 (so it never came back); and a leftover command file from the previous session was replayed, quitting the app | **1.0.3** |
-| Fine from source, but a packaged `.app` fails *Test connection* with `No such file or directory: 'ffmpeg'` | Double-clicked apps launch via LaunchServices with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, so a bare `subprocess.run(["ffmpeg", …])` misses the bundled `bin/ffmpeg` | Always resolve binaries via `indexer._find_bin()` |
-| **Reverting an AI polish changes nothing** — the panel keeps showing the polished text even though the database no longer has it | `probe_media_meta()` handed callers the *shared cached dict*, and the detail endpoint merged index fields into it in place. The mutation stuck in memory (and was later flushed to the on-disk cache), so deleted fields kept being served | 1.0.4 — the probe entry point now returns a copy |
-| The packaged `.app` **dies on launch**, source runs fine | `tools/build_app.sh` copies Python files from an explicit whitelist, and a newly added module (`asr_polish.py`) was missing from it while `app.py` already imported it → `ImportError` before the window ever appears | Fixed the whitelist, **and** the build now *scans every entry script's imports* and refuses to build when a local module would be left out |
-| The video player's transcript panel **overlaps its own title**, or polishing the text leaves the **subtitles stale** | Two separate bugs from the same feature: the 384 px panel kept the header's absolutely-positioned tool group on the same line as the centred title (it needs ~300 px of a 332 px content box, so they collided) — now the header stacks in narrow panels, audio included; and the subtitle overlay reloaded only from its own old controls, so it had to be re-pointed at the transcript component (`box._mvSubReload`) and refreshed from *every* mutator (*re-polish*, *re-transcribe*, *revert*) | **1.0.4** |
-| **Transcribing anything longer than ~10 minutes does nothing at all** — no progress, no error you can act on, the ASR model never even starts | `asr_max_duration` defaulted to **600 s**, and that check runs *before* the request, so a whole-album or live-concert FLAC (35–65 min) was rejected in under 5 seconds. The rejection was then frozen as a permanent `asr_skip: too_long` mark, and **both** places that decide "should this be retried?" (`_asr_pending`, `asr_status`) tested only *whether* the flag was set, never against the *current* limit — so raising the limit, or setting it to 0, could never bring those files back | **1.0.6** — the default is now **0 (unlimited)**; a one-shot migration rewrites a stored `600` to `0` and records itself in `_migrations` (so a user who later picks 600 on purpose keeps it); the two predicates now share one `_asr_skip_lifted()` helper that re-admits a `too_long` file as soon as the limit allows it, and the skip message names the exact setting to change |
-| Running **polish-all + tagging + transcription together** hammers the machine | `_POLISH` was an independent flag from `busy` / `ai_tagging` / `asr_running`, so jobs happily piled onto the same GPU and memory | All heavy jobs now share one gate: `_heavy_running()` makes each entry point refuse with *"…is running, wait for it to finish"*, and polish-all additionally waits for **idle_minutes** of no user activity |
-| Tagging / transcription that uses an **official (remote) API** still blocks polish-all and fill-in | `_heavy_running()` only asked *whether* a job was running, never *where the model runs*. A remote API costs almost no local memory or GPU, so blocking other jobs on it just made them sit idle for nothing | Jobs are now classified by where the model lives — `_is_local_url()` splits `127.0.0.1` / `localhost` from everything else. Remote tagging or transcription no longer counts as heavy work; a **local** (oMLX / Ollama) one still does. The idle reaper uses a *separate* predicate, `_model_in_use()`: even a remote-API tagging job still needs WeMM to encode its vectors, so the model is never unloaded out from under it |
-| **Check for updates** always fails with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` | On machines behind a TLS-intercepting proxy/VPN (the peer certificate here was issued by *Sectigo Public Server Authentication CA DV E36*), Python's OpenSSL trusts only certifi / the openssl CA directory and **never reads the macOS keychain**. `certifi`, `/private/etc/ssl/cert.pem` and `load_default_certs()` all failed, while `curl` returned HTTP 200 from the same host at the same moment | Fetch GitHub through `/usr/bin/curl`, which does use the keychain. Two related traps: `releases.atom`'s `<entry><title>` is the **release title** ("FXseek 1.0.3"), not the tag — take the tag from the `/releases/tag/…` link or every version parses as `0.0.0`; and prerelease-suffixed versions must sort *above* the plain release of the same number (`1.0.4test11` → `(1,0,4,0,"test11")` beats `1.0.4` → `(1,0,4,1,"")`) |
-| `unload_model()` returns in 0.04 s, so the memory must already be free — right? | The call only drops references; MLX/Metal hands the pages back **asynchronously** over the next couple of seconds. Measuring right after the call shows ~2 GB still resident and makes a working feature look broken | Measure the process `footprint` a few seconds later — 2337 MB → 310 MB. Also: hold no reference to the model, or `unload` frees nothing at all |
-| A menu-bar item's **colour is ignored** — the MCP panel was set to black, the "server: running" line to green, and both still rendered grey | **AppKit dims every disabled menu item as a whole, and an explicit `labelColor` in the attributed title does not override it.** Verified side by side on a real popup menu: *disabled + labelColor* renders grey, *enabled + labelColor* renders black, and **bold survives in both** — so only the colour was ever being eaten, which is why an earlier "bold + labelColor" fix looked like it had done nothing. The custom-view route (`setView_(NSTextField)` on a disabled item) is not part of that dimming pass, so the colour finally sticks while the row stays unclickable and does not highlight blue on hover | **1.0.5** — `_strong_item()` (a disabled item whose title is a non-editable `NSTextField`). Two traps: `boldSystemFontOfSize_(0)` returns **13 pt** while `menuFontOfSize_(0)` is **14 pt**, so hard-coding the bold size makes the highlighted row a size smaller than its neighbours — read the menu font and take the bold of *that* size; and re-measure the text field's width after every text change, or a longer status string gets clipped |
-| **In English mode a sentence stays Chinese** even though the string is in the dictionary | `translate()` strips only the **leading and trailing** whitespace of a text node before lookup, so a string built from a template literal with an embedded `\n` and indentation never matches its entry. Interpolated values make it worse: the parenthetical variant is a runtime variable, so no single dictionary key can cover all four forms | **1.0.5** — match those with a `RULES` regex plus a replacement function (the capture group maps to the right English parenthetical) rather than trying to enumerate dictionary entries. Anything with internal newlines belongs in `RULES`, not `ZH2EN` |
-| `footprint` vs `ps` on Apple Silicon | `ps -o rss` under-reports Metal/unified-memory allocations by two orders of magnitude (a 3.5 GB process shows 19 MB) | Use `/usr/bin/footprint -p <pid>` (`phys_footprint`) for anything MLX-related |
-| A text search **hangs for minutes** ("女人照片" just spins) once the library gets big | Two independent hot spots, both scaling with library size. ① `_is_meaningless()` opened **every** image in the library to test "is this a flat colour?" — 1190 images on an external drive, ~187 ms each = **223 s per search**, while the vector math itself took 0.087 s. ② The L2 deep pass scored rows with a pure-Python `sum(a*b for a,b in zip(q, v))` loop — 9661 rows × 2048 dims × (expanded terms × 2 instructions) = **~1.9 s per query vector**, against 0.087 s for one NumPy matmul (22×) | **1.0.7** — ① the flat-colour verdict is now computed once inside `probe_media_meta()` (which already opens the image for width/height) and rides along in `media_meta_cache.json`, so search reads a cached field and touches **no disk at all**; the probe key went `v2|` → `v3|` so old entries (which lack the field) are invalidated rather than silently falling back to the slow path. A hard cap also bounds the expensive pass: `max(top_k*2, 200)` candidates. ② the L2 loop is one `np.vstack` + `mat @ Q.T`, with the tag-score mapping vectorised as `np.clip(TAG_MAP_A*s + TAG_MAP_B, 0, 0.99)` (verified value-for-value identical to `map_tag_score`). **Measured 223 s → 0.1–5.5 s, and results are unchanged** — same top-1, same scores |
-| Searching with an **empty query** (or one that expands to nothing) returns HTTP 400 `{"error": "list index out of range"}` | `expand_query("")` returns `[]`, so the embedding loop never ran and `qvecs` stayed empty — but the scoring block immediately did `len(qvecs[0])`. Rewriting the scoring only *moved* the crash; the missing guard was the real bug | **1.0.7** — `if not qvecs: return []` right after the embedding loop, so an empty or whitespace-only query is an ordinary `count: 0` result instead of a 400 |
-| The **lyric highlight scrolls through the intro** of a song — it is pointing at line 3 before anyone has sung a word | The player had no timing data at all. Transcription gives you the text, not *when* each character is spoken, so `paintActive()` guessed: total duration divided by the number of non-empty lines, `idx = floor(t / d * n)`. On the sample track the first character actually lands at **22.0 s** (`晓_FR.mp3`, 60.4 s, 4 lines), so a fifth of the song highlighted a line that had not started | **1.0.9** — transcription now has an optional downstream step: a forced-alignment model locates every character in the waveform and stores `[word, start, end, char-offset]` per item, turning "which line is current?" into an interval query. When alignment data exists the player **trusts it completely and never falls back to the even split** — which means nothing is highlighted during an instrumental intro. That is deliberate: a wrong guess is worse than no guess, because one visible lie makes the whole timeline untrustworthy. The 优化 (LLM-polished) text keeps the old even split, since reordering makes the stored offsets meaningless |
-| The word-by-word highlighting **works on one video and not another**, and the lyrics **jitter** while a line is being sung | Two independent causes. ① The subtitle overlay hard-coded `const srcShown = clean \|\| orig; subUseClean = !!clean;` — with a polished (LLM-rewritten) transcript it always showed *that*, so `canAlign = … && !subUseClean` was **permanently false** and subtitles could never go word-by-word. The transcript panel on the right kept its *own* mode, so switching it to 原始 enabled word mode there while the overlay stayed locked — which is exactly why the file that *could* highlight was the one with **no** polished version. ② `.w.now{font-weight:750}` changed the glyph width, and the lyric line is `text-align:center` — so every word advance re-centred the whole line. `.lr.on{transform:scale(1.045);font-weight:650}` applied in word mode too, and `.wordmode .w{opacity:.42}` stacked on `.lr{opacity:.72}`, dimming un-sung characters to ~30 % | **1.0.9** — the overlay reads the *same* mode as the panel (`mvLyricsModeGet()`) and the 原始/优化 buttons call `box._mvSubReload()`, so both follow one another. All weight changes are gone (colour and glow only) and `.lr.wordmode.on{font-weight:500;transform:none}` cancels the row scale, so the line's `getBoundingClientRect()` is now **bit-identical across eight consecutive words**. `opacity` is dropped entirely: un-sung text keeps its normal colour. The highlight popover also grew a third state — when the polished text is showing, 逐字 is greyed out with a title saying to switch back, and 整行 is marked current, because that is what actually renders |
-| The Smart services settings page is **wrecked by one long line of red text** — a network error from the alignment-model download stretches across the whole panel | A `requests` failure is ~1000 characters of `HTTPSConnectionPool(host=…): Max retries exceeded with url: … (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x…>, 'Connection to … timed out. (connect timeout=25)'))`, and it was being written verbatim into a `<span>` that is a **flex item inside `.acts`** — flex items do not wrap, so it measured **1971 px inside an 838 px row** and painted straight over its neighbours | **1.0.9** — `model_dl.brief_err()` strips the pool prefix, the `Caused by` tail and the hex object addresses down to `hf-mirror.com 超时 (connect timeout=25)`; the front end puts that in its own full-width `.errline` row with `overflow-wrap:anywhere` and a four-line clamp. Two traps: the `Caused by` part has **nested parentheses**, so `[^)]*` stops at the innermost `)` and leaves a `'))` dangling — cut the whole tail off, but salvage the quoted message inside it first; and the alignment download now gives each mirror **two probe attempts** 1.2 s apart, because a mirror that times out once frequently answers the second time |
-| Saving in **Settings does nothing** — it says "saved", and the next reload (or restart) shows the old values. API keys, theme, language, model — all of it | `save_settings()` called `_persist_settings()`, a function that **was never defined anywhere in the repository's history**. The call sat at `app.py:901` outside any `try`, so every save raised `NameError`; the `load_settings()` call site *was* wrapped in `except: pass`, which is exactly why the failure never surfaced in the log. Two things made it invisible: the error response was silently swallowed, and the front end did `SETTINGS = await (await fetch(...)).json()` — **never checking `res.ok`** — so it happily toasted "Settings saved" over a `400` error body | **1.0.8** — the missing function is implemented as an **atomic write** (`tmp` file → `fsync` → `os.replace`, then `chmod 600`); the front end now checks `!res.ok || data.error` and returns `null` on failure, so all three call sites only toast on success. Lesson: `except: pass` around the *one* step that actually persists is how a total failure gets muted into silence |
-| An official provider connects fine, but **"no vision model found at this address"** — even though the provider obviously has vision models. And the same provider's transcription card returns the whole model list | Two separate bugs. ① The `kind` (vision/asr) filter was nested **inside `if cat:`**, so it only ran for providers that have a built-in catalog — every custom/local address ignored `kind` entirely (oMLX returned all 27 models for `kind=""`, `"vision"` **and** `"asr"`). ② **Some providers simply don't list their vision line in `/models`.** Zhipu's endpoint returns 11 text-only IDs (`glm-4.5` … `glm-5.3-flashx`), *none* containing `vl` / `vision` / `4v`; feeding each one a red pixel returns `HTTP 400 code 1210 messages.content.type 参数非法，取值范围 ['text']`. So name-based filtering can never find them | the model list is now the **union of the live `/models` response and the built-in catalog** (catalog entries are tagged `official-catalog` and shown as `glm-4v-flash ·官方目录`). For **official providers** the `kind` filter runs and, when the names carry no capability markers, no longer claims "none found" — it puts the recognized ones first and lists the rest with an explicit note, because a wrong "none" locks the user out. **Custom / local addresses are deliberately never filtered** (explicit user request): there is no basis on which to guess that vendor's naming, so every returned model is listed with a note saying exactly that. The check is on **which provider you picked in the dropdown**, not on whether the URL looks familiar. Catalog corrected against live probing: `glm-4v-air` doesn't exist (removed), `glm-4.6v` added. Zhipu now returns 16 for vision with the 5 real vision models on top, and 12 for ASR led by `glm-asr` |
-| Turning polishing **on** greys out word-by-word highlighting, and the whole-line style **never coloured the video subtitles** | Two gaps left by the first alignment release. ① The alignment offsets are computed against `asr_text`, but the player shows the *polished* text by default — two different strings, so the same index points at a different character. The UI dealt with that by disabling word mode whenever the polished text was on screen. ② `paintSub()` only ever coloured the per-word `<span>`s; the whole-line branch computed the line index, set `el.textContent` and stopped, so the panel turned blue while the subtitle overlay stayed white | **1.0.9** — the backend keeps a **second offset table** (`align_items_clean`) produced by walking the original→polished diff with `difflib.SequenceMatcher`; on the nine real polished items here the two strings are 0.9658–1.0 similar and the remap takes 0–17 ms, with **0 of 354** remapped offsets slicing the wrong character. It refuses to guess when the polish was a rewrite rather than a correction (`ratio < 0.55`) or when the text is enormous (difflib degrades to O(n·m)), and the front end never falls back to the original offsets — an empty table cleanly means "whole line only". Offsets are forced **strictly increasing**, because the span slicer uses "this word's offset → the next word's", and a tie would produce an empty span that never lights up. Staleness is keyed off `asr_clean_at`, so re-polishing recomputes automatically. For the subtitles, `.mv-subline.on:not(.wordmode){color:var(--lyric-hi-d)}` — and that `:not(.wordmode)` is load-bearing: in word mode the un-sung characters stay legible by *inheriting* the overlay's white, and a blanket `.on` would tint the whole line |
-
-> **Why the very first search after a fresh install is still slow, exactly once:** the flat-colour
-> verdict is *persisted*, not precomputed. The first pass over an external-drive library still pays
-> the one-time probe cost (that is what `warm_meta_cache` is for, and the browser warms it as you
-> scroll), and every search afterwards — **including after a restart** — is single-digit
-> milliseconds. Measured: first `POST /v1/browse` on a cold cache 70 s; after a restart, **0.35 s**.
-
-> A rule of thumb for **intermittent** failures like these: **first check that the causality in the log is
-> the causality you assume.** `FXseek.log` has no timestamps on its lines, so we had to reconstruct the
-> ordering from the adjacent HTTP access lines — that is how we found that the "tray decided the service
-> was dead" lines sit directly beneath `GET /health 200`.
-
-## License (important)
-
-- This project is released under the **PolyForm Noncommercial License 1.0.0** ([LICENSE](LICENSE)):
-  free to use and modify for **personal study, research, hobby projects, charity, education, public
-  research and government** use.
-- **Any commercial use requires a separate license** (internal company use, shipping it with a product,
-  SaaS, contract development, …) → see **[COMMERCIAL.md](COMMERCIAL.md)** for terms and pricing.
-- Licenses for bundled and third-party components and models are listed in **[THIRD-PARTY.md](THIRD-PARTY.md)**
-  — check it before distributing, especially for FFmpeg, Chromaprint and the bundled model.
+- **手机端（iPhone / iPad App）免费使用，但源码不公开**：仓库里只有它的安装包（`FXseekMobile/dist/`），没有 App 源码；本仓库开源的是电脑端。
+- 电脑端采用 **PolyForm Noncommercial License 1.0.0**（[LICENSE](LICENSE)）：
+  **个人学习 / 研究 / 业余爱好 / 慈善 / 教育 / 公共研究 / 政府**等非商业用途 —— 免费，随便用、可以改。
+- **任何商业用途都需要单独授权**（公司内部使用、随产品分发、SaaS、二次开发交付……）
+  → 用途、报价与常见问题见 **[COMMERCIAL.md](COMMERCIAL.md)**。
+- 内置 / 依赖的第三方组件与模型许可见 **[THIRD-PARTY.md](THIRD-PARTY.md)**
+  （特别是 FFmpeg、Chromaprint 与内置模型的许可 —— 商用分发前请务必核对）。
 
 ---
 
-[简体中文文档 →](docs/README.zh-CN.md)
+[English →](README.en.md)

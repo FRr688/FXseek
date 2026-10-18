@@ -38,6 +38,13 @@ body[data-theme="dark"]{
 /* logo 标记：浅色/夜间都用同一张品牌图（背景已裁剪放大） */
 body[data-theme="dark"] .logo .mark{background:linear-gradient(135deg,#6366f1,#a855f7 55%,#ec4899)}
 body[data-theme="dark"]{--side-glow-1:rgba(99,102,241,.27); --side-glow-2:rgba(236,72,153,.19)}
+
+/* 文字可选：pywebview 的 create_window(text_select=...) 默认 False，会给 body 注入
+   全局 `user-select:none`，整个设置页的文字都选不中、右键没有「拷贝」（用户报过）。
+   launcher.py 建窗处已显式改成 text_select=True。代价是拖过控件会把按钮文字刷蓝，
+   所以把「控件」单独禁回去 —— 地址、配对码、路径这些要能选的留白。 */
+button,.btn,.seg button,.acts button,summary,.fold > summary,.chip,[role="button"],
+.icobox,.icn,label.sw{ -webkit-user-select:none;user-select:none }
 body[data-theme="dark"] .logo .brand b{color:#fff}
 .app{display:flex;height:100vh}
 
@@ -124,6 +131,27 @@ html[data-i18n="en"] .logo .slogan{letter-spacing:.4px;font-size:0.5rem;max-widt
   font-size:0.7188rem;font-weight:700;color:var(--text-3);letter-spacing:.9px;
   text-transform:uppercase;margin:0 0 11px 3px}
 .sechd::after{content:'';flex:1;height:1px;background:var(--border)}
+/* 「1.11 预览」这类小标：挂在 sechd 或卡片标题后面，提示「这功能还没发布」。
+   做成 pill 而不是纯文字，是因为它在密集的设置页里必须**一眼可辨** ——
+   用户不该把预览功能和已经在用的正式功能混起来。 */
+.pbadge{font-size:0.6563rem;font-weight:600;letter-spacing:0;
+  text-transform:none;color:var(--accent,#4b8bf5);
+  border:1px solid color-mix(in srgb,var(--accent,#4b8bf5) 45%,transparent);
+  background:color-mix(in srgb,var(--accent,#4b8bf5) 12%,transparent);
+  border-radius:999px;padding:1px 8px;line-height:1.5;white-space:nowrap}
+/* 唤醒快捷键的录制框：长得像输入框，但要能「按下去」——
+   focus 时必须给个明显的环，否则用户根本不知道已经进入录制状态、按了没反应。 */
+.hkrec{display:flex;align-items:center;justify-content:center;
+  min-height:34px;padding:6px 12px;border-radius:9px;cursor:pointer;
+  border:1px solid var(--border);background:var(--bg-input,var(--bg-card));
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:0.875rem;color:var(--text);letter-spacing:.5px;
+  user-select:none;transition:border-color .15s,box-shadow .15s}
+.hkrec:hover{border-color:var(--border-strong,var(--text-3))}
+.hkrec:focus{outline:none;border-color:var(--accent,#4b8bf5);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#4b8bf5) 22%,transparent)}
+.hkrec.rec{color:var(--text-3);font-family:inherit;font-size:0.8125rem;
+  border-style:dashed;border-color:var(--accent,#4b8bf5)}
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;
   padding:16px 20px 17px;margin-bottom:12px}
 .card:last-child{margin-bottom:0}
@@ -202,6 +230,13 @@ html[data-i18n="en"] .logo .slogan{letter-spacing:.4px;font-size:0.5rem;max-widt
 /* 内容区 .wrap 恒定上限 880px，所以断点按「视口 - 侧栏 230 - .main 内边距 80」折算 */
 @media (max-width:1140px){.fgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:760px){.fgrid{grid-template-columns:minmax(0,1fr)}}
+
+/* 工作模式那两张卡：默认的 4 栏是为了「服务商 / 地址 / Key / 模型」那一排设计的，
+   直接套过来会剩两栏空着 —— 单个「目标目录」只占 1/4 宽，路径被截成
+   `/tmp/v110db`，看着像坏了。所以按实际有几组给专用列数。 */
+.fgrid.work2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fgrid.work1{grid-template-columns:minmax(0,1fr)}
+@media (max-width:760px){.fgrid.work2{grid-template-columns:minmax(0,1fr)}}
 
 /* 一行多栏（.row.grid3）：外观那种「三个分段控件并排」 */
 .row.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;align-items:start}
@@ -416,6 +451,56 @@ html[data-anim="off"] .btn.spinning::after{animation:none}
   border-radius:9px;background:var(--bg-soft);border:1px solid var(--border);
   font-size:0.7188rem;color:var(--text-2);line-height:1.6}
 .privline .icn{margin-top:2px;color:var(--text-3)}
+/* 许可证：档位徽章 + 一行「粘贴码 → 激活」。
+   徽章用行内块，别用 absolute —— 标题长短在两种语言下差很多。 */
+.lictier{display:inline-block;margin-left:9px;padding:2px 9px;border-radius:20px;
+  font-size:0.6875rem;font-weight:650;letter-spacing:.2px;vertical-align:middle;
+  background:var(--bg-soft);color:var(--text-3);border:1px solid var(--border)}
+.lictier.pro{background:var(--accent);color:#ffffff;border-color:var(--accent)}
+.licrow{display:flex;gap:9px;margin-top:14px}
+.licrow input{flex:1;min-width:0;padding:9px 12px;border-radius:9px;
+  border:1px solid var(--border);background:var(--bg-card);color:var(--text);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.75rem}
+.licrow input:focus{outline:none;border-color:var(--accent)}
+/* 已绑终端清单：一行一台，右边是解绑。绑满时把「还能再连一台」的提示颜色压下去，
+   别让人以为现在就能直接连第二台。 */
+.licterms{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.licterms:empty{display:none}
+.lterm{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;
+  border:1px solid var(--border);background:var(--bg-card);font-size:0.7812rem}
+.lterm .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--text-3)}
+.lterm .dot.on{background:var(--green,#22c55e);box-shadow:0 0 0 3px rgba(34,197,94,.16)}
+.lterm .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lterm .meta{color:var(--text-3);font-size:0.7188rem;flex:none}
+.lterm button{flex:none;padding:5px 10px;border-radius:7px;border:1px solid var(--border);
+  background:var(--bg-soft);color:var(--text-2);font-size:0.7188rem;cursor:pointer}
+.lterm button:hover{border-color:var(--border-strong);color:var(--text)}
+/* 分享奖励块 */
+.licshare{margin-top:14px;padding:13px 14px;border-radius:11px;
+  border:1px solid var(--border);background:var(--bg-soft)}
+.licshare.maxed{border-color:var(--accent)}
+.lsrow{display:flex;align-items:center;gap:10px}
+.lsrow b{flex:1;min-width:0;font-size:0.8125rem;font-weight:650;color:var(--text)}
+.lsbadge{flex:none;padding:2px 10px;border-radius:20px;font-size:0.6875rem;font-weight:650;
+  background:var(--accent);color:#fff;white-space:nowrap}
+.lsnote{margin-top:7px;font-size:0.7188rem;color:var(--text-2);line-height:1.65}
+/* 购买专业版：价格头 + 两版对照表。对照表只列**真的不一样**的行，
+   其它一律「全部可用」—— 把一长串两边都打勾的行铺满，反而看不出贵在哪。 */
+.licbuy{margin-top:14px;padding:13px 14px;border-radius:11px;
+  border:1px solid var(--border);background:var(--bg-soft)}
+.lbhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.lbhead b{font-size:0.9375rem;font-weight:700;color:var(--text)}
+.lbhead span{font-size:0.7188rem;color:var(--text-2)}
+.lbtab{width:100%;margin-top:11px;border-collapse:collapse;font-size:0.75rem}
+.lbtab th{text-align:left;font-weight:600;color:var(--text-2);font-size:0.6875rem;
+  padding:5px 8px;border-bottom:1px solid var(--border)}
+.lbtab th:not(:first-child),.lbtab td:not(:first-child){text-align:center;width:78px}
+.lbtab td{padding:7px 8px;border-bottom:1px solid var(--border);color:var(--text-2)}
+.lbtab tr:last-child td{border-bottom:0}
+.lbtab td:first-child{color:var(--text)}
+.lbtab .lbhi{color:var(--accent);font-weight:700}
+.lbtab .lbok{color:var(--text-2)}
+.lbtab tr.lbcur td{background:var(--accent-soft, rgba(99,102,241,.07))}
 /* 打赏：两张卡等宽并排，二维码统一放进白底方框（扫码要静默区，深浅色都不能动它） */
 .donrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,240px));
   gap:14px;margin-top:4px}
@@ -466,6 +551,7 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
       <a data-sec="sec-look" class="active"><span class="ic"><i class="icn" data-icon="sparkles" data-size="14"></i></span>外观</a>
       <a data-sec="sec-data"><span class="ic"><i class="icn" data-icon="save" data-size="14"></i></span>数据与安全</a>
       <a data-sec="sec-ai"><span class="ic"><i class="icn" data-icon="cpu" data-size="14"></i></span>智能服务</a>
+      <a data-sec="sec-phone"><span class="ic"><i class="icn" data-icon="phone" data-size="14"></i></span>手机连接</a>
       <a data-sec="sec-mcp"><span class="ic"><i class="icn" data-icon="link" data-size="14"></i></span>MCP 服务</a>
       <a data-sec="sec-perf"><span class="ic"><i class="icn" data-icon="database" data-size="14"></i></span>性能与环境</a>
       <a data-sec="sec-about"><span class="ic"><i class="icn" data-icon="info" data-size="14"></i></span>关于</a>
@@ -730,6 +816,8 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
               <i class="icn" data-icon="sparkles" data-size="14"></i><span>补全标签</span></button>
             <button class="btn accent" id="bfAsrBtn" onclick="aiBackfill('start','asr')">
               <i class="icn" data-icon="mic" data-size="14"></i><span>补全转写</span></button>
+            <button class="btn accent" id="bfAlignBtn" onclick="aiBackfill('start','align')">
+              <i class="icn" data-icon="timeline" data-size="14"></i><span>补全对齐</span></button>
             <button class="btn" id="bfStopBtn" onclick="aiBackfill('stop')" style="display:none">
               <i class="icn" data-icon="close" data-size="14"></i><span>停止</span></button>
           </div>
@@ -924,6 +1012,52 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
 
       </section>
 
+      <section class="sec" id="sec-phone">
+        <div class="sechd">手机连接</div>
+
+        <div class="card">
+          <div class="cardhead">
+            <span class="icobox"><i class="icn" data-icon="phone" data-size="17"></i></span><div class="htxt">
+              <h2>局域网连接</h2>
+              <div class="d">让同一个 Wi-Fi 下的手机连到这台电脑的库。关着的时候只有本机能访问，手机连不上。</div>
+            </div>
+            <div class="seg" id="segLan" style="margin-left:auto">
+              <button data-v="off">关闭</button>
+              <button data-v="on">开启</button>
+            </div>
+          </div>
+
+          <div id="lanBox" style="display:none">
+            <div class="row" style="padding-top:4px">
+              <div class="k">地址<span class="sub">手机第一次连接时填这个；同一个 Wi-Fi 下会自动发现，通常不用手填</span></div>
+              <div class="acts" style="margin-top:0">
+                <code id="lanUrl" style="font-size:0.8125rem">—</code>
+              </div>
+            </div>
+            <div class="row stack">
+              <div class="k">配对码<span class="sub">手机第一次连接时输入。5 分钟内有效，用一次就作废</span></div>
+              <div id="lanCodeBox" style="display:flex;flex-direction:column;align-items:center;
+                    justify-content:center;gap:13px;padding:18px 16px;border-radius:12px;
+                    border:1px solid var(--border);background:rgba(127,127,127,0.06)">
+                <span id="lanCode" style="font-size:2.125rem;font-weight:700;letter-spacing:0.3em;
+                      text-indent:0.3em;font-variant-numeric:tabular-nums;line-height:1.05;
+                      color:var(--text)">——</span>
+                <button class="btn" onclick="lanNewCode()">
+                  <i class="icn" data-icon="refresh" data-size="14"></i><span>换一个</span></button>
+              </div>
+            </div>
+            <div class="row" style="padding-top:0;flex-wrap:wrap">
+              <div class="k">已配对的设备<span class="sub">撤销之后那台手机要重新输配对码</span></div>
+            </div>
+            <div id="lanDevs"></div>
+          </div>
+
+          <div class="hintline" id="lanHint">
+            <i class="icn" data-icon="info" data-size="13"></i> <span>开启后手机会在同一 Wi-Fi 下自动发现这台电脑，用配对码连一次就记着了。</span> <span>数据不出局域网：手机的每次检索都由这台电脑算完再把结果发回去。</span>
+          </div>
+        </div>
+      </section>
+
       <section class="sec" id="sec-mcp">
         <div class="sechd">MCP 服务</div>
 
@@ -1116,6 +1250,108 @@ body[data-theme="dark"] .doncard:hover{box-shadow:0 6px 18px rgba(0,0,0,.4)}
           <div class="stat" id="aboutStatus"></div>
         </div>
 
+        <!-- 许可证 / 授权 -->
+        <div class="card" id="licCard">
+          <div class="cardhead">
+            <div class="htxt">
+              <h2>许可证<span class="lictier" id="licTier">免费版</span></h2>
+              <div class="d" id="licDesc">读取中…</div>
+            </div>
+          </div>
+
+          <!-- 配额：★ 只显示**后端真的在卡**的那两项。索引源个数 2026-10-13 起不再限制，
+               留一行「0 / 不限」只会让人以为还能撞墙。 -->
+          <div class="abgrid">
+            <div class="abcell"><b>素材条数</b><i id="licItems">—</i></div>
+            <div class="abcell"><b>移动终端</b><i id="licTerm">—</i></div>
+            <div class="abcell"><b>有效期</b><i id="licExp">—</i></div>
+            <div class="abcell"><b>序列号</b><i id="licSerial">—</i></div>
+          </div>
+
+          <!-- 已绑终端（免费版只给 1 台，换手机要先解绑） -->
+          <div class="licterms" id="licTerms"></div>
+
+          <!-- 分享奖励 -->
+          <div class="licshare" id="licShare">
+            <div class="lsrow">
+              <b>分享给朋友 +15 天 · 转发朋友圈 +30 天（电脑专业版）</b>
+              <span class="lsbadge" id="licShareDays">—</span>
+            </div>
+            <div class="lsnote" id="licShareNote">复制文案发给朋友 +15 天，存海报发朋友圈 +30 天。奖励加的是电脑端专业版（手机端本来就免费），两档合计累计封顶 90 天，攒到多少补多少。</div>
+            <div class="acts" style="margin-top:11px">
+              <button class="btn primary" id="btnLicShare" onclick="licShareCopy()">
+                <i class="icn" data-icon="link" data-size="14"></i><span>复制分享文案（发给朋友 +15 天）</span></button>
+              <button class="btn" id="btnLicPoster" onclick="licSharePoster()">
+                <i class="icn" data-icon="image" data-size="14"></i><span>保存分享海报（发朋友圈 +30 天）</span></button>
+            </div>
+          </div>
+
+          <!-- 购买专业版 -->
+          <!-- ★ 范老板 2026-10-13（下午·十）：原来这里只有一个「怎么获得许可证？」弹窗，
+               把买不买、多少钱、差在哪全推给外链。现在**在应用里就能看清楚并下单**：
+               价格、两版差别、以及「不想花钱怎么白拿」都摆在同一张卡上。 -->
+          <div class="licbuy" id="licBuy">
+            <div class="lbhead">
+              <b id="licBuyPrice">专业版 ¥19.9</b>
+              <span id="licBuySub">一次买断 · 永久可用 · 一台电脑一份</span>
+            </div>
+            <table class="lbtab">
+              <thead><tr><th>能力</th><th>免费版</th><th>专业版</th></tr></thead>
+              <tbody>
+                <tr><td>素材条数（本机 + 手机合计）</td>
+                    <td id="lbFreeItems">2,000</td><td class="lbhi">不限</td></tr>
+                <tr><td>移动终端（可解绑换机）</td>
+                    <td id="lbFreeTerm">1 台</td><td class="lbhi">不限</td></tr>
+                <tr><td>搜画面 / 听声音 / 以图搜图 / 手机直连</td>
+                    <td class="lbok">全部可用</td><td class="lbok">全部可用</td></tr>
+                <tr><td>手机端 FXseekMobile</td>
+                    <td class="lbok">完全免费</td><td class="lbok">完全免费</td></tr>
+              </tbody>
+            </table>
+            <div class="lsnote" style="margin-top:9px">
+              不想花钱也没关系：<b>分享给朋友 +15 天、转发朋友圈 +30 天</b>，
+              攒到 3 个月为止 —— 上面那两行上限一样会松开。
+            </div>
+            <!-- 付完款到哪儿拿码 —— 文案按 buy_mode 换（见 renderLicBuy） -->
+            <div class="lsnote" id="licBuyHow" style="margin-top:7px"></div>
+            <div class="acts" style="margin-top:11px">
+              <button class="btn primary" id="btnLicBuy" onclick="licBuy()">
+                <i class="icn" data-icon="link" data-size="14"></i><span id="btnLicBuyLbl">去付款页购买</span></button>
+              <button class="btn" id="btnLicBuyCopy" onclick="licCopyBuyLink()">
+                <i class="icn" data-icon="save" data-size="14"></i><span>复制购买链接</span></button>
+            </div>
+            <!-- ★ 2026-10-18：爱发电商品页对未登录访客一律先要登录
+                 （匿名请求 /api/creator/get-plan-skus 直接回 40100「该功能需要登录查看」），
+                 换域名绕不过去，所以把这一步提前讲明白，免得以为是按钮坏了。 -->
+            <div class="lsnote" style="margin-top:7px;opacity:.72">
+              点开后会先在浏览器里打开爱发电：<b>没有登录过就先登录</b>（手机号 + 验证码，约 30 秒），
+              登录完自动回到商品页就能付款。链接已复制的话，直接粘到手机浏览器也一样。
+            </div>
+          </div>
+
+          <!-- 激活码 -->
+          <div class="licrow" id="licRowCode">
+            <input type="text" id="licCode" placeholder="粘贴你的许可证码（FXK1-…）"
+                   autocomplete="off" spellcheck="false">
+            <button class="btn primary" onclick="licActivate()" id="btnLicGo">激活</button>
+          </div>
+
+          <!-- 凭证码：手机没连电脑时手抄的那条路（见 license.py 的 redeem_ticket） -->
+          <div class="licrow" id="licRowTicket">
+            <input type="text" id="licTicket" placeholder="手机没连电脑？把手机上的凭证码（FXT1-…）贴这里"
+                   autocomplete="off" spellcheck="false">
+            <button class="btn" onclick="licRedeem()" id="btnLicTicket">兑现</button>
+          </div>
+
+          <div class="acts">
+            <button class="btn" id="btnLicRemove" style="display:none" onclick="licRemove()">
+              <i class="icn" data-icon="trash" data-size="14"></i><span>移除本机许可证</span></button>
+            <button class="btn" onclick="openLicBuy()">
+              <i class="icn" data-icon="link" data-size="14"></i><span>怎么获得许可证？</span></button>
+          </div>
+          <div class="stat" id="licStatus"></div>
+        </div>
+
         <!-- 赞赏 -->
         <div class="card">
           <div class="cardhead">
@@ -1230,6 +1466,10 @@ let SETTINGS = {};
      的地方，别用在持久节点上。 */
 function _AT(zh, en){ return (window.I18N && window.I18N.T) ? window.I18N.T(zh, en) : zh; }
 
+/* 全局中文/英文取词。★ 别写成 T：T 是好几处函数里的局部 const，
+   在兄弟函数里点 T() 会 ReferenceError（购买按钮就这么哑过一次，2026-10-18）。 */
+function _L(zh, en){ return (window.I18N && window.I18N.T) ? window.I18N.T(zh, en) : zh; }
+
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');
   clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),2400);}
 
@@ -1318,6 +1558,9 @@ async function loadSettings(){
   markSeg('segAnim', SETTINGS.ui_anim || 'auto'); updateAnimHint();
   markSeg('segLang', SETTINGS.lang || 'zh'); updateLangHint();
   markSeg('segClose', SETTINGS.close_action || 'ask'); updateCloseHint();
+  // 工作模式的状态不在 SETTINGS 里（它在 /v1/work/state，那边还带「窗口层在不在」
+  // 这种运行时信息），所以单独拉一次。两处都要调：一处是进页面初始化，
+  // 一处是保存完任何设置之后 —— 后者保证「在别处改了模式，回来就是新的」。
   $('#ver').textContent = SETTINGS.version || '1.0.0';
   loadAIFields();
 }
@@ -1364,9 +1607,6 @@ const ASR_PROVIDERS = [
   {id:'groq',    name:'Groq',
    url:'https://api.groq.com/openai/v1', model:'whisper-large-v3',
    note:'console.groq.com 申请 Key · whisper-large-v3，速度很快'},
-  {id:'zhipu',   name:'智谱 GLM',
-   url:'https://open.bigmodel.cn/api/paas/v4', model:'glm-asr',
-   note:'bigmodel.cn 申请 Key · glm-asr'},
   {id:'silicon', name:'硅基流动 SiliconFlow',
    url:'https://api.siliconflow.cn/v1',  model:'FunAudioLLM/SenseVoiceSmall',
    note:'siliconflow.cn 申请 Key · SenseVoiceSmall 便宜'},
@@ -1455,6 +1695,7 @@ function loadAIFields(){
   $('#asrMaxDur').value = SETTINGS.asr_max_duration != null ? SETTINGS.asr_max_duration : 0;
   markSeg('segASR', SETTINGS.asr_enabled ? 'on' : 'off');
   markSeg('segAlign', SETTINGS.align_enabled ? 'on' : 'off');
+  markSeg('segLan', SETTINGS.mobile_lan ? 'on' : 'off');
   markSeg('segIdleTag', SETTINGS.idle_tag === false ? 'off' : 'on');
   markSeg('segIdleAsr', SETTINGS.idle_asr === false ? 'off' : 'on');
   markSeg('segPolIdle', SETTINGS.polish_idle_only === false ? 'off' : 'on');
@@ -1546,8 +1787,8 @@ function aiCfgFromForm(){
 }
 
 const IDLE_HINT = {
-  on: '<i class="icn" data-icon="sparkles" data-size="13"></i> 开着的时候：后台每 20 秒看一眼，空闲够久就补一个（一次只跑一个，随时会被你的搜索/索引打断，中断后下次接着来）。打标签与转写轮流取，不会互相饿着。',
-  off: '<i class="icn" data-icon="close" data-size="13"></i> 两个都关了：索引不会自动补标签/转写，只能去素材详情页手动点「立即打标签」「立即转写」。',
+  on: '<i class="icn" data-icon="sparkles" data-size="13"></i> 开着的时候：后台每 5 秒看一眼（有活在跑时 1 秒），空闲够久就补一个（一次只跑一个，随时会被你的搜索/索引打断，中断后下次接着来）。按阶段推进：先把待打标的清空，再统一转写，最后统一对齐 —— 换阶段才切模型，同一段时间里不会反复装卸。',
+  off: '<i class="icn" data-icon="close" data-size="13"></i> 两个都关了：索引不会自动补标签/转写，只能去素材详情页手动点「立即打标签」「立即转写」，或者用下面的「等不及空闲」。',
 };
 function updateIdleHint(){
   const tag = ($('#segIdleTag button.on') || {dataset:{v:'on'}}).dataset.v === 'on';
@@ -1632,6 +1873,102 @@ async function loadIdleStatus(){
     el.innerHTML = `<span style="color:#dc2626">读取失败：${esc(e.message)}</span>`;
   }
 }
+
+/* ---------- 手机连接 ---------- */
+let _lanTimer = null;
+
+function renderLanDevs(list){
+  const box = $('#lanDevs');
+  if(!box) return;
+  if(!list.length){
+    box.innerHTML = '<div class="row" style="padding-top:0"><div class="k" ' +
+      'style="color:var(--text-2);font-size:0.8125rem">还没有手机配对过</div></div>';
+    return;
+  }
+  box.innerHTML = list.map(d =>
+    '<div class="row" style="padding-top:0">' +
+      '<div class="k">' + esc(d.name || _AT('未命名手机','Unnamed phone')) +
+        '<span class="sub">' + esc(d.token_hint || '') +
+        (d.from ? ' · ' + esc(d.from) : '') +
+        (d.last_seen ? ' · ' + fmtTime(d.last_seen) : '') + '</span></div>' +
+      '<div class="acts" style="margin-top:0">' +
+        '<button class="btn" onclick="lanRevoke(\'' + esc(d.id) + '\')">' +
+        '<i class="icn" data-icon="trash" data-size="14"></i><span>' +
+        _AT('撤销','Revoke') + '</span></button>' +
+      '</div></div>').join('');
+  relabel(box);
+}
+
+async function loadLanStatus(){
+  clearTimeout(_lanTimer);
+  try{
+    const st = await (await fetch('/v1/mobile/state')).json();
+    markSeg('segLan', st.enabled ? 'on' : 'off');
+    const box = $('#lanBox');
+    if(box) box.style.display = st.enabled ? '' : 'none';
+    if(st.enabled){
+      const u = $('#lanUrl'), c = $('#lanCode');
+      if(u) u.textContent = st.ip ? ('http://' + st.ip + ':' + st.port) : '—';
+      // ★ 配对码只在服务端「刚生成」或「被换过」时才有值；取不到就显示占位，
+      //   不要显示上一轮的旧码 —— 用户照着念一遍发现是废的会很困惑。
+      if(c) c.textContent = st.code || '——';
+    }
+    renderLanDevs(st.devices || []);
+  }catch(e){
+    const h = $('#lanHint');
+    if(h) h.innerHTML = '<i class="icn" data-icon="info" data-size="13"></i> ' +
+      _AT('读取失败：','Read failed: ') + esc(e.message);
+  }
+  // 配对码 5 分钟一换，开着的时候就勤看着点
+  if(_lanLastOn()) _lanTimer = setTimeout(loadLanStatus, 8000);
+}
+
+function _lanLastOn(){
+  const b = $('#segLan button.on');
+  return !!b && b.dataset.v === 'on';
+}
+
+let _lanBusy = false;
+async function lanToggle(on){
+  if(_lanBusy) return;
+  _lanBusy = true;
+  try{
+    const r = await (await fetch('/v1/mobile/lan', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({on: !!on})})).json();
+    if(r.error) toast(r.error);
+    else if(!on) toast(_AT('局域网连接已关闭，手机连不上了','LAN access is off — phones can no longer connect'));
+    else if(r.advertise_error) toast(_AT('已开放，但自动发现没挂上；手机可以手填地址', 'LAN is on, but auto-discovery failed — enter the address manually'));
+    else toast(_AT('已开放：同一个 Wi-Fi 下的手机可以连了','LAN is on — phones on the same Wi-Fi can connect'));
+  }catch(e){
+    toast(_AT('切换失败：','Failed: ') + e.message);
+  }finally{
+    _lanBusy = false;
+    loadLanStatus();
+  }
+}
+
+async function lanNewCode(){
+  try{
+    const r = await (await fetch('/v1/pair/code', {method:'POST'})).json();
+    if(r.error) toast(r.error); else { toast(_AT('换了一个新的配对码','New pairing code issued')); }
+  }catch(e){ toast(_AT('换码失败：','Failed: ') + e.message); }
+  loadLanStatus();
+}
+
+async function lanRevoke(id){
+  try{
+    const r = await (await fetch('/v1/pair/revoke', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id: id})})).json();
+    if(r.error) toast(r.error);
+    else toast(_AT('已撤销 ' + (r.removed || 0) + ' 台设备', 'Revoked ' + (r.removed || 0) + ' device(s)'));
+  }catch(e){ toast(_AT('撤销失败：','Revoke failed: ') + e.message); }
+  loadLanStatus();
+}
+
+document.querySelectorAll('#segLan button').forEach(b=>
+  b.onclick = ()=>{ markSeg('segLan', b.dataset.v); lanToggle(b.dataset.v === 'on'); });
 
 /* ---------- 增强对齐时间轴 ---------- */
 let _alignTimer = null;
@@ -1935,16 +2272,18 @@ function renderIdleBadge(r, a){
 function renderBackfill(bf, r, a){
   const hint = $('#bfHint');
   const stop = $('#bfStopBtn');
-  const tagBtn = $('#bfTagBtn'), asrBtn = $('#bfAsrBtn');
+  const tagBtn = $('#bfTagBtn'), asrBtn = $('#bfAsrBtn'), alignBtn = $('#bfAlignBtn');
   if(!hint) return;
   const active = !!(bf && bf.active);
   if(tagBtn) tagBtn.disabled = active;
   if(asrBtn) asrBtn.disabled = active;
+  if(alignBtn) alignBtn.disabled = active;
   if(stop) stop.style.display = active ? '' : 'none';
   if(hint) hint.className = 'hintline' + (active ? ' hot' : '');
   if(active){
-    const what = bf.what === 'asr' ? '转写' : '标签';
-    const left = bf.what === 'asr' ? (a && a.pending) : (r && r.pending);
+    const what = bf.what === 'asr' ? '转写' : (bf.what === 'align' ? '对齐'
+                : (bf.what === 'both' ? '标签+转写+对齐' : '标签'));
+    const left = (a && a.pending != null) ? a.pending : (r && r.pending);
     // 只有真在跑的时候才说「正在处理谁」——last_path 是上一次留下的，会误导。
     const cur = (r && r.running && r.last_path)
       ? ` 正在处理「${esc(r.last_path.split('/').pop())}」` : '';
@@ -1962,6 +2301,21 @@ function renderBackfill(bf, r, a){
 // 立即补全：不等空闲，立刻逐个处理完。
 async function aiBackfill(action, what){
   try{
+    // ★ 2026-10-18：阶段制的代价要事先说清。点「补全转写 / 补全对齐」会**抢在**
+    //   打标前面，等于手动把模型从打标切过去、做完再切回来。不是 bug，但用户
+    //   应该知道「正在打的标会暂停」，而不是以为两条线在并行。
+    if(action === 'start'){
+      const other = async (u) => (await fetch(u).then(x => x.json()).catch(() => ({})));
+      if(what === 'asr'){
+        const t = await other('/v1/ai/status');
+        const n = t && t.pending || 0;
+        if(n > 0 && !confirm(`打标还有 ${n} 个没做完。\n\n先补转写会把模型切到 ASR，打标暂停，转写清空后再回来接着打（来回多两次模型加载）。\n\n继续？`)) return;
+      } else if(what === 'align'){
+        const [t, a] = await Promise.all([other('/v1/ai/status'), other('/v1/asr/status')]);
+        const nt = t && t.pending || 0, na = a && a.pending || 0;
+        if((nt > 0 || na > 0) && !confirm(`现在还有：打标 ${nt} 个、待转写 ${na} 个没做完。\n\n先补对齐会把模型切到对齐模型，前面那些先暂停（来回多两次模型加载）。\n\n继续？`)) return;
+      }
+    }
     const res = await fetch('/v1/ai/backfill', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({action, what: what || 'tag'})
@@ -2161,6 +2515,9 @@ async function saveSettings(patch){
   markSeg('segAnim', SETTINGS.ui_anim || 'auto'); updateAnimHint();
   markSeg('segLang', SETTINGS.lang || 'zh'); updateLangHint();
   markSeg('segClose', SETTINGS.close_action || 'ask'); updateCloseHint();
+  // 工作模式的状态不在 SETTINGS 里（它在 /v1/work/state，那边还带「窗口层在不在」
+  // 这种运行时信息），所以单独拉一次。两处都要调：一处是进页面初始化，
+  // 一处是保存完任何设置之后 —— 后者保证「在别处改了模式，回来就是新的」。
   toast('设置已保存');
 }
 
@@ -2199,6 +2556,15 @@ function updateCloseHint(){
 document.querySelectorAll('#segClose button').forEach(b=>
   b.onclick = ()=> saveSettings({close_action:b.dataset.v}));
 
+/* ══════════════════════════════════════════════════════════════════════════
+   工作模式（1.11 预览版）
+   ══════════════════════════════════════════════════════════════════════════
+   ★ 这里三个控件都**不走 saveSettings**，各自有自己的后端入口：
+     · 切模式   → POST /v1/work/mode   （那边要换窗口，得成套做；后台不再暂停）
+     · 换唤醒键 → POST /v1/work/hotkey （那边要真去注册系统热键，失败得回滚）
+     · 收工目录 → saveSettings         （这才是普通设置项）
+   统一走 saveSettings 的话，「设置存下去了但热键没注册上」这种半吊子状态
+   会一路显示成功，用户下次按不出来只会以为功能坏了。 */
 /* 切换语言：存盘后走 saveSettings 的同一条路（applyTheme 里会调 applyLang），
    保证「存了但没生效」和「生效但没存」两种半吊子状态都不会出现。 */
 document.querySelectorAll('#segLang button').forEach(b=>
@@ -2383,7 +2749,494 @@ function relabel(root){
   if(window.I18N && I18N.lang() === 'en' && I18N.refresh) I18N.refresh(root || document.body);
 }
 
-async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadPolishStatus(); loadAlignStatus(); loadMcp(); loadAbout(); relabel(); }
+async function loadAll(){ await loadCache(); await loadEnv(); await loadDataPath(); await loadLogs(); loadIdleStatus(); loadPolishStatus(); loadAlignStatus(); loadLanStatus(); loadMcp(); loadAbout(); loadLicense(); relabel(); }
+
+/* ── 许可证 ────────────────────────────────────────────────── */
+/* 档位与配额**只在后端算**（license.py 是唯一权威），这里只负责显示。
+   前端绝不能自己判断「是不是专业版」—— 那样改一行 JS 就绕过了。 */
+let LIC = null;
+let _licDevs = [];        // `/v1/mobile/state` 里的设备表，只为给「已绑终端」点个在线灯
+// ★ `T` 在这个文件里是**各函数自己声明的局部 const**（见 loadAbout/checkUpdate…），
+//   不是全局 —— 直接调 `LT(...)` 会 "T is not defined"。所以自带一个同款。
+const LT = (zh, en) => (window.I18N && I18N.T) ? I18N.T(zh, en) : zh;
+
+async function loadLicense(){
+  try{
+    // 许可证 + 手机设备表一起拿：终端清单要标「在线」，而 online 状态在
+    // `/v1/mobile/state` 里（license 那边只有历史绑定，不记在线）。
+    const [lic, st] = await Promise.all([
+      fetch('/v1/license').then(r => r.json()),
+      fetch('/v1/mobile/state').then(r => r.json()).catch(() => ({})),
+    ]);
+    LIC = lic;
+    _licDevs = (st && st.devices) || [];
+  }catch(e){ return; }                       // 读不到就维持原样，不把卡片刷空
+  renderLicense();
+}
+
+function _licDevOnline(id){
+  const d = _licDevs.find(x => String(x.id) === String(id));
+  return !!(d && d.online);
+}
+
+function renderLicense(){
+  if(!LIC) return;
+  const pro = LIC.tier === 'pro' && !LIC.expired;
+  const tier = $('#licTier');
+  tier.textContent = pro ? LT('专业版','Pro') : LT('免费版','Free');
+  tier.classList.toggle('pro', pro);
+
+  const lim = LIC.limits || {}, used = LIC.used || {};
+
+  // 素材条数：免费版要把「2000 是怎么来的」说清楚 —— 本机索引 + 手机里的合计。
+  // 不写这一句，用户会以为「我本机才 300 个怎么就说我满了」。
+  if(lim.max_items == null){
+    $('#licItems').textContent = String(used.items ?? '—');
+  }else{
+    let s = `${used.items ?? 0} / ${lim.max_items}`;
+    if(used.phone_items) s += LT(`（本机 ${used.desktop_items} + 手机 ${used.phone_items}）`,
+                                 ` (${used.desktop_items} + ${used.phone_items})`);
+    $('#licItems').textContent = s;
+  }
+
+  const tn = (LIC.terminals || []).length;
+  $('#licTerm').textContent = lim.max_terminals == null ? String(tn) : `${tn} / ${lim.max_terminals}`;
+  $('#licSerial').textContent = LIC.serial || '—';
+  if(!pro) $('#licExp').textContent = '—';
+  else if(!LIC.expires_at) $('#licExp').textContent = LT('永久','Perpetual');
+  else $('#licExp').textContent = fmtTime(LIC.expires_at).slice(0,10);
+
+  let desc;
+  if(LIC.note === 'invalid'){
+    desc = LT('本机的许可证文件验不过（被改过？换过密钥？）。点下面「移除本机许可证」再重新粘一次。',
+             'The license file on this machine does not verify. Remove it and paste again.');
+  }else if(pro && LIC.from_bonus){
+    desc = LT('分享奖励生效中：不限素材条数、不限终端。到期后自动回到免费版，已索引的素材不会动。',
+             'Share reward active: unlimited items and terminals. It lapses back to Free automatically.');
+  }else if(pro){
+    desc = LT('已解锁：不限素材条数、不限移动终端。手机端始终免费。',
+             'Unlocked: unlimited items and terminals. The phone app stays free.');
+  }else{
+    desc = LT(`免费版：最多 ${lim.max_items ?? '—'} 条素材（本机 + 手机合计）、`
+              + `${lim.max_terminals ?? '—'} 台移动终端。索引源个数不限。`,
+             `Free: up to ${lim.max_items ?? '—'} items (local + phone) and `
+              + `${lim.max_terminals ?? '—'} mobile terminal(s). Sources are unlimited.`);
+  }
+  $('#licDesc').textContent = desc;
+
+  renderLicTerms();
+  renderLicShare();
+  renderLicBuy();
+
+  $('#btnLicRemove').style.display = (LIC.note === 'file' || LIC.note === 'invalid') ? '' : 'none';
+  $('#licCode').style.display = pro ? 'none' : '';
+  $('#btnLicGo').style.display = pro ? 'none' : '';
+}
+
+/* 已绑终端：★ 这是**历史绑定**，跟「现在在不在线」无关。
+   免费版只给 1 台，所以这里必须能解绑 —— 不然换手机的人卡死，
+   只能靠删配置文件，那太丢人了。 */
+function renderLicTerms(){
+  const box = $('#licTerms');
+  if(!box) return;
+  box.innerHTML = '';
+  (LIC.terminals || []).forEach(t => {
+    const on = _licDevOnline(t.id);
+    const row = document.createElement('div');
+    row.className = 'lterm';
+    row.innerHTML =
+      `<span class="dot${on ? ' on' : ''}"></span>` +
+      `<span class="nm">${esc(t.name || LT('未命名手机','Unnamed phone'))}</span>` +
+      `<span class="meta">${on ? LT('在线','online') : LT('离线','offline')}</span>`;
+    const btn = document.createElement('button');
+    btn.textContent = LT('解绑','Unbind');
+    btn.onclick = () => licUnbind(t.id, t.name || '');
+    row.appendChild(btn);
+    box.appendChild(row);
+  });
+}
+
+/* 分享奖励块：把「还能不能再攒」说清楚，别让人白点一天。 */
+function renderLicShare(){
+  const b = LIC.bonus || {};
+  const box = $('#licShare');
+  if(!box) return;
+  const total = b.days_total || 0, maxd = b.max_days || 90;
+  const df = b.days_friend || 15, dm = b.days_moments || 30;
+  const maxed = total >= maxd;
+  const todayDone = (b.credited_days || []).indexOf(b.today) >= 0;
+  box.classList.toggle('maxed', maxed);
+  $('#licShareDays').textContent = total
+    ? LT(`已攒 ${total} / ${maxd} 天`, `${total} / ${maxd} days`)
+    : LT('还没分享过', 'Not shared yet');
+  let note;
+  if(maxed){
+    note = LT(`已经攒满 ${maxd} 天电脑专业版（3 个月），不用再分享了 —— 到期前都不用管它。`,
+              `Maxed out at ${maxd} days — no need to share more.`);
+  }else if(todayDone){
+    note = LT(`今天这次已经计过了。明天再分享：发给朋友 +${df} 天、发朋友圈 +${dm} 天，`
+              + `累计攒到 ${maxd} 天为止。`,
+              `Today is already counted. Tomorrow: +${df} days for a friend, `
+              + `+${dm} for Moments (up to ${maxd} days total).`);
+  }else{
+    note = LT(`复制文案发给朋友 +${df} 天，存一张海报发朋友圈 +${dm} 天。`
+              + `两档合计累计封顶 ${maxd} 天（3 个月），攒到多少补多少；`
+              + `电脑端和手机端共用同一个额度池。`,
+              `Copy the text for a friend (+${df} days) or save the poster for Moments `
+              + `(+${dm} days). One per day, up to ${maxd} days, one shared pool.`);
+  }
+  $('#licShareNote').textContent = note;
+}
+
+/* 复制到剪贴板。★ navigator.clipboard 在 http://127.0.0.1 下**是**安全上下文，
+   一般能用；但 pywebview 的 WKWebView 偶尔拒绝，所以留个 execCommand 兜底，
+   再不行就把文案塞进 #licStatus 让用户手动选。 */
+async function _copyText(text){
+  try{
+    await navigator.clipboard.writeText(text);
+    return true;
+  }catch(e){}
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  }catch(e){ return false; }
+}
+
+/* 记一次分享。
+   ★ `kind` 是**档位**：'friend' = 复制文案发给朋友（15 天），
+     'moments' = 存海报发朋友圈（30 天）。后端按档给天数，别在前端自己算 ——
+     前端算的话改一行 JS 就能白拿 30 天。 */
+async function _licCreditShare(kind){
+  const tier = _licTier(kind);
+  try{
+    const r = await (await fetch('/v1/license/share',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({kind:tier.kind})})).json();
+    LIC = r; renderLicense();
+    return r;
+  }catch(e){ return null; }
+}
+
+/* 一档的元信息。后端已经报了 days_friend / days_moments，这里只做展示与兜底。 */
+function _licTier(kind){
+  const b = (LIC && LIC.bonus) || {};
+  const isFriend = kind === 'friend';
+  return {
+    kind: isFriend ? 'friend' : 'moments',
+    days: (isFriend ? b.days_friend : b.days_moments)
+          || (isFriend ? 15 : 30)
+  };
+}
+
+/* 「复制分享文案」= 发给朋友那一档（+15 天）。
+   ★ 天数取后端回的 `days_granted`，不是本地算的 —— 贴顶那次后端只补剩余额度
+     （比如已 80 天、再发 15 天的只加 10 天），本地算就会多报。 */
+async function licShareCopy(){
+  const b = $('#btnLicShare'); if(b) b.disabled = true;
+  const tier = _licTier('friend');
+  const r = await _licCreditShare('friend');
+  const ok = await _copyText((r && r.text) || '');
+  const s = $('#licStatus');
+  const got = (r && r.days_granted) || tier.days;
+  if(r && r.credited){
+    toast(LT(`已复制，分享奖励 +${got} 天电脑专业版 🎉`, `Copied — +${got} days of desktop Pro 🎉`));
+    s.textContent = '';
+  }else if(r && r.last_reason === 'capped'){
+    s.textContent = LT('文案已复制。分享奖励已经攒满，不用再攒了。',
+                       'Copied. The share reward is already maxed out.');
+  }else if(r && r.last_reason === 'cooling'){
+    s.textContent = LT(`文案已复制。今天这次已经计过了，明天再分享还能 +${tier.days} 天。`,
+                       `Copied. Today is already counted — share again tomorrow for +${tier.days} days.`);
+  }else{
+    s.textContent = ok ? LT('文案已复制。','Copied.') : '';
+    if(!ok) openLicBuyFallbackText((r && r.text) || '');
+  }
+  if(b) b.disabled = false;
+}
+
+/* 剪贴板彻底失败时，至少把文案摆出来让人手动复制。 */
+function openLicBuyFallbackText(text){
+  const s = $('#licStatus');
+  s.innerHTML = LT('自动复制没成功，请手动选中下面这段：', 'Copy failed — select this manually:') +
+    '<br><textarea readonly style="width:100%;height:150px;margin-top:8px;font-size:0.75rem">' +
+    esc(text) + '</textarea>';
+}
+
+async function licSharePoster(){
+  const b = $('#btnLicPoster'); if(b) b.disabled = true;
+  const s = $('#licStatus');
+  s.textContent = LT('正在生成海报…','Rendering poster…');
+  // ★ 「保存分享海报」记的是**朋友圈那一档（+30 天）** —— 海报就是拿去发朋友圈的，
+  //   跟「复制文案」那条（发给某个人，+15 天）分得清清楚楚。
+  const tier = _licTier('moments');
+  const r0 = await _licCreditShare('moments');
+  let r = null;
+  try{
+    r = await (await fetch('/v1/license/poster',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+  }catch(e){ r = {ok:false, error:e.message}; }
+  if(r && r.ok){
+    s.innerHTML = LT('海报已存好：','Poster saved: ') + '<code>' + esc(r.path) + '</code>' +
+      LT('（直接发朋友圈 / QQ 空间就行，正文里的外链会被屏蔽，图片不会）',
+         ' (post it directly — links in the text get blocked, images do not)');
+    const got = (r0 && r0.days_granted) || tier.days;
+    toast((r0 && r0.credited)
+      ? LT(`海报已存好，+${got} 天电脑专业版 🎉`, `Poster saved — +${got} days of desktop Pro 🎉`)
+      : LT('海报已存好','Poster saved'));
+  }else{
+    s.textContent = (r && r.error) || LT('生成海报失败。','Poster failed.');
+  }
+  if(b) b.disabled = false;
+}
+
+async function licActivate(){
+  const code = ($('#licCode').value || '').trim();
+  const s = $('#licStatus');
+  if(!code){ s.textContent = LT('还没填码。','No code entered.'); return; }
+  const b = $('#btnLicGo'); b.disabled = true;
+  s.textContent = LT('正在验签…','Verifying…');
+  try{
+    const r = await (await fetch('/v1/license/activate',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({code})})).json();
+    LIC = r;
+    if(r.ok){ $('#licCode').value = ''; toast(LT('已解锁专业版 🎉','Pro unlocked 🎉')); s.textContent = ''; }
+    else { s.textContent = r.message || LT('这个码用不了。','That code did not work.'); }
+  }catch(e){ s.textContent = LT('激活失败：','Activation failed: ') + e.message; }
+  b.disabled = false;
+  renderLicense();
+}
+
+/* 兑现手机上的凭证码（分享奖励的副路径：手机没连电脑时手抄）。
+   ★ 后端拿**配对令牌**做 HMAC 验签，所以编一个码是过不了的（见 license.redeem_ticket）。 */
+async function licRedeem(){
+  const code = ($('#licTicket').value || '').trim();
+  const s = $('#licStatus');
+  if(!code){ s.textContent = LT('先把手机上的凭证码贴进来。','Paste the ticket from your phone first.'); return; }
+  const b = $('#btnLicTicket'); if(b) b.disabled = true;
+  s.textContent = LT('正在核对…','Checking…');
+  try{
+    const r = await (await fetch('/v1/license/ticket',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({code})})).json();
+    LIC = r;
+    if(r.ok){
+      $('#licTicket').value = '';
+      const b = LIC.bonus || {};
+      const left = Math.max(0, (b.max_days || 90) - (b.days_total || 0));
+      const pend = (r.pending || 0);
+      const exp = b.expires_at ? new Date(b.expires_at * 1000).toLocaleDateString() : '';
+      if(r.credited){
+        // ★ 天数要用**这次真加的**（r.days_granted）：朋友档 15 天、朋友圈档 30 天。
+        //   以前这儿取的是 bonus.days_each（默认 30），贴朋友码会谎报 +30 天。
+        const got = r.days_granted || 0;
+        toast(LT(`兑现成功，+${got} 天电脑专业版 🎉`, `Redeemed — +${got} days of Pro 🎉`));
+        s.textContent = LT(`已 +${got} 天，累计 ${b.days_total || 0}/${b.max_days || 90} 天` +
+                           (exp ? `，到期 ${exp}` : '') + `。` +
+                           (pend ? `手机上还有 ${pend} 次没记上，明天再贴一次接着补。` : ''),
+                         `+${got} days (total ${b.days_total || 0}/${b.max_days || 90})` +
+                           (exp ? `, expires ${exp}` : '') + '.');
+      }else if(r.reason === 'cooling' || r.last_reason === 'cooling'){
+        // 冷却：一天只补 1 次。这不是「码没用」，是**今天补过了**。
+        toast(LT('核对通过 —— 今天已经补过一次了','Verified — one credit per day'));
+        s.textContent = LT(`这段码是对的。分享奖励每天最多补 ${(b.per_day || 0) || '无限'} 次，今天补过了` +
+                           (pend ? `；手机上还攒着 ${pend} 次，明天会自动接着补。` : '。') +
+                           (left > 0 ? `（还能再攒 ${left} 天到 ${b.max_days || 90} 天上限）` : ''),
+                         `Valid ticket. One credit per day — today is used` +
+                           (pend ? `, ${pend} queued for tomorrow.` : '.'));
+      }else if(r.reason === 'capped' || r.last_reason === 'capped'){
+        toast(LT('分享奖励已经攒满了','Share bonus is full'));
+        s.textContent = LT(`分享奖励最多攒 ${b.max_days || 90} 天，已经攒满了。`,
+                           `The share bonus caps at ${b.max_days || 90} days — you are full.`);
+      }else{
+        // nothing_new：这段码代表的分享次数**已经全部记过了**。
+        toast(LT('这段码对应的分享已经记过','These shares are already counted'));
+        s.textContent = LT(`这段码代表「朋友 ${r.friend || 0} 次 / 朋友圈 ${r.moments || 0} 次」的累计分享，` +
+                           `电脑这边已经按它补过了（累计 ${b.days_total || 0} 天）。` +
+                           `再分享一次，手机上会生成次数更高的新码。`,
+                         `This ticket's counts are already credited (total ${b.days_total || 0} days). ` +
+                           `Share again to get a ticket with a higher count.`);
+      }
+    }else{
+      s.textContent = r.error || LT('这段码用不了。','That ticket did not work.');
+    }
+  }catch(e){ s.textContent = LT('兑现失败：','Failed: ') + e.message; }
+  if(b) b.disabled = false;
+  renderLicense();
+}
+
+async function licUnbind(id, name){
+  if(!confirm(LT(`解绑「${name || '这台手机'}」？解绑后可以再连 1 台别的手机（它的分享记录会保留）。`,
+                 `Unbind “${name || 'this phone'}”? You can then pair another one (its share record is kept).`))) return;
+  try{
+    LIC = await (await fetch('/v1/license/unbind',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})})).json();
+    toast(LT('已解绑，现在可以连别的手机了','Unbound — you can pair another phone now'));
+  }catch(e){ toast(LT('解绑失败：','Failed: ') + e.message); }
+  renderLicense();
+}
+
+async function licRemove(){
+  if(!confirm(LT('移除本机的许可证？移除后立刻回到免费版（已发出的索引不会删）。',
+                'Remove the license on this machine? You go back to Free immediately.'))) return;
+  try{ LIC = await (await fetch('/v1/license/deactivate',{method:'POST'})).json(); }catch(e){}
+  toast(LT('已回到免费版','Back to Free'));
+  renderLicense();
+}
+
+/* 「怎么获得许可证」—— 不跳外链、不打开浏览器，只把话说清楚。
+   ★ 这里**不写死价格、不写死付款方式**：那是老板的商业决定，代码里别替他承诺。
+     只说明「免费版少了什么、专业版补什么、手机端不做任何限制」，落款指向项目页。 */
+function openLicBuy(){
+  licBuy();
+}
+
+/* ── 购买专业版 ──────────────────────────────────────────────
+   发货页地址与价格都来自后端（`/v1/license` 的 `buy` 字段，落盘在 settings.json
+   的 `buy_url` / `buy_price`）。**代码里不写死任何第三方平台域名**：
+   平台会换、会跑路，写死等于把用户往一个可能已经死掉的地址送。 */
+function _buyInfo(){
+  return (LIC && LIC.buy) || {};
+}
+
+let _buyWatch = null;
+
+/* 点「购买专业版」。两条路（由后端 settings.json 的 `buy_mode` 决定）：
+   ── afdian（爱发电这类平台，默认）：
+      没有「用我自己的订单号下单」的接口（它的 API 是只读的：查订单 + webhook），
+      所以**没法自动激活**。只能把收款页甩给系统浏览器，他在那边付完、
+      平台页面直接把兑换码摊在他面前，他抄回来粘进下面的激活框。
+      ★ 这条路**零开户费**，也不用部署任何东西；代价就是那一次复制粘贴。
+   ── auto（自家发货页，走聚合支付）：
+      ① 先让后端开一笔单（拿本机生成的订单号 + nonce）；
+      ② 把带参数的地址交给**系统浏览器**打开（WKWebView 直接导航会把设置页带走、回不来）；
+      ③ 然后每 3 秒问一次发货页「发了没」，发了就自动激活 —— 用户一次都不用粘码。
+   两条路都不删「手抄码」那条：激活框一直在下面，发货页挂了 / 他在手机上买的都能兜住。 */
+async function licBuy(){
+  const b = _buyInfo(), s = $('#licStatus');
+  const url = String(b.url || '').trim();
+  if(!url){
+    s.textContent = _L('还没配置收款页地址。', 'No purchase URL configured yet.');
+    return;
+  }
+
+  // ── 爱发电：只开页面，不轮询（那边没有回调，轮也轮不出来） ──
+  if(b.mode !== 'auto'){
+    // ★ 一定要看返回值：后端有域名白名单（/v1/open-url），被拦时以前会**假装打开了**
+    //   （2026-10-18 修：爱发电域名不在白名单里，用户点了一动不动）。
+    let o = null;
+    try{
+      o = await (await fetch('/v1/open-url', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({url: url})})).json();
+    }catch(e){}
+    if(o && o.ok){
+      s.textContent = _L('已用浏览器打开收款页。付完款那边会直接给你一串 FXK1- 开头的码 —— '
+                        + '复制回来粘到下面「激活」框里就成。',
+                        'Payment page opened. Copy the FXK1- code back into the box below.');
+      toast(_L('已用浏览器打开收款页', 'Payment page opened'));
+    }else{
+      const why = (o && o.error) || _L('没能打开系统浏览器', 'Could not open a browser');
+      const copied = await _copyText(url);
+      s.textContent = why + '。' + (copied ? _L('链接已经复制好了，粘到浏览器地址栏就能打开：', 'Link copied — paste it into your browser: ') : _L('手动打开这个地址：', 'Open this address manually: ')) + url;
+      toast(why + (copied ? _L('，链接已复制', ' — link copied') : ''));
+    }
+    return;
+  }
+
+  s.textContent = _L('正在打开购买页…', 'Opening…');
+  let r = null;
+  try{
+    r = await (await fetch('/v1/license/buy/start', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url: b.url, price: b.price})})).json();
+  }catch(e){}
+  if(!r || !r.ok){ s.textContent = (r && r.error) || _L('打不开购买页。', 'Could not open.'); return; }
+
+  fetch('/v1/open-url', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url: r.url})}).catch(function(){});
+  s.textContent = _L('已用浏览器打开购买页（订单 ' + r.order + '）。付款完这一页会自动激活 —— '
+                    + '不用你粘码；真没自动激活，就把码贴到下面那个框里。',
+                    'Opened the purchase page (order ' + r.order + '). It will activate automatically.');
+
+  if(_buyWatch) clearInterval(_buyWatch);
+  let left = 200;                       // 3s × 200 = 10 分钟，够付完款
+  _buyWatch = setInterval(async function(){
+    if(--left <= 0){ clearInterval(_buyWatch); _buyWatch = null; return; }
+    let p = null;
+    try{
+      p = await (await fetch('/v1/license/buy/poll', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({order: r.order, nonce: r.nonce})})).json();
+    }catch(e){ return; }
+    if(p && p.ok){
+      clearInterval(_buyWatch); _buyWatch = null;
+      s.textContent = _L('购买成功，已自动激活 🎉（序列号 ' + (p.serial || '—') + '）',
+                        'Activated. Serial ' + (p.serial || '—'));
+      loadLicense();
+    }else if(p && p.error && p.pending === false){
+      clearInterval(_buyWatch); _buyWatch = null;
+      s.textContent = p.error;
+    }
+  }, 3000);
+}
+
+async function licCopyBuyLink(){
+  const b = _buyInfo(), s = $('#licStatus');
+  const url = String(b.url || '').trim();
+  if(!url){ s.textContent = _L('还没配置购买地址。', 'No purchase URL configured yet.'); return; }
+  const ok = await _copyText(url);
+  s.textContent = ok
+    ? _L('购买链接已复制，可以发给别人。', 'Purchase link copied.')
+    : url;
+  // ★ 提示要出现在**按钮旁边**：以前只写 #licStatus（在下面激活码那张卡里，视线之外），
+  //   用户以为没反应（2026-10-18 修）。这里补 toast + 按钮自己闪一下。
+  toast(ok ? _L('购买链接已复制 ✓', 'Purchase link copied ✓')
+           : _L('复制失败，链接是：' + url, 'Copy failed: ' + url));
+  if(!ok){
+    // execCommand 也被拒（WKWebView 偶尔如此）→ 弹出来让他自己 ⌘C，别只留个看不见的提示
+    try{ prompt(_L('自动复制被拒绝，请手动复制：', 'Auto-copy blocked — copy manually:'), url); }catch(e){}
+  }
+  const btn = $('#btnLicBuyCopy');
+  if(ok && btn){
+    const sp = btn.querySelector('span');
+    if(sp && !btn.dataset.flashing){
+      const old = sp.textContent;
+      btn.dataset.flashing = '1';
+      sp.textContent = _L('已复制 ✓', 'Copied ✓');
+      setTimeout(function(){ sp.textContent = old; delete btn.dataset.flashing; }, 1500);
+    }
+  }
+}
+
+/* 把「免费版是多少」写进对照表的第一列 —— 数字从后端来，改 quota 不用改这里。
+   顺便按 buy_mode 换按钮文案与那句「付完款怎么办」。 */
+// ⚠️ 这里只能用 LT(zh, en)，**不能用 _L(...)** —— `T` 是定义在下面那个闭包里的
+//   局部量，本函数在它外面（详见 2690 行那条老注释，同一个坑踩第二次了）。
+function renderLicBuy(){
+  const b = _buyInfo();
+  const p = $('#licBuyPrice'), fi = $('#lbFreeItems'), ft = $('#lbFreeTerm');
+  if(p && b.price) p.textContent = LT('专业版 ' + b.price, 'Pro ' + b.price);
+  if(fi && b.free_items != null) fi.textContent = Number(b.free_items).toLocaleString();
+  if(ft && b.free_terminals != null) ft.textContent = b.free_terminals + LT(' 台', '');
+  const auto = b.mode === 'auto';
+  const lbl = $('#btnLicBuyLbl');
+  if(lbl) lbl.textContent = auto ? LT('购买专业版', 'Buy Pro')
+                                 : LT('去付款页购买', 'Open payment page');
+  const how = $('#licBuyHow');
+  if(how){
+    how.innerHTML = auto
+      ? LT('付款完这一页会<b>自动激活</b>，不用你粘码；真没自动激活，就把码贴到下面那个框里。',
+           'It activates automatically after payment.')
+      : LT('付完款那边会直接显示一串 <b>FXK1-</b> 开头的码，复制回来粘到下面「激活」框里。'
+           + '（付款页在浏览器里打开，这个设置页不会被打断。）',
+           'After payment, copy the FXK1- code into the box below.');
+  }
+}
+window.licBuy = licBuy;
+window.licCopyBuyLink = licCopyBuyLink;
 
 /* ── 关于 ──────────────────────────────────────────────────── */
 let AB_INFO = null;

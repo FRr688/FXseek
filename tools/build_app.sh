@@ -54,13 +54,14 @@ mkdir -p "$RES"
 
 # 2a. Python 源码与前端资源（白名单，避免漏进杂物）
 for f in app.py launcher.py model_dl.py paths.py embed.py indexer.py fingerprint.py \
-         fastsearch.py ai_desc.py asr_desc.py asr_polish.py aligner.py voice_intent.py net_util.py heif_support.py \
-         seed.py serve.py \
-         run_daemon.py mcp_server.py mcp_agents.py tray_helper.py recorder.py requirements.txt; do
+         fastsearch.py ai_desc.py asr_desc.py asr_polish.py aligner.py mobile.py voice_intent.py net_util.py heif_support.py \
+         eg2.py seed.py license.py share_card.py serve.py \
+         run_daemon.py mcp_server.py mcp_agents.py tray_helper.py recorder.py \
+         workwin.py hotkey.py requirements.txt; do
   # 注：README.md 不进包 —— 运行期没人读它，仓库里留着给 GitHub 首页看就行
   [ -f "$f" ] && cp -p "$f" "$RES/"
 done
-for f in ui.html settings.html i18n.js icons.js agent_logos.js; do
+for f in ui.html settings.html work.html rope.html i18n.js icons.js agent_logos.js; do
   [ -f "$f" ] && cp -p "$f" "$RES/"
 done
 
@@ -76,7 +77,8 @@ echo "==> 校验本地模块是否都进包"
 MISSING=0
 for m in $(grep -hoE '^[[:space:]]*(import|from)[[:space:]]+[a-z_][a-z0-9_]*' \
              app.py launcher.py indexer.py fastsearch.py paths.py serve.py \
-             run_daemon.py mcp_server.py tray_helper.py 2>/dev/null \
+             run_daemon.py mcp_server.py tray_helper.py \
+             workwin.py hotkey.py 2>/dev/null \
            | awk '{print $2}' | sort -u); do
   # 只关心「本仓库里真实存在的 .py」，第三方库不在此列
   if [ -f "$m.py" ] && [ ! -f "$RES/$m.py" ]; then
@@ -89,6 +91,24 @@ if [ "$MISSING" = "1" ]; then
   exit 1
 fi
 echo "    本地模块齐全"
+
+# 2b-2. 前端资源守卫：工作模式那两页是**运行时才读**的（app.py 的
+#       `_work_html()` / `_rope_html()` 直接 open 磁盘文件），不 import，
+#       所以上面那圈 import 守卫看不见它们 —— 漏了也不会报错，只会让
+#       用户点开工作模式看到 404。2026-10-14 真的漏过一次，补一道。
+echo "==> 校验前端页面是否都进包"
+MISSING_HTML=0
+for h in ui.html settings.html work.html rope.html; do
+  if [ -f "$h" ] && [ ! -f "$RES/$h" ]; then
+    echo "    !! 漏了前端页面: $h" >&2
+    MISSING_HTML=1
+  fi
+done
+if [ "$MISSING_HTML" = "1" ]; then
+  echo "!! 有前端页面没进包，工作模式/设置页会直接 404。请补 tools/build_app.sh 的白名单。" >&2
+  exit 1
+fi
+echo "    前端页面齐全"
 
 # 2c. venv —— 整份搬过去。它是「可重定位运行时」（自包含 libpython），
 #     里面的 python3.11 二进制用 @executable_path 找 dylib，换目录也能跑。

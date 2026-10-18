@@ -1,0 +1,46 @@
+{
+  "name": "FXseek",
+  "identifier": "com.frr688.fxseek.source",
+  "subtitle": "本地素材库 · 手机端",
+  "description": "FXseek 手机端：把电脑上的素材库带在手机上，按画面内容搜索。",
+  "iconURL": "https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/icon.png",
+  "headerURL": "",
+  "website": "https://github.com/FRr688/FXseek",
+  "tintColor": "#8B5CF6",
+  "featuredApps": [
+    "com.frr688.fxseek.mobile"
+  ],
+  "apps": [
+    {
+      "name": "FXseek",
+      "bundleIdentifier": "com.frr688.fxseek.mobile",
+      "developerName": "FRr688",
+      "subtitle": "本地素材库 + AI 检索",
+      "localizedDescription": "把电脑上的 FXseek 素材库同步到手机，按画面内容搜索图片、视频、音频和文档，支持转写与播放。",
+      "iconURL": "https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/icon.png",
+      "tintColor": "#8B5CF6",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "1.1.0",
+          "date": "2026-10-18",
+          "downloadURL": "https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa",
+          "size": 26142315,
+          "sha256": "e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b",
+          "buildVersion": 37,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      },
+      "version": "1.1.0",
+      "buildVersion": "33",
+      "size": 26140217,
+      "sha256": "3222e8bc900edc6f7d390fed777a338467c45ad6c1f305e39d315b2f5edee8a8",
+      "date": "2026-10-18T17:45:00+08:00"
+    }
+  ],
+  "news": []
+}

@@ -38,10 +38,10 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 BUSINESS = ["paths", "indexer", "embed", "ai_desc", "asr_desc", "asr_polish",
-            "aligner", "fingerprint",
+            "aligner", "mobile", "fingerprint",
             "fastsearch", "voice_intent", "recorder", "model_dl", "seed",
             "serve", "mcp_server", "mcp_agents", "tray_helper",
-            "net_util", "heif_support"]
+            "net_util", "heif_support", "eg2"]
 
 THIRD = ["webview", "AppKit", "Foundation", "AVFoundation", "PyObjCTools",
          "requests", "certifi", "numpy", "PIL", "mlx", "mlx.core", "mlx_vlm",

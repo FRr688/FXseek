@@ -44,6 +44,10 @@ try:
 except Exception:          # 清单缺失不该让窗口起不来，退回空清单（进度退化为单文件）
     MODEL_FILES, EXPECTED_SIZES, TOTAL_BYTES = [], {}, 0
 
+# 工作模式的覆盖窗（第二块 UI）。模块级只 import os/threading，
+# webview / pyobjc 全是函数内延迟导入，所以这里直接 import 不会拖慢冷启动。
+import workwin as _WORKWIN
+
 APP_TITLE = "FXseek 媒体库"   # 仅作默认值；实际标题走 _tr() 按设置语言出中/英
 
 # 主窗口默认尺寸：给素材墙留够地方（大图视图一列 300px 起步，放得下 3~4 列）
@@ -569,6 +573,47 @@ def _on_main(fn, *args):
         fn(*args)
 
 
+def _on_main_sync(fn, *args, timeout=5.0):
+    """在主线程上跑 `fn` 并**等它返回**（要拿返回值的场合）。
+
+    ★ 和 `_on_main` 的分工：那个是「丢过去就不管了」，用在关闭窗口这类
+      fire-and-forget 的场合；而注册全局热键必须拿到 `(ok, why)` 才能回给设置页
+      （失败了得让用户看见「这个键被别的软件占了」），所以这里用 Event 做一次
+      同步往返。
+
+    ★ 已经在主线程时必须**直接调用**，不能走 callAfter + wait —— 主线程自己
+      在等自己，必死锁（`done.wait()` 永远等不到那个还没机会跑的 `_wrap`）。
+    """
+    try:
+        import AppKit
+        if AppKit.NSThread.isMainThread():
+            return fn(*args)
+    except Exception:                                       # noqa: BLE001
+        return fn(*args)
+    box, done = {}, threading.Event()
+
+    def _wrap():
+        try:
+            box["v"] = fn(*args)
+        except Exception as e:                              # noqa: BLE001
+            box["e"] = e
+        finally:
+            done.set()
+
+    try:
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(_wrap)
+    except Exception as e:                                  # noqa: BLE001
+        return {"ok": False, "error": "没法把活儿丢回主线程：%s" % e}
+    if not done.wait(timeout):
+        # 超时就老实说超时。**绝不能**在拿不到结果时假装成功 —— 那样设置页会
+        # 显示「已改成 ⌥⌘G」，实际按下去毫无反应，用户只会以为功能坏了。
+        return {"ok": False, "error": "主线程正忙，热键没来得及注册，请再试一次"}
+    if "e" in box:
+        raise box["e"]
+    return box.get("v")
+
+
 def _ns_window(window):
     """拿到 pywebview 底下那个 NSWindow。
 
@@ -991,10 +1036,59 @@ _RESTORE_GRACE = 1.5       # 刚藏起来的这段时间内不响应激活通知
 
 def _restore_panel():
     """面板收起来了就唤回来（点 Dock 图标、或右键菜单「打开面板」都走这里）。"""
-    if not _QUIT.get("hidden"):
-        return
+    # ★★ 工作模式开着的时候**一律不许**把主窗叫回来。
+    #   踩过的坑：`workwin.show()` 为了让搜索框能直接打字，会调
+    #   `NSApp.activateIgnoringOtherApps_(True)`；这一下会发
+    #   `NSApplicationDidBecomeActiveNotification`，正好打在这个回调上。
+    #   若此刻 `_QUIT["hidden"]` 是 True（用户之前把面板收进过菜单栏），这里就会
+    #   `_from_tray()` → `window.show()`，**刚被收起来的主窗立刻又被摆出来** ——
+    #   用户看到的就是「设置页跟着工作模式一起出现」，而且两套 UI 叠着，搜索框的
+    #   胶囊行和主窗的胶囊行重影（被报成「排版互相挤压」和「面板一直闪」）。
+    #   工作模式下主窗必须缺席，这是硬约束，不走 Dock 唤回这条路。
+    try:
+        import workwin as _W
+        # ★ 2026-10-15 第②条：这里必须用 `engaged()` 而不是 `is_open()`。
+        #   `is_open()` 只问搜索层可不可见，而搜索层平时是收着的（暂存区那条
+        #   绳窗才是工作模式的常驻形态）—— 一旦收着，这个「不许唤回」的闸门
+        #   就形同虚设。点「收工」按钮会 makeKeyAndOrderFront（顺带激活 App），
+        #   正好走到这里，于是休闲模式主窗被摆出来，两套 UI 同时出现；
+        #   弹过一次之后 _QUIT["hidden"] 变 False，后面几次才不再弹 ——
+        #   用户看到的就是「前几次点收工会把主窗唤醒」。
+        if _W.engaged():
+            print("[launcher] 工作模式开着（engaged），忽略这次 Dock/激活唤回",
+                  flush=True)
+            # ★ 光「忽略」还不够：万一是别处（旧逻辑、系统恢复窗口）把它摆出来的，
+            #   这里顺手再收一次，保证「两套 UI 不同屏」这条硬约束不被绕开。
+            #   注意用的是 `_QUIT["window"]`（休闲模式的主窗），不是
+            #   workwin 的 `window()`（那个是工作模式的搜索层）。
+            try:
+                _mw = _QUIT.get("window")
+                if _mw is not None and not _QUIT.get("hidden"):
+                    _mw.hide()
+                    _QUIT["hidden"] = True
+                    print("[launcher] 工作模式下主窗又冒出来了，收回去", flush=True)
+            except Exception:                               # noqa: BLE001
+                pass
+            return
+    except Exception:                                       # noqa: BLE001
+        pass
     if time.time() - float(_QUIT.get("hid_at") or 0) < _RESTORE_GRACE:
         return          # 刚藏下去的那一下，别自己把自己叫回来
+    # ★ 范老板 2026-10-16：「休闲模式关掉窗口 → 切工作模式 → 切回休闲，
+    #   点程序坞图标唤不醒窗口了」。原来这里只看 `_QUIT["hidden"]` 这个标记：
+    #   这条来回切的路上标记可能被某一步清成 False，而窗口其实还藏着 ——
+    #   于是 `hidden` 为假就直接 return，Dock 点下去什么也没发生。
+    #   改成**问窗口本身**：只要它在（且不可见），就唤回来。
+    _w = _QUIT.get("window")
+    try:
+        _vis = bool(getattr(_w, "visible", True)) if _w is not None else False
+    except Exception:                                       # noqa: BLE001
+        _vis = False
+    if not _QUIT.get("hidden") and _vis:
+        return
+    if not _vis:
+        print("[launcher] Dock 唤回：窗口不可见（hidden=%s），唤回" % _QUIT.get("hidden"),
+              flush=True)
     _from_tray()
 
 
@@ -1366,6 +1460,122 @@ def _tray_keeper(port):
         _spawn_tray_helper(port)
 
 
+def _install_context_menu_hook():
+    """把右键菜单里的「拷贝/全选」放回来。
+
+    pywebview 在 cocoa.py 里有一条（非 debug 时）：
+
+        def willOpenMenu_withEvent_(self, menu, event):
+            if not _state['debug']:
+                menu.removeAllItems()
+
+    它把 WKWebView 已经建好的原生菜单**整份清空**，于是右键什么都没有 ——
+    用户选了字也拷不走（配合 text_select，两个缺一个都不行）。它的本意是
+    「别让用户看见 Reload / Back 这类网页菜单」，但连拷贝一起干掉就过了。
+
+    这里改成**黑名单**：只摘掉明确的网页导航/开发类条目，其余一律保留。
+    这么写是刻意的 —— 白名单一旦猜错 action 名，用户又会回到「拷不走」，
+    而黑名单最多是菜单里多留一项，永远不会把「拷贝」弄丢。
+
+    判断顺序：identifier（WKMenuItemIdentifier*，最可靠，不受界面语言影响）
+    → action 选择器 → 标题兜底。三条都不认识就当它是好条目留着。
+    """
+    # WebKit 内置菜单项的 identifier（macOS 上就是这些字符串）
+    DROP_IDS = {
+        "WKMenuItemIdentifierGoBack",
+        "WKMenuItemIdentifierGoForward",
+        "WKMenuItemIdentifierReload",
+        "WKMenuItemIdentifierStop",
+        "WKMenuItemIdentifierOpenLink",
+        "WKMenuItemIdentifierOpenLinkInNewWindow",
+        "WKMenuItemIdentifierOpenLinkInNewWindowWithConfiguration",
+        "WKMenuItemIdentifierOpenMediaInNewWindow",
+        "WKMenuItemIdentifierDownloadLinkedFile",
+        "WKMenuItemIdentifierDownloadMedia",
+        "WKMenuItemIdentifierShareMenu",
+        "WKMenuItemIdentifierInspectElement",
+        "WKMenuItemIdentifierShowWebInspector",
+    }
+    # 没有 identifier 时的兜底：按 action 选择器
+    DROP_ACTIONS = {
+        "reload:", "stopLoading:", "goBack:", "goForward:",
+        "orderFrontStandardAboutPanel:", "_showWebInspector:",
+    }
+    # 最后兜底：按标题（只在中英文下覆盖最常见的几个导航词）
+    DROP_TITLES = {
+        "重新加载", "重载", "返回", "前进", "停止", "检查元素", "开发人员工具",
+        "reload", "back", "forward", "stop", "inspect element",
+    }
+
+    def _should_drop(it):
+        # identifier 优先
+        try:
+            ident = it.identifier()
+        except Exception:
+            ident = None
+        if ident:
+            if str(ident) in DROP_IDS:
+                return True
+            # identifier 认得出但不在名单里 → 是 WebKit 的编辑类条目，留着
+            return False
+        # 没有 identifier（自定义/分隔线）再看 action
+        try:
+            act = str(it.action() or "")
+        except Exception:
+            act = ""
+        if act and act not in ("", "None"):
+            return act in DROP_ACTIONS
+        # 都没有就按标题兜底，认不出的一律留着
+        try:
+            title = str(it.title() or "").strip().lower()
+        except Exception:
+            title = ""
+        return title in DROP_TITLES
+
+    def _will_open_menu(self, menu, event):
+        try:
+            items = list(menu.itemArray())
+        except Exception:
+            return
+        for it in items:
+            try:
+                if it.isSeparatorItem():
+                    continue
+            except Exception:
+                pass
+            try:
+                if _should_drop(it):
+                    menu.removeItem_(it)
+            except Exception:
+                # 单项判断出错就当它该留着 —— 宁可多一项也不能少「拷贝」
+                pass
+        # 顺手清掉摘完条目后可能出现的首尾分隔线
+        try:
+            items = list(menu.itemArray())
+            for it in items:
+                if it.isSeparatorItem():
+                    menu.removeItem_(it)
+                else:
+                    break
+            items = list(menu.itemArray())
+            for it in reversed(items):
+                if it.isSeparatorItem():
+                    menu.removeItem_(it)
+                else:
+                    break
+        except Exception:
+            pass
+
+    try:
+        from webview.platforms import cocoa as _cocoa
+
+        _cocoa.BrowserView.WebKitHost.willOpenMenu_withEvent_ = _will_open_menu
+        return True
+    except Exception as e:
+        print("[launcher] 右键菜单补丁没装上：%s" % e)
+        return False
+
+
 def _install_panel_hooks(APP):
     """把「打开面板 / 隐藏面板 / 退出」三个口子交给 app.py 的 HTTP 路由。
 
@@ -1376,6 +1586,7 @@ def _install_panel_hooks(APP):
     try:
         APP.PANEL_HOOKS.update({
             "show": lambda: _from_tray(),
+            "panel_toggle": _tray_toggle_panel,
             "hide": lambda: _to_tray(_QUIT.get("window")),
             "quit": lambda: _quit_now(_QUIT.get("window")),
             # 菜单栏「设置…」：把窗口带到设置页（MCP 那一条直接跳到 MCP 那一节）。
@@ -1389,6 +1600,18 @@ def _install_panel_hooks(APP):
             # 进程、在程序坞里多亮一个图标）。
             "pick_folder": _pick_folder_native,
             "export_file": _export_file_native,
+            # ---- 工作模式 ----------------------------------------------------
+            # app.py 只管「设置里 ui_mode 是什么」和「后台冻不冻」；
+            # 窗口该藏该显全部落在这里。两边靠这几个钩子对接。
+            "ui_mode": _work_apply_mode,
+            "work_hotkey": _work_rebind_hotkey,
+            "work_hotkey_pick": _work_hotkey_pick,
+            "work_show": lambda: _work_show("界面调用"),
+            "work_hide": lambda: _work_hide("界面调用"),
+            "work_dismiss": lambda: _work_dismiss("界面调用"),
+            # 光标位置。绳窗收不到 mousemove（它是穿透点击的），「鼠标划过明信片
+            # 像拨铃铛」和「停 3 秒自动叫出搜索层」都得靠宿主转达。
+            "work_pointer": _WORKWIN.pointer_info,
         })
     except Exception as e:
         print("[launcher] 注册面板钩子失败：%s" % e)
@@ -1410,6 +1633,361 @@ def _install_panel_hooks(APP):
         print("[launcher] 原生录音已就绪（目录 %s）" % mic_dir)
     except Exception as e:
         print("[launcher] 注册录音钩子失败：%s" % e)
+
+
+def _work_cfg():
+    """读工作模式的设置（转发到 app.py，别在这儿再解析一遍）。"""
+    try:
+        import app as APP
+        return APP._work_cfg()
+    except Exception as e:                                  # noqa: BLE001
+        print("[launcher] 读工作模式设置失败：%s" % e)
+        return {"mode": "leisure", "hotkey": "", "out_dir": ""}
+
+
+def _work_show(reason=""):
+    if _WORKWIN.window() is None:
+        # 浏览器里跑 app.py 时没人注册这块窗。**这不是错误**，如实回一句，
+        # 让调用方（设置页 / 托盘）能区分「做成了」和「这里根本没有窗口」。
+        return {"ok": True, "window": False, "note": "窗口层不在（不是桌面版）"}
+    return _WORKWIN.show(reason)
+
+
+def _work_hide(reason=""):
+    if _WORKWIN.window() is None:
+        return {"ok": True, "window": False, "note": "窗口层不在（不是桌面版）"}
+    return _WORKWIN.hide(reason)
+
+
+def _work_dismiss(reason=""):
+    """只收**搜索层**，绳窗和上面的明信片留着（那是暂存区）。
+
+    和 `_work_hide`（退出整个工作模式）是两件事：Es​c / 点空白 / 1 分钟没动
+    都走这条，收完按唤醒键又能把同一批明信片叫回来接着收。
+    """
+    if _WORKWIN.window() is None:
+        return {"ok": True, "window": False, "note": "窗口层不在（不是桌面版）"}
+    return _WORKWIN.dismiss(reason)
+
+
+def _tray_toggle_panel():
+    """菜单栏图标那一下：面板开着就收进菜单栏，收着就还回来。
+
+    ★ 判据只用 `_QUIT["hidden"]` 这个**我们自己在维护**的标记，不去问
+      pywebview 的 `window.shown` —— 那个字段的语义是「**曾经**显示过没有」
+      （`first_show()` 里才 set），拿它当「此刻可见吗」用，结果就是第一次点
+      图标时 `shown` 还是 False、于是又走「显示」那一支，看着像点了没反应。
+    """
+    # 工作模式的覆盖窗在屏上：那一下先收它（它是迭在最上面的那层）。
+    try:
+        import workwin as _W
+        if _W.is_open():
+            print("[launcher] 图标左键：先收工作模式覆盖窗")
+            return _W.dismiss("图标左键")
+    except Exception:
+        pass
+    if _QUIT.get("hidden"):
+        print("[launcher] 图标左键：面板收着 → 还回来")
+        return _from_tray()
+    w = _QUIT.get("window")
+    if w is None:
+        print("[launcher] 图标左键：没有窗口句柄，改走显示")
+        return _from_tray()
+    print("[launcher] 图标左键：面板开着 → 收进菜单栏")
+    return _to_tray(w)
+
+
+def _work_apply_mode():
+    """app.py 写完 ui_mode 之后回调这里：把窗口摆成对应的样子。
+
+    app.py 那边负责「设置 + 记模式」，这里只负责窗口。分这么清楚是因为
+    命令行跑的 app.py 没有窗口，它照样要能改这个值。
+    """
+    mode = (_work_cfg().get("mode") or "leisure")
+    res = (_work_show("切到工作模式") if mode == "work"
+           else _work_hide("切回休闲模式"))
+    # ★★ 范老板 2026-10-16 第①条：「休闲模式关掉窗口 → 切工作模式 → 切回休闲，
+    #    点程序坞 FXseek 唤不醒窗口」。
+    #    根因：pywebview 每 create_window 一次都会
+    #    `app.setDelegate_(BrowserView._shared_app_delegate)`（cocoa.py:615），
+    #    **把我们那个管 applicationShouldHandleReopen 的 AppDelegate 顶掉**。
+    #    而工作模式那两层窗是**懒创建**的（第一次切工作模式才建）—— 正好在这一刻
+    #    把代理换走。此后 App 已经在前台，点 Dock 图标系统只发 reopen 这一路，
+    #    而它已经不在我们手上，于是「切过工作模式之后就再也唤不回窗口」。
+    #    修法：每次模式切换完重装一遍钩子。幂等：类只定义一次、observer 复用。
+    try:
+        _install_reopen_hook()
+        # 装完立刻验一遍：`NSApp().delegate()` 到底是不是我们那个子类。
+        # 只打「已重装」不算数 —— 代理被顶掉时 setDelegate_ 是不报错的。
+        ok = None
+        try:
+            import AppKit as _ak
+            ok = isinstance(_ak.NSApp().delegate(), _reopen_delegate_class())
+        except Exception:                                   # noqa: BLE001
+            ok = None
+        print("[launcher] 模式切换后重装 Dock 唤回钩子（%s）· 代理已归位=%s"
+              % (mode, ok), flush=True)
+    except Exception as e:                                  # noqa: BLE001
+        print("[launcher] 重装 Dock 唤回钩子失败：%s" % e, flush=True)
+    return res
+
+
+def _work_hotkey_fired():
+    """唤醒键被按下（Carbon 事件，跑在**主线程**上）。
+
+    只有工作模式下才响应 —— 用户的原话是「切换『工作模式』后，根据设置里的
+    自定义键唤醒」。休闲模式下按它什么都不该发生，否则等于给全系统加了个
+    什么都不做的热键，还白占一个组合。
+    """
+    if (_work_cfg().get("mode") or "leisure") != "work":
+        return
+    # ★ 这行是「唤醒键到底有没有收到」的唯一证据：Carbon 热键收不到合成按键
+    #   （见 hotkey.py 顶部），自动化测不了，只能靠真人按一次 + 这行日志。
+    #   flush=True 同理，不能让它卡在缓冲区里。
+    print("[launcher] ★ 唤醒键命中（人按的）", flush=True)
+    try:
+        # ★ 只「唤醒」，不「切换」：范老板 2026-10-14 明确要求
+        #   「快捷键只负责唤醒搜索框，搜索框已存在的情况下按快捷键无效」。
+        #   做成切换的话，这个键就有两种含义，按下去之前不知道会得到哪个；
+        #   而「收起来」已经有 Esc / 点空白 / 1 分钟自动收三条路，不缺这一个。
+        _WORKWIN.wake("唤醒键")
+    except Exception as e:                                  # noqa: BLE001
+        print("[launcher] 唤醒键处理失败：%s" % e)
+
+
+def _work_rebind_hotkey():
+    """设置里改了唤醒键之后重注册。返回 `{ok, error?}` 给设置页。
+
+    ★ 这条是从 **HTTP 线程**打上来的（设置页 POST /v1/work/hotkey），而
+      `InstallEventHandler` 必须挂在主线程的派发器上 —— 从 HTTP 线程直接挂
+      不会报错、只会永远收不到。所以转主线程**并等返回值**（设置页要靠它
+      显示「这个组合被别的软件占了」这类失败原因）。
+    """
+    if _WORKWIN.window() is None:
+        return {"ok": True, "window": False, "note": "窗口层不在（不是桌面版）"}
+    combo = _work_cfg().get("hotkey") or ""
+    r = _on_main_sync(_WORKWIN.bind_hotkey, combo, _work_hotkey_fired)
+    if isinstance(r, dict) and "ok" in r:
+        return r
+    ok, why = r
+    if not ok:
+        return {"ok": False, "error": why}
+    return {"ok": True, "hotkey": combo}
+
+
+# --------------------------------------------------------------------------
+# 录唤醒键（必须在**主进程**里录）
+# --------------------------------------------------------------------------
+# ★ 为什么录键不能放在菜单栏那个 tray_helper 进程里：
+#   tray_helper 是个没有窗口的辅助进程，它的 NSApplication 激活策略是
+#   **Prohibited**（实测 `activationPolicy()` == 2）。这种进程
+#   `activateIgnoringOtherApps_(True)` 是空操作、`isActive()` 永远是 False，
+#   它的窗口因此永远当不了 key window —— 键盘事件一条都收不到。之前那版把
+#   提示条和监听器都放在 tray 里，表现就是「胶囊弹出来了、按什么都没反应、
+#   也不会自己消失」。主进程本来就是有窗口的 GUI 进程（关闭确认框、关于面板
+#   都在这里 `runModalForWindow_`），录键放这儿一次就通。
+def _work_hotkey_pick():
+    """让用户按一下新的唤醒键。返回 `{ok, hotkey}` 或 `{ok:False, cancelled:True}`。"""
+    try:
+        return _on_main_sync(_work_hotkey_pick_main, timeout=40.0)
+    except Exception as e:                                  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def _work_hotkey_pick_main():
+    import AppKit as AK
+    from PyObjCTools import AppHelper
+    import hotkey as HK
+
+    W, H = 560, 62
+    win = AK.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+        AK.NSMakeRect(0, 0, W, H), AK.NSWindowStyleMaskTitled,
+        AK.NSBackingStoreBuffered, False)
+    win.setTitleVisibility_(AK.NSWindowTitleHidden)
+    win.setTitlebarAppearsTransparent_(True)
+    win.setMovableByWindowBackground_(True)
+    win.setReleasedWhenClosed_(False)
+    win.setOpaque_(False)
+    win.setBackgroundColor_(AK.NSColor.clearColor())
+    win.setLevel_(AK.NSModalPanelWindowLevel)
+    try:
+        sf = AK.NSScreen.mainScreen().visibleFrame()
+        win.setFrameOrigin_(AK.NSMakePoint(
+            sf.origin.x + (sf.size.width - W) / 2.0, sf.origin.y + 92.0))
+    except Exception:
+        win.center()
+    cv = win.contentView()
+    cv.setWantsLayer_(True)
+    host = cv
+    try:
+        fx = AK.NSVisualEffectView.alloc().initWithFrame_(cv.bounds())
+        fx.setMaterial_(AK.NSVisualEffectMaterialHUDWindow)
+        fx.setBlendingMode_(AK.NSVisualEffectBlendingModeBehindWindow)
+        fx.setState_(AK.NSVisualEffectStateActive)
+        fx.setWantsLayer_(True)
+        fx.layer().setCornerRadius_(31.0)
+        fx.layer().setMasksToBounds_(True)
+        fx.setAutoresizingMask_(AK.NSViewWidthSizable | AK.NSViewHeightSizable)
+        cv.addSubview_(fx)
+        host = fx
+    except Exception:
+        pass
+    lbl = AK.NSTextField.alloc().initWithFrame_(AK.NSMakeRect(14, 21, W - 28, 20))
+    lbl.setStringValue_(_tr("按一下新的唤醒键（单键也可以）· Esc 取消",
+                            "Press the new wake key (a bare key is fine) · Esc to cancel"))
+    lbl.setFont_(AK.NSFont.boldSystemFontOfSize_(13))
+    lbl.setTextColor_(AK.NSColor.labelColor())
+    lbl.setBezeled_(False)
+    lbl.setDrawsBackground_(False)
+    lbl.setEditable_(False)
+    lbl.setSelectable_(False)
+    lbl.setAlignment_(AK.NSTextAlignmentCenter)
+    lbl.setAutoresizingMask_(AK.NSViewWidthSizable)
+    host.addSubview_(lbl)
+
+    st = {"combo": "", "done": False, "timers": []}
+
+    def _timer(sec, fn):
+        """★ 定时器必须挂在 **modal 运行模式** 上：modal 循环里默认模式的
+        NSTimer 不会触发，用 AppHelper.callLater 会静默失效。"""
+        try:
+            t = AK.NSTimer.timerWithTimeInterval_repeats_block_(sec, False,
+                                                               lambda _t: fn())
+            AK.NSRunLoop.currentRunLoop().addTimer_forMode_(
+                t, AK.NSModalPanelRunLoopMode)
+            st["timers"].append(t)
+        except Exception:
+            pass
+
+    def _kill_timers():
+        """★ 收尾一定要把没触发的定时器**作废**：上一轮那个 8 秒兜底如果还挂在
+        运行循环上，等下一轮 modal 一开始它就会立刻 `stopModal()` —— 实测表现
+        就是「第二次点设置唤醒键，面板一闪而过、什么也没录到」（20ms 就返回）。"""
+        for t in st["timers"]:
+            try:
+                t.invalidate()
+            except Exception:
+                pass
+        st["timers"] = []
+
+    def _close():
+        try:
+            AK.NSApp().stopModal()
+        except Exception:
+            pass
+
+    def on_key(ev):
+        if st["done"]:
+            return ev
+        try:
+            kc, fl = int(ev.keyCode()), int(ev.modifierFlags())
+        except Exception:                                   # noqa: BLE001
+            return None
+        name = HK.NAME_BY_KEYCODE.get(kc)
+        if name is None:
+            return None                    # 不认识的键：吞掉，别漏给别的程序
+        mods = fl & ((1 << 20) | (1 << 19) | (1 << 18) | (1 << 17))
+        if not mods and name in ("esc", "escape"):
+            st["done"] = True
+            _close()
+            return None
+        combo = HK.from_keycode(kc, fl)
+        if not combo:
+            return None
+        st["combo"] = combo
+        st["done"] = True
+        try:
+            lbl.setStringValue_("已改成 " + (HK.display(combo) or combo))
+            lbl.setTextColor_(AK.NSColor.systemGreenColor())
+        except Exception:
+            pass
+        _timer(0.9, _close)                # 让确认文案停一下再收走
+        return None
+
+    mon = AK.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(1 << 10, on_key)
+    try:
+        # ★ 先把自己激活**并且真的等到激活完成**再 makeKey：这个 App 平时可能
+        #   根本不是活跃 App（用户是从别的前台程序点菜单栏进来的）。实测「第一次
+        #   录键必超时、第二次就好」就是这个原因 —— 第一次调用时 `isActive()` 还是
+        #   False，窗口 orderFront 了但成不了 key window，键盘根本送不进来；
+        #   等激活落地（或最多 1.2 秒）再抢焦点，第一次就能录到。
+        AK.NSApp().activateIgnoringOtherApps_(True)
+        try:
+            for _ in range(24):
+                if AK.NSApp().isActive():
+                    break
+                AK.NSApp().nextEventMatchingMask_untilDate_inMode_dequeue_(
+                    AK.NSEventMaskAny,
+                    AK.NSDate.dateWithTimeIntervalSinceNow_(0.05),
+                    AK.NSDefaultRunLoopMode, True)
+        except Exception:
+            pass
+        win.makeKeyAndOrderFront_(None)
+        try:
+            win.makeKeyWindow()
+        except Exception:
+            pass
+        _timer(8.0, _close)                # 8 秒没按就自己收走
+        AK.NSApp().runModalForWindow_(win)
+    finally:
+        try:
+            AK.NSEvent.removeMonitor_(mon)
+        except Exception:
+            pass
+        _kill_timers()
+        try:
+            win.orderOut_(None)
+        except Exception:
+            pass
+    if st["combo"]:
+        return {"ok": True, "hotkey": st["combo"]}
+    return {"ok": False, "cancelled": True}
+
+
+def _work_boot():
+    """启动时把工作模式摆到位：注册唤醒键 + 一律先按休闲模式起来。
+
+    必须在**主线程、应用循环已经跑起来之后**调（见 hotkey.py 顶部）。
+    """
+    if _WORKWIN.window() is None:
+        return
+    combo = _work_cfg().get("hotkey") or ""
+    ok, why = _WORKWIN.bind_hotkey(combo, _work_hotkey_fired)
+    # ★ flush=True：这行是排查「按唤醒键没反应」的唯一线索，而 print 到文件是
+    #   块缓冲的 —— 上次没加，日志里整行都没落盘，害我以为 _work_boot 压根没跑
+    #   （真相是 SIGTERM 下 stdio 不刷缓冲）。这种诊断信息不能靠运气。
+    print("[launcher] 唤醒键 %s：%s" % (combo or "(未设)", "已注册" if ok else why),
+          flush=True)
+    # ★ 每次启动**一律进休闲模式**，不看上次停在哪儿（范老板 2026-10-14：
+    #   「工作模式是可选模式，每次重新启动还是默认进休闲模式」）。
+    #   工作模式是一副「戴上去干活、干完摘掉」的眼镜，不是默认住处；而且它是
+    #   一块盖住整屏的透明窗，忘了自己还在工作模式里、开机就撞上整屏浮层，
+    #   比多按一次唤醒键糟糕得多。
+    #   ★ 2026-10-18 起工作模式不再暂停后台，所以这里没有「闸门要松」这回事；
+    #   仍然走 app.py 的 work_set_mode 而不是自己改设置：写盘、记模式、回调
+    #   本函数这一套必须一起发生，散在两边早晚会漏一个。
+    if (_work_cfg().get("mode") or "leisure") != "leisure":
+        try:
+            import app as APP                              # 和 _work_cfg 一样就近 import
+            APP.work_set_mode("leisure")
+        except Exception as e:                              # noqa: BLE001
+            print("[launcher] 启动归位到休闲模式失败：%s" % e, flush=True)
+    print("[launcher] 启动一律进休闲模式（ui_mode 已归位）", flush=True)
+
+def _work_reload(port):
+    """服务通了之后，确认覆盖窗的页面真加载出来了；没有就补一发。
+
+    `port` 显式传进来，不从窗口的 `original_url` 里反推 —— 端口被占时
+    `_free_port` 会换一个，两边一旦对不上，覆盖窗就指着一个没人听的端口，
+    表现是「窗口出来了、一片空白」，查起来极费劲。
+    """
+    try:
+        time.sleep(1.0)
+        # ensure_loaded 会两扇窗都查一遍（搜索窗 + 绳窗）
+        r = _WORKWIN.ensure_loaded("http://127.0.0.1:%d/work" % port)
+        print("[launcher] 窗口补加载：%r" % (r,), flush=True)
+    except Exception as e:                                  # noqa: BLE001
+        print("[launcher] 覆盖窗补加载失败：%s" % e, flush=True)
 
 
 def _tray_open_settings(qs=""):
@@ -1665,9 +2243,21 @@ def main():
     import app as APP
 
     port = _free_port(args.port)
+    print("[launcher] 选定端口 %d（--port 给的是 %d）" % (port, args.port), flush=True)
     # 记下实际监听的地址：托盘菜单里显示给用户看（MCP 连的就是这个），
     # 端口被占时 _free_port 会换一个，这时候也看得出来。
     _QUIT["api"] = "127.0.0.1:%d" % port
+    # ★★ 范老板 2026-10-16 第⑤条：「菜单栏狒狒图标出现特别慢，正常应该一秒就出现」。
+    #    原因：助手原来是在 **服务就绪之后**（`_wait_ready` 通过、窗口换到主界面）
+    #    才起的，而服务冷启动要十几二十秒（要探模型、建索引）—— 图标就只能跟着等。
+    #    但助手摆 NSStatusItem **根本不需要服务**：它只在 /health 探活和点菜单时
+    #    才跟服务说话，而且探不到**绝不自杀**（见 tray_helper 的 _watch）。
+    #    所以这里提前到「端口定下来」这一行就起，图标一秒内就位；后面那次 spawn
+    #    （服务就绪后）因为进程还活着会直接 return，幂等无副作用。
+    try:
+        _spawn_tray_helper(port)
+    except Exception as e:                                  # noqa: BLE001
+        print("[launcher] 提前起菜单栏助手失败（不影响启动）：%s" % e, flush=True)
     prep = Prep()
     api = Api(prep)
 
@@ -1679,11 +2269,26 @@ def main():
         width=520, height=430,
         # 准备窗口是固定的小窗；主界面出来后再用 pyobjc 补上可缩放（见 _tune_main_window）
         resizable=False,
+        # ★ text_select 必须显式打开：pywebview 的默认值是 False，它会给**每个**
+        #   页面注入 `body{user-select:none}`（见 webview/js/customize.js），于是
+        #   全应用文字都选不中、右键没有「拷贝」。用户报过「鼠标没法拷贝 app 上的
+        #   文字」。界面里需要「不可选中」的地方由页面自己的 CSS 兜（按钮、胶囊、
+        #   折叠块标题等），别依赖这个全局开关。
+        text_select=True,
         background_color="#0f1115" if _dark() else "#f4f5f8",
     )
     prep.bind(window)
     _QUIT["window"] = window
     _arm_page_ready(prep)
+
+    # 工作模式的覆盖窗：**必须在 webview.start() 之前登记**（pywebview 只认
+    # start 之前 create_window 的窗口）。建出来是 hidden 的 —— 默认休闲模式，
+    # 等唤醒键或设置里切过去再出现。
+    try:
+        _WORKWIN.attach_main(window)
+        _WORKWIN.create(port)
+    except Exception as e:                                  # noqa: BLE001
+        print("[launcher] 工作模式覆盖窗没建起来：%s: %s" % (type(e).__name__, e))
 
     # 关闭按钮：先问「退出还是最小化到菜单栏」（见 _on_closing）。
     window.events.closing += _on_closing
@@ -1786,6 +2391,25 @@ def main():
                 threading.Thread(target=_tray_cmd_watch,
                                  daemon=True, name="fxseek-traycmd").start()
 
+                # 工作模式：注册全局唤醒键 + 按上次的模式把窗口摆好。
+                # ★ 必须在这里（服务起来了、应用循环跑起来之后）调 ——
+                #   Carbon 的 RegisterEventHotKey 在事件循环起来之前注册是收不到事件的。
+                # ★ 而且必须**转回主线程**：watch 是本函数里另起的后台线程，而
+                #   InstallEventHandler 是往「主线程的事件派发器」上挂回调，
+                #   从别的线程挂不会报错、只是**永远收不到**（注册返回成功、
+                #   按下去没反应 —— 这种沉默失败最难查）。_on_main 会判断当前
+                #   是不是主线程，是就直接跑，不是才 callAfter。
+                _on_main(_work_boot)
+
+                # ★ 覆盖窗的**初次** load_url 会被 pywebview 静默丢掉，必须补一发：
+                #   除主窗以外的窗口是 `_create_children` 那条后台线程建的，建完
+                #   立刻 `AppHelper.callAfter(load)`，实测这一次不报错、不发请求、
+                #   contentView 永远停在空 NSView —— 表现就是「唤醒键按了，窗口出来
+                #   了，但一片空白」。等本地服务确实通了再补一次就正常。
+                #   详见 workwin.ensure_loaded() 的注释。
+                threading.Thread(target=_work_reload, args=(port,), daemon=True,
+                                 name="fxseek-workreload").start()
+
             except Exception as e:
                 print("[launcher] 切换主窗口失败：%s" % e)
 
@@ -1795,6 +2419,10 @@ def main():
     # 的意思是「每次建窗都把 WebKit 的站点数据全清一遍」（cocoa.py:637 起会调
     # removeDataOfTypes…）。搜索历史、最近上传、各种界面开关都存在 localStorage 里，
     # 用默认值等于**每开一次应用就全丢**——用户看到的现象就是「示例记录删了、重启又回来」。
+    #
+    # 右键菜单补丁必须赶在 start() **之前**装：start() 一进去就会实例化 WebKitHost，
+    # 之后再改类方法来不及（同 _install_reopen_hook 的时序要求）。
+    _install_context_menu_hook()
     webview.start(on_loaded, debug=args.debug, private_mode=False)
 
     # 窗口关掉 = 用户退出（或者在关闭确认框里选了「退出」）。

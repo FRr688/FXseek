@@ -52,19 +52,29 @@ import urllib.request
 # （launcher.py 拿它去查 APP.PANEL_HOOKS）。
 _ROUTES = {
     "show": "/v1/panel/show",
+    # ★ 路径最后一段会被 rsplit 出来当钩子名（"-"→"_"），所以这里必须写
+    #   panel-toggle 而不是 toggle —— 写成 /v1/panel/toggle 的话钩子名变成
+    #   "toggle"，PANEL_HOOKS 里没有它，直接回「只在桌面版里可用」。
+    "panel_toggle": "/v1/panel/panel-toggle",
     "hide": "/v1/panel/hide",
     "settings": "/v1/panel/settings",
     "settings_mcp": "/v1/panel/settings-mcp",
     "server_start": "/v1/server/start",
     "server_stop": "/v1/server/stop",
     "quit": "/v1/app/quit",
+    # 工作模式：菜单栏那一下单击。**单独一条「翻转」路由**，而不是让菜单先读
+    # /v1/work/state 再自己判断方向 —— 那中间隔着一次往返，用户手快连点两下会
+    # 两次都读到同一个旧值、于是同向翻两次，表现成「点了没反应」。
+    # 判断和写入都在服务端同一个函数里，单线程串行，没有这个缝。
+    "work_toggle": "/v1/work/toggle",
 }
 
 # 进程级状态：菜单每次打开都会按它重画一遍
 STATE = {"port": 0, "data_dir": "", "running": True, "mcp": None, "about": None}
 # 菜单项引用要一直拿着，否则刷新时找不到它们
 ITEMS = {}
-_KEEP = []          # 替死鬼图标 + 菜单代理，都得有人引用着
+_KEEP = []
+_STATUS = {}          # 状态栏图标和它的菜单（左键 action 要用）          # 替死鬼图标 + 菜单代理，都得有人引用着
 _PENDING_SACS = []  # 建真图标时顺手记下替死鬼，等真图标排上后统一藏掉（防透明占位堆积）
 
 # ---------------------------------------------------------------- 狒狒图标
@@ -153,7 +163,21 @@ TXT = {
         "stop": "停止服务器",
         "start": "启动服务器",
         "mcp": "MCP 状态",
-        "panel": "打开服务面板",
+        "work_on": "切换工作模式",
+        "work_off": "返回休闲模式",
+        "work_note": "工作模式：唤醒键 %s",
+        "wk_title": "工作模式",
+        "wk_set": "设置唤醒键",
+        "wk_reset": "恢复默认唤醒键",
+        "wk_cap_title": "按一下新的唤醒键",
+        "wk_cap_hint": "按一下你要的键（单键也可以）· Esc 取消",
+        "wk_cap_ok": "已改成 %s",
+        "wk_cap_bad": "这个键不能单独用：%s",
+        "wk_cap_busy": "没换成：%s",
+        "wk_idle": "搜索框自动隐藏",
+        "wk_idle_0": "不自动隐藏",
+        "wk_idle_s": "%d 秒",
+        "wk_idle_m": "%d 分钟",
         "settings": "设置…",
         "about": "关于 FXseek",
         "quit": "退出 FXseek",
@@ -190,7 +214,21 @@ TXT = {
         "stop": "Stop server",
         "start": "Start server",
         "mcp": "MCP status",
-        "panel": "Open app window",
+        "work_on": "Switch to Work Mode",
+        "work_off": "Back to Leisure Mode",
+        "work_note": "Work Mode: wake key %s",
+        "wk_title": "Work Mode",
+        "wk_set": "Set Wake Key",
+        "wk_reset": "Reset Wake Key",
+        "wk_cap_title": "Press the new wake key",
+        "wk_cap_hint": "Press the key you want (single key is fine) · Esc to cancel",
+        "wk_cap_ok": "Changed to %s",
+        "wk_cap_bad": "That key can't be used alone: %s",
+        "wk_cap_busy": "Failed: %s",
+        "wk_idle": "Auto-hide Search Box",
+        "wk_idle_0": "Never",
+        "wk_idle_s": "%d sec",
+        "wk_idle_m": "%d min",
         "settings": "Settings…",
         "about": "About FXseek",
         "quit": "Quit FXseek",
@@ -237,6 +275,74 @@ def _lang():
             return "en" if (json.load(f) or {}).get("lang") == "en" else "zh"
     except Exception:
         return "zh"
+
+
+def _setting(key, default=None):
+    """读一条设置。跟 `_lang()` 一样走文件 —— 服务停了菜单也得能画出来。
+
+    单独读一次文件而不是缓存：菜单打开频率很低（人手点），而设置页就在隔壁，
+    可能刚改过（比如刚切了模式、刚换了唤醒键），缓存反而会让菜单显示旧状态。
+    """
+    d = STATE.get("data_dir") or ""
+    if not d:
+        return default
+    try:
+        with open(os.path.join(d, "settings.json"), encoding="utf-8") as f:
+            v = (json.load(f) or {}).get(key)
+        return default if v is None else v
+    except Exception:
+        return default
+
+
+def _work_is_on():
+    return str(_setting("ui_mode", "leisure")).strip().lower() == "work"
+
+
+def _work_key_display():
+    """把 `alt+cmd+space` 这种存法翻成 `⌥⌘Space` 给人看。
+
+    app.py 里已经有一份 `_work_hotkey_display`，但那是主程序的函数 —— 托盘助手是
+    **独立进程**，服务停掉时 import 不到它，所以这里得有一份自己的。只做显示，
+    不做规范化（规范化只发生在设置页写入那一次）。
+    """
+    hk = str(_setting("work_hotkey", "") or "").strip().lower()
+    if not hk:
+        return ""
+    names = {"cmd": "⌘", "alt": "⌥", "ctrl": "⌃", "shift": "⇧"}
+    parts = [names.get(p, p) for p in hk.split("+") if p]
+    if parts and parts[-1] in ("space", "空格"):
+        parts[-1] = "Space"
+    return "".join(parts)
+
+
+# 自动收的候选秒数（0 = 不自动收）。放模块级，菜单构建和标签渲染都要用。
+_IDLE_CHOICES = (0, 10, 30, 60, 180)
+
+
+def _idle_label(sec):
+    """0 → 不自动隐藏；<60 → N 秒；否则 N 分钟。"""
+    sec = int(sec or 0)
+    if sec <= 0:
+        return _t("wk_idle_0")
+    if sec < 60:
+        return _t("wk_idle_s", sec)
+    return _t("wk_idle_m", sec // 60)
+
+
+def _apply_group(work_on, items=None):
+    """按当前模式互斥显示两组菜单项。
+
+    `items` 传 None 时用 `ITEMS` 里那份名单（菜单还没建完时会踩空，所以建菜单
+    那次必须把两组的名单显式传进来）。
+    """
+    it = items or ITEMS
+    try:
+        for x in it.get("_work", []):
+            x.setHidden_(not work_on)
+        for x in it.get("_leisure", []):
+            x.setHidden_(bool(work_on))
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 切菜单分组失败：%s" % e)
 
 
 def _t(key, *a):
@@ -350,6 +456,347 @@ def _app_version():
     except Exception:
         pass
     return ""
+
+
+# ==========================================================================
+# 唤醒键：菜单里点一下 → 直接开始录（**没有设置面板**）
+# ==========================================================================
+# ★ 范老板 2026-10-15 第⑦条：「快捷键设置不要单独设置面板，把功能做在菜单栏即可，
+#   简单明了美观」；紧接着又补一句（m28310）：「快捷键是用户自定义啊，不是让你改成
+#   默认几个」。
+#   所以两头都得松：**不能**开一扇设置面板，也**不能**只给几个预设键。入口就留在
+#   菜单栏（「设置唤醒键…」），点一下直接进入「录键」状态，用户按什么就是什么。
+#
+#   录键为什么不在菜单里做：NSMenu 打开时跑的是它自己的事件循环，键盘事件先被菜单
+#   拿去（方向键导航 / type-select），局部监听器收不到几个键。所以点下菜单项后
+#   **菜单自己收起**，我们在屏幕底部挂一条提示胶囊（不是窗口：无标题栏、点不到、
+#   不抢焦点，几秒就走），同时挂 NSEvent 的局部 + 全局监听器：
+#     · 局部监听器：本进程是活跃 App 时收键 —— 正常路径就是这条
+#     · 全局监听器：焦点在别的 App 上也收得到（要辅助功能权限）。拿不到也不影响
+#       主路径，只是少了这层便利。
+#   Esc 取消，6 秒没按也取消。
+_KC_NAMES = None
+
+
+def _kc_names():
+    """keycode → 键名。优先用 hotkey.py 那一张表（和服务端解析同一份，不会出现
+    「这边录出 `return`、那边只认 `enter`」）；import 不到就退回本地小表。"""
+    global _KC_NAMES
+    if _KC_NAMES is not None:
+        return _KC_NAMES
+    tbl = {}
+    try:
+        import hotkey as _hk
+        tbl = dict(getattr(_hk, "NAME_BY_KEYCODE", {}) or {})
+    except Exception:
+        pass
+    if not tbl:
+        tbl = {0: "a", 11: "b", 8: "c", 2: "d", 14: "e", 3: "f", 5: "g", 4: "h",
+               34: "i", 38: "j", 40: "k", 37: "l", 46: "m", 45: "n", 31: "o",
+               35: "p", 12: "q", 15: "r", 1: "s", 17: "t", 32: "u", 9: "v",
+               13: "w", 7: "x", 16: "y", 6: "z",
+               29: "0", 18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6",
+               26: "7", 28: "8", 25: "9", 49: "space", 36: "return", 48: "tab",
+               51: "delete", 53: "esc", 123: "left", 124: "right", 125: "down",
+               126: "up", 122: "f1", 120: "f2", 99: "f3", 118: "f4", 96: "f5",
+               97: "f6", 98: "f7", 100: "f8", 101: "f9", 109: "f10",
+               103: "f11", 111: "f12", 105: "f13", 107: "f14", 113: "f15"}
+    _KC_NAMES = tbl
+    return tbl
+
+
+# 这些键单独按（不带修饰键）没意义：注册了会把全系统这个键吞掉。
+# 和服务端 hotkey.py 的 `_WEAK_ALONE` 保持同一份口径。
+_WEAK_ALONE = (set("abcdefghijklmnopqrstuvwxyz0123456789`-=[]\\;',./ ") |
+               {"space", "tab", "return", "enter", "delete", "backspace",
+                "esc", "escape", "forwarddelete"})
+
+# NSEventModifierFlag 的位 → 存储用的名字（次序按 Apple 的 ⌃⌥⇧⌘）。
+_MOD_BITS = (("ctrl", 1 << 18), ("alt", 1 << 19),
+             ("shift", 1 << 17), ("cmd", 1 << 20))
+
+
+def _hotkey_label(combo):
+    """`"alt+cmd+space"` → `"⌥⌘Space"`。优先用 hotkey.py 那份（跟服务端同一套符号
+    次序），import 不到就退回本地小表 —— 托盘助手是独立进程，服务没起来时它也得
+    能把提示画出来。"""
+    raw = str(combo or "").strip().lower()
+    try:
+        import hotkey as _hk
+        d = _hk.display(raw)
+        if d:
+            return d
+    except Exception:
+        pass
+    sym = {"ctrl": "⌃", "alt": "⌥", "shift": "⇧", "cmd": "⌘"}
+    parts = [sym.get(x, x) for x in raw.split("+") if x]
+    if parts and parts[-1] in ("space", "空格"):
+        parts[-1] = "Space"
+    return "".join(parts) or combo
+
+
+# ---- 录键时屏幕底部那条提示胶囊 -------------------------------------------
+# ★ 它**不是**窗：无标题栏、不抢焦点、`setIgnoresMouseEvents_` 点不到，几秒自己走。
+#   范老板要去掉的是「设置面板」，不是反馈 —— 录键时必须有东西告诉用户
+#   「现在按键盘」和「录成了 / 没录成」。
+_HUD = {"win": None, "label": None, "token": 0, "cls": None}
+
+
+def _hud_cls():
+    """能当 key window 的 NSWindow 子类。
+
+    ★ 这是「快捷键设置不了」的根因，记牢：
+      `NSEvent.addGlobalMonitorForEventsMatchingMask_` 想收到**别的 App 的**
+      键盘事件，必须先拿到「辅助功能 / 输入监控」权限；没授权时它一枚按键都
+      收不到（不报错，静悄悄地什么都不发生）。而 `addLocalMonitor…` 只看得见
+      **送进本进程**的事件 —— tray 是个没有 key window 的常驻小进程，键盘
+      全给了当前前台 App，所以它同样收不到。
+      结果就是：菜单点了「设置唤醒键…」、提示条也弹出来了，用户按什么键都
+      没反应，6 秒后提示条自己收走 —— 用户看到的就是「快捷键设置不了」。
+      办法是录键期间把本 App 激活，并让提示条这个无边框窗能成为 key window，
+      键盘事件就会送进我们进程，局部监听器立刻收得到（不需要任何系统权限）。
+      NSWindow 默认 `canBecomeKeyWindow` 是 False（无边框窗返回 False），
+      所以必须覆写。
+      """
+    import AppKit as AK
+    if not _HUD.get("cls"):
+        class _HudWindow(AK.NSWindow):
+            def canBecomeKeyWindow(self):
+                return True
+
+            def canBecomeMainWindow(self):
+                return True
+        _HUD["cls"] = _HudWindow
+    return _HUD["cls"]
+
+
+def _hud_focus():
+    """录键期间：激活本 App + 让提示条成为 key window，键盘才会送进来。"""
+    import AppKit as AK
+    try:
+        AK.NSApp.activateIgnoringOtherApps_(True)
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 激活 App 失败：%s" % e)
+    try:
+        if _HUD["win"]:
+            _HUD["win"].makeKeyAndOrderFront_(None)
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 提示条拿不到键盘焦点：%s" % e)
+
+
+def _hud_make():
+    import AppKit as AK
+    # ★ 用 Titled 而不是 Borderless：无边框窗 `canBecomeKeyWindow` 天然是 False，
+    #   拿不到键盘焦点 = 录键永远收不到按键。标题栏用「隐藏 + 透明」做掉，
+    #   视觉上仍然是原来那枚干净胶囊。
+    w = _hud_cls().alloc().initWithContentRect_styleMask_backing_defer_(
+        AK.NSMakeRect(0, 0, 560, 62), AK.NSWindowStyleMaskTitled,
+        AK.NSBackingStoreBuffered, False)
+    w.setTitleVisibility_(AK.NSWindowTitleHidden)
+    w.setTitlebarAppearsTransparent_(True)
+    w.setMovableByWindowBackground_(True)
+    w.setOpaque_(False)
+    w.setBackgroundColor_(AK.NSColor.clearColor())
+    w.setLevel_(AK.NSStatusWindowLevel)
+    w.setIgnoresMouseEvents_(True)
+    w.setReleasedWhenClosed_(False)
+    cv = w.contentView()
+    cv.setWantsLayer_(True)
+    host = cv
+    try:
+        fx = AK.NSVisualEffectView.alloc().initWithFrame_(cv.bounds())
+        fx.setMaterial_(AK.NSVisualEffectMaterialHUDWindow)
+        fx.setBlendingMode_(AK.NSVisualEffectBlendingModeBehindWindow)
+        fx.setState_(AK.NSVisualEffectStateActive)
+        fx.setWantsLayer_(True)
+        fx.layer().setCornerRadius_(31.0)
+        fx.layer().setMasksToBounds_(True)
+        fx.setAutoresizingMask_(AK.NSViewWidthSizable | AK.NSViewHeightSizable)
+        cv.addSubview_(fx)
+        host = fx
+    except Exception:
+        pass
+    # ★ 范老板 2026-10-15 第①条：提示条位置要整、文字要在胶囊里居中。
+    #   NSTextField 默认把单行文字画在 frame 的**顶部**，最初那版文字就贴着
+    #   胶囊上沿、下面空一大截。这里给一个 20px 高、上下留白的 frame 把它居中。
+    lb = AK.NSTextField.alloc().initWithFrame_(
+        AK.NSMakeRect(14, 21, 560 - 28, 20))
+    lb.setBezeled_(False)
+    lb.setDrawsBackground_(False)
+    lb.setEditable_(False)
+    lb.setSelectable_(False)
+    lb.setAlignment_(AK.NSTextAlignmentCenter)
+    lb.setTextColor_(AK.NSColor.whiteColor())
+    lb.setFont_(AK.NSFont.boldSystemFontOfSize_(14.5))
+    lb.setAutoresizingMask_(AK.NSViewWidthSizable)
+    host.addSubview_(lb)
+    _HUD["win"] = w
+    _HUD["label"] = lb
+    _KEEP.extend([w, lb])
+    return w, lb
+
+
+def _hud_hide():
+    try:
+        if _HUD["win"]:
+            _HUD["win"].orderOut_(None)
+    except Exception:
+        pass
+
+
+def _hud_show(text, secs=0.0):
+    """屏幕底部中间显示一条提示；`secs` > 0 时到点自动收（用 token 防止旧定时器
+    把新提示收掉）。"""
+    import AppKit as AK
+    from PyObjCTools import AppHelper
+    try:
+        w, lb = (_HUD["win"], _HUD["label"]) if _HUD["win"] else _hud_make()
+        lb.setStringValue_(str(text))
+        scr = AK.NSScreen.mainScreen()
+        f = scr.visibleFrame() if scr else AK.NSMakeRect(0, 0, 1440, 900)
+        sz = w.frame().size
+        w.setFrameOrigin_(AK.NSMakePoint(
+            f.origin.x + (f.size.width - sz.width) / 2.0, f.origin.y + 92.0))
+        w.orderFrontRegardless()
+        _HUD["token"] += 1
+        if secs:
+            _tok = _HUD["token"]
+            AppHelper.callLater(float(secs),
+                                lambda: _hud_hide() if _HUD["token"] == _tok else None)
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 提示没画出来：%s" % e)
+
+
+def _combo_from(kc, flags):
+    """`(keycode, NSEventModifierFlag)` → `(combo, err)`。
+
+    `err` 为 `None` 表示可用；`"unknown"` 是这个键不好认。抽成纯函数是为了能单独
+    测（合成按键打不进 NSEvent 监听器，只能把这段逻辑拿开测）。
+    """
+    names = [n for n, b in _MOD_BITS if flags & b]
+    name = _kc_names().get(int(kc))
+    if not name:
+        return None, "unknown"
+    # ★ 范老板 2026-10-15：「快捷键不要做任何限制」。单键（含单个字母/数字/空格）
+    # 一律放行 —— 用户按什么就是什么。代价是注册单键后那个键会被全系统吞掉，
+    # 这是用户自己的选择，不由我们替他挡。
+    return "+".join(names + [name]), None
+
+
+def _hotkey_record():
+    """开始录唤醒键：用户按什么就是什么，录到就 POST 给主程序。
+
+    局部 + 全局两个监听器都挂，第一个被按下的组合胜出（`done` 上锁）。
+    `_hotkey_record._busy` 防重入：连点两次菜单项不会挂两套监听器。
+    """
+    import AppKit as AK
+    from PyObjCTools import AppHelper
+
+    if _hotkey_record._busy:
+        return
+    _hotkey_record._busy = True
+    st = {"done": False, "mons": []}
+
+    def stop():
+        for m in st["mons"]:
+            try:
+                AK.NSEvent.removeMonitor_(m)
+            except Exception:
+                pass
+        st["mons"] = []
+        _hotkey_record._busy = False
+
+    def finish(combo=None, tip=None):
+        if st["done"]:
+            return
+        st["done"] = True
+        stop()
+        if combo:
+            try:
+                r = _http(STATE["port"], "/v1/work/hotkey",
+                          {"hotkey": combo}, method="POST", timeout=4.0)
+            except Exception as e:                          # noqa: BLE001
+                r = {"ok": False, "error": str(e)}
+            if isinstance(r, dict) and r.get("ok"):
+                st["ok"] = True
+                _hud_show(_t("wk_cap_ok", r.get("hotkey_display")
+                             or _hotkey_label(combo)), 0)
+            else:
+                msg = (r or {}).get("error") if isinstance(r, dict) else ""
+                _hud_show(_t("wk_cap_busy", msg or "?"), 0)
+        elif tip:
+            _hud_show(tip, 0)
+        try:
+            AK.NSApp().stopModal()          # 放 runModalForWindow_ 回来
+        except Exception:
+            pass
+        cb = _STATUS.get("paint")
+        if cb:
+            cb()
+
+    def on_key(ev):
+        try:
+            kc = int(ev.keyCode())
+            flags = int(ev.modifierFlags())
+            if kc == 53 and not (flags & (1 << 17 | 1 << 18 | 1 << 19 | 1 << 20)):
+                finish()                                    # Esc 取消
+                return ev
+            combo, err = _combo_from(kc, flags)
+            if err == "unknown":
+                return ev
+            finish(combo)
+            return ev
+        except Exception as e:                              # noqa: BLE001
+            print("[tray] 录键出错：%s" % e)
+            finish()
+            return ev
+
+    try:
+        st["mons"].append(AK.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            AK.NSEventMaskKeyDown, on_key))
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 局部监听器没挂上：%s" % e)
+    try:
+        st["mons"].append(AK.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+            AK.NSEventMaskKeyDown, on_key))
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 全局监听器没挂上（不影响主路径）：%s" % e)
+    _hud_show("%s：%s" % (_t("wk_cap_title"), _t("wk_cap_hint")), 0)
+    win = _HUD["win"]
+    try:
+        win.setLevel_(AK.NSModalPanelWindowLevel)
+        AK.NSApp().activateIgnoringOtherApps_(True)
+        win.makeKeyAndOrderFront_(None)
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 录键窗没能拿到焦点：%s" % e)
+    # ★ 超时也得跑在 **modal 模式** 下：modal 循环里默认模式的 NSTimer 根本不
+    #   会触发，`AppHelper.callLater(6.0, finish)` 会静默失效（这正是上一版
+    #   「按了没反应、面板也不自己走」的一半原因）。
+    try:
+        t = AK.NSTimer.timerWithTimeInterval_repeats_block_(
+            8.0, False, lambda _t: finish())
+        AK.NSRunLoop.currentRunLoop().addTimer_forMode_(
+            t, AK.NSModalPanelRunLoopMode)
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] 录键超时定时器没挂上：%s" % e)
+    try:
+        AK.NSApp().runModalForWindow_(win)      # 阻塞到 stopModal
+    except Exception as e:                                  # noqa: BLE001
+        print("[tray] modal 循环没跑起来：%s" % e)
+    finally:
+        try:
+            win.setLevel_(AK.NSStatusWindowLevel)
+        except Exception:
+            pass
+    # 录成功就让「已改成 ⌥⌘J」停一下再收走；取消/失败立刻收。
+    if st.get("ok"):
+        AppHelper.callLater(1.1, _hud_hide)
+    else:
+        _hud_hide()
+
+
+_hotkey_record._busy = False
+
 
 
 def _about_rows():
@@ -718,6 +1165,46 @@ def main():
         mi.setTarget_(target)
         return mi
 
+    def _style_work_item(mi, title, symbol=""):
+        """工作模式那两项（切换 / 返回）的统一外观：**主色 + 加粗 + 图标**。
+
+        ★ 范老板 2026-10-15 第⑤条：「『切换工作模式』『返回休闲模式』按钮采用
+          合理的样式高亮醒目显示」。这两项干的是「整个 App 换一套界面」的大事，
+          原来却和「关于 FXseek」长得一模一样，混在菜单里根本找不到。
+        ★ 为什么是 attributed title 而不是 _strong_item 那种自定义视图：
+          自定义视图是给**点不动**的状态行用的（还得自己把点击转成动作）；
+          这两项必须能点。而**启用态**的菜单项会照 attributed title 里的前景色
+          如实渲染（只有禁用态才被系统统一压暗，见 _strong_item 那段教训），
+          所以主色 + 加粗对可点项是有效的。
+        ★ 标题会随模式变，而 `setTitle_` 会把 attributed title 顶掉，所以每次
+          重设标题都得重新套一遍这个函数 —— 别在别处直接 setTitle_ 它俩。
+        """
+        try:
+            base = AppKit.NSFont.menuFontOfSize_(0)
+            mi.setAttributedTitle_(AppKit.NSAttributedString.alloc()
+                                   .initWithString_attributes_(title, {
+                                       AppKit.NSFontAttributeName:
+                                           AppKit.NSFont.boldSystemFontOfSize_(
+                                               base.pointSize()),
+                                       AppKit.NSForegroundColorAttributeName:
+                                           AppKit.NSColor.controlAccentColor(),
+                                   }))
+        except Exception:                                   # noqa: BLE001
+            try:
+                mi.setTitle_(title)
+            except Exception:                               # noqa: BLE001
+                pass
+        if symbol:
+            try:
+                img = (AppKit.NSImage
+                       .imageWithSystemSymbolName_accessibilityDescription_(
+                           symbol, title))
+                if img is not None:
+                    mi.setImage_(img)
+            except Exception:                               # noqa: BLE001
+                pass
+        return mi
+
     def _paint():
         """按当前状态把菜单各项的标题 / 颜色 / 可用性刷一遍。
 
@@ -737,12 +1224,39 @@ def main():
         ITEMS["toggle"].setTitle_(_t("stop") if running else _t("start"))
         ITEMS["web"].setTitle_(_t("web"))
         ITEMS["mcp"].setTitle_(_t("mcp"))
-        ITEMS["panel"].setTitle_(_t("panel"))
+        # 工作模式那两项：模式可能在别处改的（快捷键、设置页、甚至命令行），
+        # 所以每次开菜单都按磁盘上的真值重画一遍，不信任内存里的旧状态。
+        # ★ 第⑤条：这两项是高亮项（主色+加粗+图标），而 `setTitle_` 会把
+        #   attributed title 顶掉，所以标题变了必须走 _style_work_item 重套一遍，
+        #   不能直接 setTitle_。图标跟着状态走：能「返回休闲」时给房子，
+        #   能「切进工作」时给公文包。
+        _on = _work_is_on()
+        _style_work_item(ITEMS["work"],
+                         _t("work_off") if _on else _t("work_on"),
+                         "house" if _on else "briefcase")
+        ITEMS["work"].setEnabled_(running)   # 服务没跑：切模式发不出请求，先禁用
+        ITEMS["work_back"].setEnabled_(running)
+        # 面板整组换（工作模式那套只有：设置唤醒键 / 恢复默认 / 返回休闲 / 退出）
+        _apply_group(_on)
+        ITEMS["wk_title"].setTitle_(_t("wk_title"))
+        # ★ 唤醒键这一项现在只显示**当前键**（点了就直接进录键态，见 setWorkKey_）。
+        #   把当前值写在标题里，用户不点开也知道现在用的是哪个 —— 菜单栏里就这点
+        #   地方，比再拆一层子菜单干净。
+        _hcur = (str(_setting("work_hotkey", "") or "").strip().lower()
+                 or "alt+cmd+space")
+        ITEMS["wk_set"].setTitle_("%s…   %s" % (_t("wk_set"), _hotkey_label(_hcur)))
+        ITEMS["wk_reset"].setTitle_(_t("wk_reset"))
+        _style_work_item(ITEMS["work_back"], _t("work_off"), "house")
+        ITEMS["wk_idle"].setTitle_(_t("wk_idle"))
+        _cur = int(_setting("work_idle_sec", 60) or 0)
+        _sub = ITEMS["wk_idle"].submenu()
+        if _sub:
+            for _it in _sub.itemArray():
+                _it.setState_(1 if int(_it.representedObject() or 0) == _cur else 0)
         ITEMS["settings"].setTitle_(_t("settings"))
         ITEMS["about"].setTitle_(_t("about"))
         ITEMS["quit"].setTitle_(_t("quit"))
         ITEMS["web"].setEnabled_(running)
-        ITEMS["panel"].setEnabled_(running)
         _fill_mcp(ITEMS["mcp"].submenu())
 
     def _set_title(item, text, color): 
@@ -825,8 +1339,104 @@ def main():
                 print("[tray] 启动服务器 → %s" % res)
             _paint()
 
+        def iconClick_(self, sender):
+            """状态栏图标被点：**左键切面板、右键弹菜单**。
+
+            左键走的是「面板开关」而不是「打开 web 页」：休闲模式切主窗口，
+            工作模式切那块覆盖窗（`work_toggle` 自己认当前模式）。
+            """
+            try:
+                ev = AppKit.NSApp.currentEvent()
+                right = bool(ev and (
+                    ev.type() == AppKit.NSEventTypeRightMouseUp or
+                    (ev.type() == AppKit.NSEventTypeLeftMouseUp and
+                     (ev.modifierFlags() & AppKit.NSEventModifierFlagControl))))
+            except Exception:
+                right = False
+            if right:
+                m = _STATUS.get("menu")
+                it = _STATUS.get("item")
+                if m is not None and it is not None:
+                    _paint()
+                    it.popUpMenu_(m)
+                return
+            # 左键：工作模式切覆盖窗，休闲模式切主窗口。
+            # ★ 兜底：万一这条路走不通（服务没起、路由没接上），就把菜单弹出来 ——
+            #   宁可多一步，也不能让用户点了图标却什么都不发生（那看着就是「坏了」）。
+            key = "work_toggle" if _work_is_on() else "panel_toggle"
+            ok, res = _cmd(key)
+            print("[tray] 图标左键 → %s %s" % (key, res))
+            if not ok:
+                m = _STATUS.get("menu"); it = _STATUS.get("item")
+                if m is not None and it is not None:
+                    _paint()
+                    it.popUpMenu_(m)
+
         def showPanel_(self, sender):
             print("[tray] 打开服务面板 → %s" % (_cmd("show")[1],))
+
+        def toggleWork_(self, sender):
+            """切模式。主程序那边会顺手把窗口换掉（后台不再暂停）。
+
+            ★ 这里**不去猜切完之后是什么模式**、也不乐观地改 STATE —— 翻转是在
+              服务端定的（见 app.py 的 work_toggle），猜错就会让菜单显示反的。
+              `_paint()` 本来就每次重读磁盘，所以让它自己去读就行。
+            """
+            ok, res = _cmd("work_toggle")
+            print("[tray] 切换工作模式 → %s" % (res,))
+            if ok:
+                _paint()
+
+        def setWorkKey_(self, sender):
+            """「设置唤醒键…」—— 菜单收起后**直接开始录**，按什么键就是什么键。
+
+            没有设置面板，也没有固定候选（范老板 m28310）。屏幕底部会先浮一条
+            提示胶囊，键盘事件由 `_hotkey_record()` 里挂的局部 + 全局监听器接。
+            """
+            # ★ 录键**不在这个进程里做**：tray_helper 是没有窗口的辅助进程，
+            #   激活策略是 Prohibited，窗口当不了 key window，键盘事件一条都
+            #   收不到（踩过：胶囊弹出来、按什么都没反应）。改成让主进程录。
+            def _go():
+                try:
+                    r = _http(STATE["port"], "/v1/work/hotkey/pick",
+                              {}, method="POST", timeout=45.0)
+                except Exception as e:                      # noqa: BLE001
+                    print("[tray] 录唤醒键失败：%s" % e)
+                    return
+                if isinstance(r, dict) and r.get("ok"):
+                    print("[tray] 唤醒键已改成 %s" % r.get("hotkey_display")
+                          or r.get("hotkey"))
+                elif isinstance(r, dict) and r.get("cancelled"):
+                    print("[tray] 录唤醒键：用户取消")
+                else:
+                    print("[tray] 录唤醒键没成：%s"
+                          % ((r or {}).get("error") if isinstance(r, dict) else r))
+                _paint()
+            threading.Thread(target=_go, daemon=True).start()
+
+        def setIdle_(self, sender):
+            """把「搜索框自动隐藏」的秒数写回设置。"""
+            try:
+                sec = int(sender.representedObject() or 0)
+            except Exception:                           # noqa: BLE001
+                sec = 60
+            try:
+                r = _http(STATE["port"], "/v1/work/idle", {"sec": sec},
+                          method="POST", timeout=4.0)
+                print("[tray] 自动隐藏 → %ss：%s" % (sec, r))
+            except Exception as e:                      # noqa: BLE001
+                print("[tray] 改自动隐藏没成：%s" % e)
+            _paint()
+
+        def resetWorkKey_(self, sender):
+            """恢复默认唤醒键（⌥⌘Space）。"""
+            try:
+                r = _http(STATE["port"], "/v1/work/hotkey",
+                          {"hotkey": "alt+cmd+space"}, method="POST", timeout=4.0)
+                print("[tray] 恢复默认唤醒键 → %s" % (r,))
+            except Exception as e:                          # noqa: BLE001
+                print("[tray] 恢复默认唤醒键没成：%s" % e)
+            _paint()
 
         def openSettings_(self, sender):
             print("[tray] 设置 → %s" % (_cmd("settings")[1],))
@@ -856,6 +1466,12 @@ def main():
     delegate = MenuDelegate.alloc().init()
     _KEEP.extend([target, delegate])
     ITEMS["target"] = target
+    # ★ `_paint`（在上面，比这里早定义）要在菜单打开时**重建**唤醒键二级菜单，
+    #   重建就得重新绑 target。它够不着这个局部变量，所以顺手放一份到 _STATUS 里。
+    _STATUS["target"] = target
+    # ★ 录键是异步的（等用户按键），录完得重画菜单标题。`_hotkey_record()` 在模块
+    #   层，够不着这里的 `_paint`，所以也放一份进 _STATUS。
+    _STATUS["paint"] = _paint
 
 
     def _make_item(frame_idx=0):
@@ -902,33 +1518,113 @@ def main():
         ITEMS["status"] = _strong_item(_t("status_on", args.port),
                                        _dim(AppKit.NSColor.systemGreenColor()), bold=False)
         menu.addItem_(ITEMS["status"])
-        menu.addItem_(MI.separatorItem())
+        ITEMS["sep_head"] = MI.separatorItem()
+        menu.addItem_(ITEMS["sep_head"])
 
         ITEMS["web"] = _action(_t("web"), b"openWeb:", target)
         ITEMS["toggle"] = _action(_t("stop"), b"toggleServer:", target)
         menu.addItem_(ITEMS["web"])
         menu.addItem_(ITEMS["toggle"])
-        menu.addItem_(MI.separatorItem())          # ← MCP 状态自成一组
+        ITEMS["sep_mcp"] = MI.separatorItem()      # ← MCP 状态自成一组
+        menu.addItem_(ITEMS["sep_mcp"])
 
         ITEMS["mcp"] = MI.alloc().initWithTitle_action_keyEquivalent_(_t("mcp"), None, "")
         ITEMS["mcp"].setSubmenu_(AppKit.NSMenu.alloc().init())
         menu.addItem_(ITEMS["mcp"])
-        menu.addItem_(MI.separatorItem())          # ← 打开服务面板自成一组
-
-        ITEMS["panel"] = _action(_t("panel"), b"showPanel:", target)
-        menu.addItem_(ITEMS["panel"])
-        menu.addItem_(MI.separatorItem())
+        ITEMS["sep_work"] = MI.separatorItem()     # ← 工作模式自成一组
+        menu.addItem_(ITEMS["sep_work"])
+        # ── 工作模式（1.11 预览版）───────────────────────────────────────
+        # 用户原话是「在菜单栏单击可以切换」。菜单栏图标左键必然弹菜单（系统行为，
+        # 改不掉），所以那「一下单击」就落在菜单里这一项上 —— **一步到位**，不套
+        # 二级菜单：反正整台机器上同一时刻只有一种模式，做成开关比做成选择器少一次
+        # 点击，也更不容易点错。标题直接写成动作（「切换工作模式」/「返回休闲模式」）
+        # 而不是状态 + 勾选，因为点完菜单就收了，勾选根本来不及看。
+        ITEMS["work"] = _style_work_item(
+            _action(_t("work_off") if _work_is_on() else _t("work_on"),
+                    b"toggleWork:", target),
+            _t("work_off") if _work_is_on() else _t("work_on"),
+            "house" if _work_is_on() else "briefcase")
+        menu.addItem_(ITEMS["work"])
+        # ★ 2026-10-15 第⑤条：范老板「删除菜单栏『工作模式：唤醒键…』小字」。
+        #   原来这里挂过一条灰色说明项 `work_note`（"工作模式：唤醒键 ⌘D"），
+        #   工作面板里还有一条一模一样的 `wk_note`。两处都删干净了 —— 唤醒键是
+        #   「设置一次就不用再管」的东西，常驻一行小字纯属噪音，真要看就打开
+        #   「设置唤醒键…」那个二级面板，那里本来就写着当前键。
+        ITEMS["sep_leisure_end"] = MI.separatorItem()
+        menu.addItem_(ITEMS["sep_leisure_end"])
 
         ITEMS["settings"] = _action(_t("settings"), b"openSettings:", target, ",")
         ITEMS["about"] = _action(_t("about"), b"aboutApp:", target)
         menu.addItem_(ITEMS["settings"])
         menu.addItem_(ITEMS["about"])
-        menu.addItem_(MI.separatorItem())
+        ITEMS["sep_common"] = MI.separatorItem()
+        menu.addItem_(ITEMS["sep_common"])
+
+        # ══════════════════════════════════════════════════════════════════
+        # 工作模式那一套（范老板 2026-10-14 要求）
+        #
+        # 「点菜单栏 → 面板整个换成另一个新面板，只有：设置快捷键按钮、
+        #   刷新还原圆钮、返回休闲模式、退出 FXseek」。
+        #
+        # ★ 做法是**同一个 NSMenu 里放两组 item，靠 setHidden_ 互斥**，而不是
+        #   模式一变就 `setMenu_` 换一个。换菜单要重建全部 item，而状态行、
+        #   MCP 子菜单这些是带自定义视图的（_strong_item），每次重建都要重新
+        #   绑定 target/action，很容易漏掉一处；隐藏只是换个可见性，最稳。
+        #   分隔线也得跟着藏 —— 系统只在**同一菜单里连续的**分隔线之间做合并，
+        #   留一条孤立的分隔线在顶上会很难看。
+        # ══════════════════════════════════════════════════════════════════
+        ITEMS["wk_title"] = _title_item(_t("wk_title"),
+                                        AppKit.NSColor.tertiaryLabelColor())
+        # ★ 范老板 2026-10-15 第⑦条 + m28310（「快捷键是用户自定义啊，不是让你改成
+        #   默认几个」）：入口就是这一项，点下去**菜单收起、直接开始录键** ——
+        #   既不开设置面板，也不是一份固定候选。实现见 `_hotkey_record()`。
+        ITEMS["wk_set"] = _action(_t("wk_set"), b"setWorkKey:", target)
+        ITEMS["wk_reset"] = _action(_t("wk_reset"), b"resetWorkKey:", target)
+        # 「搜索框多久没人动就自动收」—— 放二级菜单。用勾选态而不是一个数字输入框：
+        # 菜单本来就只能点，让用户看到全部候选比让他填一个数猜边界舒服。
+        ITEMS["wk_idle"] = MI.alloc().initWithTitle_action_keyEquivalent_(
+            _t("wk_idle"), None, "")
+        _isub = AppKit.NSMenu.alloc().init()
+        for _sec in _IDLE_CHOICES:
+            _it = _action(_idle_label(_sec), b"setIdle:", target)
+            _it.setRepresentedObject_(_sec)
+            _isub.addItem_(_it)
+        ITEMS["wk_idle"].setSubmenu_(_isub)
+        ITEMS["work_back"] = _style_work_item(
+            _action(_t("work_off"), b"toggleWork:", target), _t("work_off"), "house")
+        # ★ 2026-10-14 范老板第②条：「菜单栏『打开收工文件夹』删除」。
+        #   以前收工文件夹被搬到数据目录藏起来了，菜单栏是唯一入口；现在它就摆在
+        #   桌面上（还带红标签），用户直接点桌面那个就行，菜单里再挂一项反而多余。
+        for _k in ("wk_title", "wk_set", "wk_reset"):
+            menu.addItem_(ITEMS[_k])
+        menu.addItem_(ITEMS["wk_idle"])
+        ITEMS["sep_wk"] = MI.separatorItem()
+        menu.addItem_(ITEMS["sep_wk"])
+        menu.addItem_(ITEMS["work_back"])
+        ITEMS["sep_wk2"] = MI.separatorItem()
+        menu.addItem_(ITEMS["sep_wk2"])
 
         ITEMS["quit"] = _action(_t("quit"), b"quitApp:", target, "q")
         menu.addItem_(ITEMS["quit"])
+
+        # 两组 item 的名单（_paint 按当前模式互斥显示）
+        ITEMS["_leisure"] = [ITEMS["status"], ITEMS["sep_head"], ITEMS["web"],
+                             ITEMS["toggle"], ITEMS["sep_mcp"], ITEMS["mcp"],
+                             ITEMS["sep_work"], ITEMS["work"],
+                             ITEMS["sep_leisure_end"], ITEMS["settings"],
+                             ITEMS["about"], ITEMS["sep_common"]]
+        ITEMS["_work"] = [ITEMS["wk_title"], ITEMS["wk_set"],
+                          ITEMS["wk_reset"], ITEMS["wk_idle"],
+                          ITEMS["sep_wk"], ITEMS["work_back"], ITEMS["sep_wk2"]]
+        _apply_group(_work_is_on())
         menu.setDelegate_(delegate)
+        # ★ 图标老老实实挂 setMenu_。
+        #   曾经想改成「左键切面板、右键弹菜单」，结果右键那条在状态栏上根本
+        #   不触发，菜单整个弹不出来 —— 比原来还糟。状态栏图标 + NSMenu 是
+        #   系统管的行为：点一下开、再点一下收，本来就是要的那个手感。
         it.setMenu_(menu)
+        _STATUS["menu"] = menu
+        _STATUS["item"] = it
         return it
 
     item = _make_item()

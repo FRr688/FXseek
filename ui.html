@@ -109,6 +109,36 @@ body[data-theme="dark"] .btn.primary{background:var(--blue);border-color:var(--b
 body[data-theme="dark"] .mcpbadge{color:#4ade80;background:rgba(34,197,94,.14)}
 /* 完全不播放动画时（设置里关了动效）把脉冲也停掉 */
 html[data-anim="off"] .mcpbadge .mbdot{animation:none}
+/* 已连接的手机：★ 只落在「漫步时光」那一条（.subbar）上，在它右边、但留开
+   老远一段距离（margin-left:46px，加上 subbar 自己的 14px gap = 60px）；
+   再往右是自动靠边的「共 N 项」。
+   画法刻意做成「一枚极简线条手机 + 一圈很淡的同色辉光」——不描边框、不铺底色、
+   也不挂设备名；颜色走中性灰（白天 #5b6472 / 夜间 #d5dde8）而非品牌蓝/紫，
+   不跟主题色抢。★ 白天那档刻意压得比 --text-2 再深一点：这枚图标是 15px 的
+   细描边，挂在浅底上太淡就「看不见」，等于白做。
+   ★ 只在设备**在线**时才出现（后端 online 走内存 90 秒窗口，不是落盘的
+   last_seen），所以图标本身就等于「此刻连着」，不再另加绿点。
+   ★ 一屏多台就并排几枚，超出收进一枚「+N」；没设备在线整块不占位。 */
+.phonebadges{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:46px;
+  /* ★ gap 不是随手给的：手机是竖长条，26px 那枚画出来只占 13px 宽，两边各有
+     6.5px 空白。gap:6 让两枚之间的**净空 ≈21px**，跟图标还是 19px 时那一版
+     （svg 间距 11 + 两侧 4.75×2 ≈ 20.5）几乎一样 —— 用户明确要「上一版的间距」，
+     所以图标放大后不能沿用原来的 gap，得补回来。 */
+  --phone-ink:#5b6472;--phone-bloom:rgba(91,100,114,.5)}
+body[data-theme="dark"] .phonebadges{--phone-ink:#d5dde8;--phone-bloom:rgba(213,221,232,.55)}
+.phonebadge{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:30px;border-radius:8px;flex:0 0 auto;cursor:pointer;
+  color:var(--phone-ink);background:transparent;border:none;opacity:.92;
+  transition:opacity .14s ease}
+/* 辉光用 drop-shadow 叠在描边上（不是背景光斑）：线越细越像「光自己从线条里透出来」，
+   这也是全站唯一一处这么画的图标，一眼就能认出是「连接状态」。 */
+.phonebadge .ico{display:block;filter:drop-shadow(0 0 4px var(--phone-bloom))}
+.phonebadge:hover{opacity:1}
+.phonebadge:hover .ico{filter:drop-shadow(0 0 4px var(--phone-bloom))
+  drop-shadow(0 0 9px var(--phone-bloom))}
+/* 多台设备那枚「+N」：只有数字，比图标再淡一档，别抢镜 */
+.phonebadge.more{width:auto;min-width:20px;padding:0 2px;font-size:0.8125rem;
+  font-weight:600;letter-spacing:.02em;opacity:.55}
 /* 深度检索/刷新按钮夜间适配 */
 body[data-theme="dark"] .iconbtn.accent-deep{background:var(--blue);border-color:var(--blue);color:#fff}
 body[data-theme="dark"] .iconbtn.accent-refresh{background:var(--blue-soft);border-color:rgba(61,126,255,.5);color:#6ba1ff}
@@ -135,6 +165,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue"
   background:var(--bg);color:var(--text);font-size:0.875rem;overflow:hidden;
   -webkit-font-smoothing:antialiased}
 .app{display:flex;height:100vh}
+
+/* 文字可选：pywebview 的 create_window(text_select=...) 默认 False，会给 body 注入
+   全局 `user-select:none`，导致整个应用的文字都选不中、右键没有「拷贝」。launcher
+   里已显式改成 text_select=True（见 launcher.py 建窗处）。代价是拖过控件时会把按钮
+   上的字刷蓝，所以这里把「控件」这一类再单独禁回去 —— 歌词、详情、路径这些要能选
+   的要留白。 */
+button,.btn,.iconbtn,.chip,.sel,.mv-btn,.mv-cc,.mbtn,.lbtn,.pc-close,
+.nav a,summary,.sortitem,.ctxmenu .item,[role="button"],
+.mcpbadge,.phonebadge,.playbadge.audpla,.volbtn,.mode,.unidxbar .ub-go{
+  -webkit-user-select:none;user-select:none}
 
 /* ============ 右侧详情栏 ============ */
 /* 折叠手柄 */
@@ -547,6 +587,38 @@ body[data-theme="dark"] .chip.on{background:rgba(61,126,255,.16)}
   letter-spacing:.05em;user-select:none}
 .progfoot.done{opacity:.65}
 .masonry .mcol{display:flex;flex-direction:column;gap:14px;flex:1 1 0;min-width:0}
+/* 来源角标：右上角。跟手机端素材墙那枚是同一套观感（半透明黑底、白色细线图标） */
+.mediawrap .srcbadge{position:absolute;top:8px;right:8px;z-index:3;display:inline-flex;align-items:center;gap:4px;
+  height:22px;padding:0 7px;border-radius:7px;background:rgba(15,18,25,.42);color:#fff;
+  font-size:0.6563rem;line-height:1;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);max-width:96px;overflow:hidden;white-space:nowrap}
+.mediawrap .srcbadge .icn{opacity:.92}
+/* 手机原件同步：一条常驻在结果区上方的进度条（.unidxbar 的骨架 + 一条细进度线） */
+.phsyncbar{display:flex;align-items:center;gap:10px;margin:0 0 11px;
+  background:rgba(61,126,255,.07);border:1px solid rgba(61,126,255,.22);
+  border-radius:10px;padding:9px 13px;font-size:0.75rem;color:var(--text-2)}
+.phsyncbar .psb-ic{flex:0 0 auto;color:var(--blue);display:flex}
+.phsyncbar .psb-tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phsyncbar .psb-tx b{color:var(--text);font-weight:600}
+.phsyncbar .psb-btn{flex:0 0 auto;cursor:pointer;background:transparent;color:var(--text-2);
+  border:1px solid var(--border-strong);border-radius:7px;padding:4px 10px;
+  font-size:0.7188rem;font-weight:600;font-family:inherit;transition:.12s}
+.phsyncbar .psb-btn:hover{color:var(--text);border-color:var(--text-3)}
+.phsyncbar .psb-btn.danger{color:#e5484d;border-color:rgba(229,72,77,.5)}
+.phsyncbar .psb-btn.danger:hover{background:rgba(229,72,77,.12);color:#e5484d}
+.phsyncbar .psb-line{position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:0 0 9px 9px;
+  background:var(--border);overflow:hidden}
+.phsyncbar{position:relative}
+.phsyncbar .psb-line > i{display:block;height:100%;width:0;background:var(--blue);transition:width .3s ease}
+/* 手机来源在侧栏那一行：在线一颗绿点、离线一颗灰点 */
+/* 手机上那行尾的「已同步 N/M」小徽标：数字要窄，所以用 tabular-nums */
+.src.srcphone .phsync{flex:0 0 auto;font-size:0.6563rem;line-height:1.5;padding:1px 6px;border-radius:20px;
+  background:rgba(61,126,255,.14);color:var(--blue);font-variant-numeric:tabular-nums;
+  border:1px solid rgba(61,126,255,.28)}
+.src.srcphone .phsync.done{background:rgba(63,185,80,.13);color:var(--ok);border-color:rgba(63,185,80,.3)}
+.src.srcphone .phstat{width:6px;height:6px;border-radius:50%;flex:0 0 auto;margin-left:2px}
+.src.srcphone .phstat.on{background:var(--ok);box-shadow:0 0 0 2px rgba(63,185,80,.18)}
+.src.srcphone .phstat.off{background:var(--text-3);opacity:.6}
 .masonry .card{width:auto;margin-bottom:0;display:flex;flex-direction:column}
 .card{border-radius:11px;overflow:hidden;cursor:pointer;position:relative;
   background:#f3f4f6;transition:border-color .14s, box-shadow .14s;border:2px solid transparent}
@@ -1765,6 +1837,13 @@ body[data-theme="light"] .tw-card .tw-cap{background:linear-gradient(to top, rgb
       <div class="chip" id="chip-document" onclick="docKindClick(event)"><i class="icn" data-icon="document" data-size="13"></i> 文档 <span class="cnt" id="cc-document">0</span><span class="caret" id="docCaret" title="按格式细分筛选"><span class="cctxt">格式</span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span></div>
       <button class="tw-btn" id="twBtn" onclick="twToggle()"
               title="只留图片和视频，让回忆循环滚动"><span class="tw-ic">✦</span><span class="tw-txt">漫步时光</span></button>
+      <!-- 已连接的手机：就挂在「漫步时光」右边，有设备**在线**才出现（内容由
+           refreshPhoneBadge() 填）。★ 只画一枚极简线条手机，设备名走 tooltip，
+           点一枚跳设置页的「手机连接」——撤销入口在那儿。
+           ★ data-no-i18n：里面全是用户自己的设备名，不能被翻译器碰；
+           连标题也由 JS 按当前语言写，所以整块拉黑。 -->
+      <div class="phonebadges" id="phoneBadges" style="display:none" data-no-i18n
+           title="已连接的手机"></div>
       <span style="margin-left:auto;color:var(--text-3)" id="countHint"></span>
 
     </div>
@@ -1774,6 +1853,9 @@ body[data-theme="light"] .tw-card .tw-cap{background:linear-gradient(to top, rgb
 
     <!-- 未索引提示条（同上，独立于 #content） -->
     <div id="unidxBarHost"></div>
+
+    <!-- 手机原件同步进度条（同上；同步是几分钟到几十分钟的事，得看得见、能停） -->
+    <div id="phoneSyncHost"></div>
 
     <div class="bodyrow">
       <div class="content" id="content"></div>
@@ -2174,8 +2256,238 @@ async function loadSources(){
   renderSources();
 }
 
+/* ---------- 手机来源的「在线」轮询（范老板 2026-10-13） ----------
+   为什么必须有个轮询：`online` 是**拿当前时间跟 last_seen 比**算出来的
+   （电脑侧 PHONE_SOURCE_TTL = 60 秒）。手机被系统杀掉、掉了 Wi-Fi 的时候，
+   电脑这边不会再收到任何东西，也就没有任何东西会触发重画 ——
+   绿点会**一直亮着**，直到用户去点一下侧栏。这跟「1 分钟后熄灭」差得远。
+
+   为什么不是直接 setInterval(loadSources)：`/v1/sources` 会给每个来源走一遍
+   sqlite 统计 + `phone_cache_stats()` 扫目录，5 秒一次太浪费。
+   所以单独问便宜的那个口（`/v1/phone/sources`，只读设置表），
+   算出「手机那几条」的指纹，**变了才**整份重来 —— 平时几乎零开销。
+
+   5 秒的采样间隔：灯要 60 秒灭，最坏情况也就晚 5 秒，肉眼看不出。 */
+let _phonePollSig = null;
+let _phonePollTimer = null;
+function _phoneSigOf(list){
+  return (list||[]).map(s => [s.id, s.online?1:0, s.items||0, s.name||'', s.synced||0].join('|'))
+                  .sort().join(';');
+}
+async function pollPhoneSources(){
+  try{
+    const d = await (await fetch('/v1/phone/sources')).json();
+    const list = (d && d.sources) || [];
+    // 指纹里带上在线位、件数和名字：掉线、素材增减、改机器名都能触发侧栏重画。
+    const sig = _phoneSigOf(list);
+    const curSig = _phoneSigOf((STATE.sources||[]).filter(s => s.kind === 'phone')
+      .map(s => ({id:s.device, online:s.online, items:s.files, name:s.name, synced:s.synced})));
+    if(sig !== _phonePollSig || sig !== curSig){
+      _phonePollSig = sig;
+      await loadSources();
+    }
+  }catch(e){}
+  clearTimeout(_phonePollTimer);
+  _phonePollTimer = setTimeout(pollPhoneSources, 5000);
+}
+window.pollPhoneSources = pollPhoneSources;
+
+/* ---------- 手机原件同步 ----------
+   第二阶段（用户 2026-10-11 定的）：把手机相册的原件整批拉到电脑。拉下来有两个好处：
+   ① 手机不在线 / 拿走 / 关 Wi-Fi 也能打开播放（离线只剩缓存预览的例外）；
+   ② 电脑可以直接对着本地文件抽帧、预览，不必每次回手机要。
+   代价是占磁盘，所以**只由用户点**，而且进度要看得见、中途能停、能单独清。 */
+let PHONE_SYNC_UI = {};        // device -> /v1/phone/sync 的 state
+let _phoneSyncTimer = null;
+
+/* 这一块里只有几个字符串要双语，用不着到处写 window.I18N 判断 */
+function _T(zh, en){ return (window.I18N && I18N.T) ? I18N.T(zh, en) : zh; }
+
+function fmtMB(mb){
+  const n = Number(mb) || 0;
+  return n >= 1024 ? (n/1024).toFixed(1) + ' GB' : Math.max(n, 0.1).toFixed(n < 10 ? 1 : 0) + ' MB';
+}
+
+async function phoneSyncStart(path){
+  const dev = String(path||'').replace(/^phone:/, '');
+  if(!dev) return;
+  const s = (STATE.sources||[]).find(x=>x.path===path) || {};
+  if(!s.online){
+    toast(_T('手机不在线 —— 原件同步要它连着（同一个 Wi-Fi）','Phone is offline — syncing originals needs it on the same Wi-Fi'));
+    return;
+  }
+  const n = s.files || 0;
+  const mb = s.synced_mb ? fmtMB(s.synced_mb) : '';
+  const ok = await askDlg({
+    title: _T('把原件同步到电脑？','Sync originals to this Mac?'),
+    msg: _T(`手上有 ${n} 件素材，会一件件拷到这台电脑上${mb? `（已经同步过 ${mb}，这次只补新的）`:''}。\n\n· 同步过的素材，手机不在线也能打开、播放\n· 占电脑磁盘（大视频可能是几个 GB，可以在进度条上随时停下）\n· 手机上的原文件一件不动`,
+              `This copies ${n} items onto this Mac${mb? ` (${mb} already synced — only new ones this time)`:''}.\n\n· Synced items open and play even when the phone is away\n· Takes disk space (large videos can be several GB; you can stop anytime from the progress bar)\n· Nothing on the phone is changed`),
+    ok: _T('开始同步','Start'), cancel: _T('算了','Cancel')
+  });
+  if(!ok) return;
+  try{
+    const r = await (await fetch('/v1/phone/sync', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({device: dev})})).json();
+    if(r.error){ toast(r.error); return; }
+    PHONE_SYNC_UI[dev] = r;
+    renderPhoneSync(dev);
+    watchPhoneSync(dev);
+    toast(_T('开始同步原件 —— 进度在上面的横条里','Syncing originals — watch the bar above'));
+  }catch(e){ toast(_T('同步失败：','Sync failed: ') + e.message); }
+}
+
+/* 只轮询「真的在跑」的那台：跑完就停，不留一个 8 秒一轮的定时器在那儿空转。 */
+function watchPhoneSync(dev){
+  clearTimeout(_phoneSyncTimer);
+  const tick = async () => {
+    try{
+      const d = await (await fetch('/v1/phone/sync?device=' + encodeURIComponent(dev))).json();
+      const st = d.state || {};
+      PHONE_SYNC_UI[dev] = st;
+      renderPhoneSync(dev);
+      // 侧栏那行也顺手更新（进度百分比就挂在行尾）
+      if(st.running){ renderSources(); _phoneSyncTimer = setTimeout(tick, 1500); return; }
+      if(st.note && st.note !== '已停'){
+        const bad = st.failed || 0;
+        toast(bad ? _T(`原件同步结束，${bad} 件失败（详情见上）`, `Sync finished with ${bad} failed`)
+                  : _T(`原件同步完成：${st.total||0} 件，${fmtMB((st.bytes||0)/1048576)}`,
+                       `Sync finished: ${st.total||0} items, ${fmtMB((st.bytes||0)/1048576)}`));
+      }
+      await loadSources();
+    }catch(e){}
+  };
+  tick();
+}
+
+async function phoneSyncStop(dev){
+  try{
+    await fetch('/v1/phone/sync/stop', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({device: dev})});
+    toast(_T('已经在收尾，下一件停下','Finishing current item, then stopping'));
+  }catch(e){}
+  watchPhoneSync(dev);
+}
+
+async function phoneOrigClear(path){
+  const dev = String(path||'').replace(/^phone:/, '');
+  const s = (STATE.sources||[]).find(x=>x.path===path) || {};
+  const mb = s.synced_mb ? fmtMB(s.synced_mb) : '';
+  const ok = await askDlg({
+    title: _T('清掉这台手机的原件缓存？','Clear cached originals?'),
+    msg: _T(`会删掉电脑上${mb? `这 ${mb} `:''}原件拷贝，缩略图和清单留着。\n\n· 删掉之后，那些素材又要手机在线才能打开\n· 手机上、手机索引里的一件不动，随时可以再同步`,
+              `Deletes${mb? ` ${mb} of` : ''} cached originals on this Mac; thumbnails and the list stay.\n\n· After this, those items need the phone online to open again\n· Nothing on the phone changes — you can sync again anytime`),
+    ok: _T('清掉','Clear'), cancel: _T('算了','Cancel')
+  });
+  if(!ok) return;
+  try{
+    const r = await (await fetch('/v1/phone/orig/clear', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({device: dev})})).json();
+    toast(r.removed ? _T(`清掉 ${r.removed} 个原件（${fmtMB(r.mb)}）`, `Removed ${r.removed} originals (${fmtMB(r.mb)})`)
+                    : _T('本来就没有原件缓存','No cached originals'));
+  }catch(e){ toast(_T('清除失败：','Clear failed: ') + e.message); }
+  await loadSources();
+}
+
+/* 手机来源那一行右键出来的菜单（跟文件夹来源分开：它没有目录，但有「同步」） */
+function phoneSourceMenu(e, path){
+  const dev = String(path||'').replace(/^phone:/, '');
+  const s = (STATE.sources||[]).find(x=>x.path===path) || {};
+  const running = !!(PHONE_SYNC_UI[dev] && PHONE_SYNC_UI[dev].running);
+  const items = [];
+  if(running){
+    items.push({act:'phoneSyncStop', label:_T('停下当前同步','Stop syncing')});
+  } else {
+    items.push({act:'phoneSync', label:_T('把原件同步到电脑','Sync originals to this Mac'),
+                sub: s.files ? _T(`手机上 ${s.files} 件`,'') : ''});
+  }
+  if(s.synced) items.push({act:'phoneOrigClear', label:_T('清掉原件缓存','Clear cached originals'),
+                           sub: fmtMB(s.synced_mb||0)});
+  items.push('---');
+  items.push({act:'phoneCacheClear', label:_T('清除这台手机的缓存','Clear this phone\u2019s cache')});
+  items.push({act:'removePhone', label:_T('移除这台手机来源','Remove this phone source'), danger:true});
+  showCtxMenu(e, items, {path:path, device:dev});
+}
+
+/* 结果区上方那条同步进度：跑的时候才出现，跑完自己消失。 */
+function renderPhoneSync(dev){
+  const host = $('#phoneSyncHost');
+  if(!host) return;
+  const st = PHONE_SYNC_UI[dev] || {};
+  if(!st.running){
+    // 停了/完成了：如果失败过，留一条说明（用户需要知道哪几件没下来）
+    if(st.failed){
+      host.innerHTML = `<div class="phsyncbar">
+        <span class="psb-ic"><i class="icn" data-icon="alert" data-size="14"></i></span>
+        <span class="psb-tx">${_T(`原件同步结束：成功 ${st.done||0} 件、失败 <b>${st.failed}</b> 件`,
+                                 `Sync finished: ${st.done||0} ok, <b>${st.failed}</b> failed`)}
+          ${(st.errors||[]).length ? `<br><span style="color:var(--text-3)">${esc((st.errors||[])[0])}</span>` : ''}</span>
+        <button class="psb-btn" onclick="phoneSyncDismiss('${jsq(dev)}')">${_T('知道了','Dismiss')}</button>
+      </div>`;
+      renderStaticIcons(host);
+      return;
+    }
+    host.innerHTML = '';
+    return;
+  }
+  const tot = st.total || 0, done = st.done || 0;
+  const pct = tot ? Math.round(done * 100 / tot) : 0;
+  const cur = st.current ? esc(String(st.current).slice(0, 40)) : '';
+  const got = (st.bytes||0)/1048576, all = (st.total_bytes||0)/1048576;
+  host.innerHTML = `<div class="phsyncbar">
+    <span class="psb-ic"><i class="icn" data-icon="download" data-size="14"></i></span>
+    <span class="psb-tx">${_T('正在把原件同步到电脑','Syncing originals to this Mac')}
+      <b>${done}/${tot}</b>${all ? ` · ${fmtMB(got)} / ${fmtMB(all)}` : ''}${cur ? ` · ${cur}` : ''}</span>
+    <button class="psb-btn danger" onclick="phoneSyncStop('${jsq(dev)}')">${_T('停下','Stop')}</button>
+    <span class="psb-line"><i style="width:${pct}%"></i></span>
+  </div>`;
+  renderStaticIcons(host);
+}
+
+function phoneSyncDismiss(dev){
+  // 明确带上要关掉哪一台：原来用 Object.keys(...).pop() 猜，
+  // 同时连着两台手机（或刚同步完 A 又去看 B）时会关错那一条、红条赖着不走。
+  if(!dev) dev = Object.keys(PHONE_SYNC_UI).pop();
+  if(!dev) return;
+  delete PHONE_SYNC_UI[dev];
+  renderPhoneSync(dev);           // 条目已删，这一画就是清空
+}
+
+/* 「清除这台手机的缓存」：缩略图 + 原件缓存一起清（手机上的东西不动）。
+   「清除缓存」在设置页也有一个总入口，这里只是同一件事的顺手指路。 */
+async function phoneCacheClear(path){
+  const dev = String(path||'').replace(/^phone:/, '');
+  const s = (STATE.sources||[]).find(x=>x.path===path) || {};
+  const ok = await askDlg({
+    title: _T('清除这台手机的缓存？','Clear this phone\u2019s cache?'),
+    msg: _T(`会删掉电脑上为「${esc(s.name||'这台手机')}」存的缩略图和原件拷贝（约 ${fmtMB(s.cache_mb||0)}）。\n\n· 手机上、手机索引里的东西一件不动\n· 下次浏览会因为缩略图没了重新拉一次`,
+             `Deletes thumbnails and cached originals for this phone (about ${fmtMB(s.cache_mb||0)}).\n\n· Nothing on the phone changes\n· Thumbnails get fetched again next time you browse`),
+    ok: _T('清除','Clear'), cancel: _T('算了','Cancel')
+  });
+  if(!ok) return;
+  try{
+    const r = await (await fetch('/v1/phone/cache/clear', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({device: dev})})).json();
+    toast(_T(`已清除 ${r.thumbs||0} 张缩略图、${r.originals||0} 个原件`, 'Cache cleared'));
+  }catch(e){ toast(_T('清除失败：','Clear failed: ') + e.message); }
+  await loadSources();
+}
+
 /* 只负责把 STATE.sources 画到侧栏（不重新请求）。
    拖拽排序后要立刻见效、不能等一个来回，所以把「画」这一步拆出来单独用。 */
+/* 移除一台「手机来源」：只拆电脑这边的登记 + 缓存，手机上的素材一件不动。 */
+async function forgetPhoneSource(path){
+  const dev = String(path||'').replace(/^phone:/, '');
+  if(!dev) return;
+  const nm = ((STATE.sources||[]).find(s=>s.path===path)||{}).name || '这台手机';
+  if(!confirm(`移除「${nm}」这台手机来源？\n\n· 只删电脑这边登记的这份来源和它的缩略图缓存\n· 手机上的素材、手机上的索引都不动\n· 那只手机下次连上会重新出现`)) return;
+  try{
+    await fetch('/v1/phone/forget', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({device: dev})});
+  }catch(e){}
+  if(STATE.source === path) STATE.source = null;
+  await loadSources(); refresh();
+}
+
 function renderSources(){
   const el = $('#srclist');
   if(!el) return;
@@ -2197,6 +2509,28 @@ function renderSources(){
     STATE.sources.forEach(s => { nameCount[s.name] = (nameCount[s.name] || 0) + 1; });
     html += STATE.sources.map(s=>{
       const sel = STATE.source === s.path ? 'active' : '';
+      // ★ 手机来源：不是目录，别给它拖拽/「去索引」那套；带一颗在线状态点。
+      if(s.kind === 'phone'){
+        // 原件同步进度：把「已同步 N/M · X MB」塞进 tooltip，正在跑时行尾换成百分比。
+        const _sy = s.synced || 0, _tt = s.files || 0;
+        const _syTxt = _sy ? ` · 原件已同步 ${_sy}/${_tt}（${fmtMB(s.synced_mb || 0)}）` : '';
+        const _run = PHONE_SYNC_UI[s.device];
+        const _runTxt = (_run && _run.running) ? ` · 正在同步 ${_run.done||0}/${_run.total||0}` : '';
+        const _pct = (_run && _run.running && _run.total)
+          ? `<span class="phsync" title="正在把原件同步到电脑">${Math.round((_run.done||0)*100/_run.total)}%</span>`
+          : (_sy ? `<span class="phsync done" title="原件已同步到电脑，手机不在也能打开">${_sy}/${_tt}</span>` : '');
+        return `<div class="src srcphone ${sel}"
+            title="${esc(s.name)}${s.online? ' · 已连接' : ' · 离线（只显示缓存预览）'} · 手机上 ${_tt} 项${_syTxt}${_runTxt}\n右键：同步原件到电脑 / 清空缓存"
+            onclick="selectSource('${jsq(s.path)}')"
+            oncontextmenu="phoneSourceMenu(event, '${jsq(s.path)}')">
+          <span class="grip"><i class="icn" data-icon="phone" data-size="13"></i></span>
+          <span class="nm" data-no-i18n><i>${esc(s.name)}</i></span>
+          ${_pct}
+          <span class="phstat ${s.online?'on':'off'}"></span>
+          <span class="rm" title="移除这台手机来源（只删电脑这边的缓存，手机上的素材不动）"
+            onclick="event.stopPropagation();forgetPhoneSource('${jsq(s.path)}')">×</span>
+        </div>`;
+      }
       const un = (s.files || 0) === 0;
       // 未索引徽标本身可点：这是「去索引」的**主动**入口。
       // （以前是把「点这一行」变成强制弹窗，等于不索引就不让看，太逼人）
@@ -3445,6 +3779,7 @@ function renderMasonry(){
         ${mediaHTML(x)}
         ${x.kind==='audio' ? `<div class="audbar"><i></i><span class="auddot"></span></div><span class="audtime"></span>` : ''}
         ${corner ? `<span class="corner">${esc(corner)}</span>` : ''}
+        ${srcBadge(x)}
         ${x.unindexed ? `<span class="unidxchip" title="还没建立索引：能看能打开，但用文字搜不到">未索引</span>` : ''}
       </div>
       <div class="caption">
@@ -3476,6 +3811,17 @@ function masonryCols(){
   const avail = el.clientWidth - 8;      // .content 左右 padding 各 4px
   const minW = 200, gap = 14;
   return Math.max(1, Math.floor((avail + gap) / (minW + gap)));
+}
+
+/* ---------- 来源角标（联机时显示，手机端那个角标是同一套设计） ---------- */
+/* 手机来源的素材：右上角挂一枚手机图标；电脑自己的素材不挂（没必要满屏都是）。
+   样式跟手机端素材墙右上角的角标一致：半透明黑底圆角 + 白色细线条图标。 */
+function srcBadge(x){
+  const src = x && x.source;
+  if(!src || src.kind !== 'phone') return '';
+  const nm = src.name || '手机';
+  return `<span class="srcbadge" title="这条素材在「${esc(nm)}」上（手机本机素材）">`
+       + `<i class="icn" data-icon="phone" data-size="11"></i><span data-no-i18n>${esc(nm)}</span></span>`;
 }
 
 function renderList(){
@@ -4342,6 +4688,61 @@ function mvGoto(enc, kind, step){
   openPreview(n.enc, n.name, kind, n.st);
 }
 
+/* ---------- 系统「正在播放」面板（菜单栏那个）----------
+   ★ 范老板 2026-10-15 第①条：「菜单栏的音频和视频播放面板中前进后退15秒按钮
+     改为『上一首』和『下一首』按钮」。
+
+   那块面板不是我们自己画的，是 **macOS 的「正在播放」**（控制中心 + 菜单栏右侧
+   那一条）。WKWebView 里一有 <audio>/<video> 在放，WebKit 就会把它报给系统，
+   面板上的按钮由 WebKit 按 **Media Session** 的可用动作决定：
+     · 不注册任何动作 → 系统按「可 seek 的媒体」显示 ↺15 / ↻15；
+     · 一旦注册 previoustrack / nexttrack，系统就改画 ⏮ / ⏭。
+   所以这里注册上一首/下一首，并把 seekbackward / seekforward **显式清掉**
+   （传 null 就是「这个动作不支持」），那对 15 秒按钮才会真正消失，
+   而不是和 ⏮⏭ 挤在一起。
+
+   行为接到 App 里已有的「上一个 / 下一个」上（`mvGoto`：同一结果集里同类型的
+   兄弟素材，和详情页那两个 ‹ › 按钮完全一套逻辑）。 */
+function mvKindOf(enc){
+  try{
+    const cur = decodeURIComponent(String(enc || ''));
+    const r = mvResults().find(x => x.path === cur);
+    return r ? r.kind : null;
+  }catch(e){ return null; }
+}
+function mvNowPlaying(enc, name, media){
+  const MS = (typeof navigator !== 'undefined') ? navigator.mediaSession : null;
+  if(!MS){ return; }
+  const kind = mvKindOf(enc) || (media && media.tagName === 'VIDEO' ? 'video' : 'audio');
+  const set = (act, fn) => { try{ MS.setActionHandler(act, fn); }catch(e){} };
+  try{
+    if(typeof MediaMetadata !== 'undefined'){
+      MS.metadata = new MediaMetadata({
+        title: name || '',
+        artist: 'FXseek 媒体库',
+        album: I18N.T('正在播放', 'Now playing')
+      });
+    }
+  }catch(e){}
+  set('previoustrack', () => mvGoto(enc, kind, -1));
+  set('nexttrack',     () => mvGoto(enc, kind, +1));
+  set('seekbackward',  null);      // ← 干掉系统默认那对 15 秒按钮
+  set('seekforward',   null);
+  set('seekto',        null);
+  if(media){
+    set('play',  () => { try{ media.play(); }catch(e){} });
+    set('pause', () => { try{ media.pause(); }catch(e){} });
+    set('stop',  () => { try{ media.pause(); }catch(e){} });
+  }
+  /* 关掉预览就撤掉面板上那条 —— 否则关了窗，菜单栏还挂着「正在播放」。
+     只清 metadata + 播放控制，**留着** prev/next：有些情况下关窗动画期间
+     用户还能点到那两颗，留着比点了没反应好。 */
+  mvOn(() => {
+    try{ MS.metadata = null; }catch(e){}
+    try{ MS.playbackState = 'none'; }catch(e){}
+  });
+}
+
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 let _mvCleanup = [];
 function mvOn(fn){ _mvCleanup.push(fn); }
@@ -4537,6 +4938,7 @@ function mvVideo(box, url, name, st){
     <span class="mv-cc" id="mvCC"></span>`;
   const full = mvStdActs(box, box.dataset.enc, { fullscreen: true, nav: 'video' });
   const v = box.querySelector('#mvVideo');
+  mvNowPlaying(box.dataset.enc, name, v);   // 菜单栏面板：⏮/⏭（第①条）
   mvSubInit(box, v);
   mvVTextInit(box, v);
   mvLyricsLoad(box, v);        // 右侧文字面板，和音频歌词页同一套渲染
@@ -5629,6 +6031,7 @@ function mvAudio(box, url, name){
   const a = document.createElement('audio');
   a.src = url; a.preload = 'metadata';
   body.appendChild(a);
+  mvNowPlaying(box.dataset.enc, name, a);   // 菜单栏面板：⏮/⏭（第①条）
   mvLyricsLoad(box, a);
 
   const disc = box.querySelector('#mvDisc');
@@ -6069,6 +6472,11 @@ document.addEventListener('click', e => {
   else if(act === 'restore') doRestoreItem(c.path);
   else if(act === 'openfolder') doOpenFolder(c.path);
   else if(act === 'removeSource') doRemoveSource(c.path);
+  else if(act === 'phoneSync') phoneSyncStart(c.path);
+  else if(act === 'phoneSyncStop') phoneSyncStop(c.device);
+  else if(act === 'phoneOrigClear') phoneOrigClear(c.path);
+  else if(act === 'phoneCacheClear') phoneCacheClear(c.path);
+  else if(act === 'removePhone') forgetPhoneSource(c.path);
   else if(act === 'restoreAll') doRestoreAll(c.count);
   else if(act === 'deleteAll') doDeleteAll(c.count);
 });
@@ -6654,11 +7062,26 @@ async function toggleRecord(){
   else { startRecording(); }           // 未录音 → 开始
 }
 
+/* ★ 2026-10-15 范老板 bug：「休闲模式的麦克风每次 app 重启点击它都弹出授权权限
+   弹窗」。根因就是下面这条老的 getUserMedia 分支 —— 桌面版 .app 是 ad-hoc 签名
+   的，WebKit 发起媒体捕获权限请求时 TCC 认不出一个稳定的身份，于是**每次启动
+   都当第一次问**（工作模式走的是原生 AVFoundation，从来没这毛病）。
+   所以休闲模式也统一改成「原生优先」：只要后端有 /v1/mic/*（桌面版就有），
+   一律走原生；只有在**普通浏览器**里打开、后端没注册那套钩子时，才退回
+   getUserMedia —— 那条路本来就是给浏览器准备的。 */
+async function nativeMicAvailable(){
+  try{
+    const d = await micApi('status');
+    return !!(d && d.available);
+  }catch(e){ return false; }
+}
+
 async function startRecording(){
-  /* 从访达/程序坞启动的 app 里，WKWebView 根本不暴露 navigator.mediaDevices
-     （实测：终端启动的进程里它在，双击启动的 app 里它是 undefined —— 系统按启动
-     方式决定给不给这个能力），所以桌面版改走原生录音：POST /v1/mic/*，
-     后端是 AVFoundation（见 recorder.py）。 */
+  if(await nativeMicAvailable()) return startNativeRecording();
+  return startBrowserRecording();          // 浏览器里打开时才会走到这里
+}
+
+async function startBrowserRecording(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     return startNativeRecording();
   }
@@ -7363,9 +7786,21 @@ function closeAsk(){ $('#askpanel').classList.remove('show'); }
 async function doIndex(){
   const p = $('#idxpath').value.trim();
   if(!p){ toast('请先选择文件夹'); return; }
+  let r = {};
+  try{
+    r = await (await fetch('/v1/sources/add',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({path:p})})).json();
+  }catch(e){}
+  // ★ 免费版撞了索引源上限：**别往下走**。原来这里不看返回值，
+  //   于是「添加」静默失败、紧接着还弹「是否立即建立索引」，用户完全懵。
+  if(r && r.upgrade){
+    closeIndex();
+    toast(r.error || '已达免费版上限，请先在设置里解锁专业版');
+    setTimeout(()=>{ try{ location.hash = '#sec-about'; }catch(e){} }, 60);
+    return;
+  }
   logline('已添加来源：'+p);
-  await fetch('/v1/sources/add',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({path:p})}).catch(()=>{});
   // 新加的一定要让用户看见：展开列表（哪怕之前是折叠的）
   if(SRC_FOLD){ SRC_FOLD = false; try{ localStorage.setItem('srcFold','0'); }catch(e){} }
   await loadSources();
@@ -7617,6 +8052,71 @@ async function refreshMcpBadge(){
 }
 window.refreshMcpBadge = refreshMcpBadge;
 
+/* ---- 已连接的手机徽标（「漫步时光」那一条上，紧挨着它右边）----
+   只在**在线**的设备上出现：后端 /v1/pair/devices 每台都带 online（走内存 90 秒
+   窗口，不是落盘的 last_seen），所以手机关掉后最多一分半这里就自己消失了。
+   ★ 这里只画一枚极简线条手机（细描边 + 淡辉光），设备名一律收进 tooltip ——
+   名片式的大徽章摆在工具栏上太吵，用户明确否掉过。
+   ★ 一律画成「手机」（用户点名要的就是一枚简约的 📱）：ios 那枚带灵动岛，
+   安卓/其它那枚只有 home 条，一眼能分开，但两枚是同一套细线条、同一档视觉重量，
+   摆一排不会有一个突然变重（早先用安卓机器人头就是这么变重的）。
+   点一枚跳到设置页的「手机连接」——那儿有撤销。
+   ★ 这台机器自己的轮询不算「用户活动」，/v1/pair/devices 已进 app.py 的
+   _QUIET_PATHS，放心定时问。 */
+const PHONE_ICON = {ios: 'iphone', android: 'phone', other: 'phone'};
+const PHONE_KIND_ZH = {ios: 'iPhone / iPad', android: '安卓手机', other: '手机'};
+const PHONE_MAX = 3;               // 一排最多摆几枚图标，多的收进 +N
+let _phoneTimer = null;
+let _phoneLive = [];               // 最近一次拉到的在线设备（画图标要用）
+
+/* 只画，不请求。★ 单独拆出来是因为 icons.js 在页面最底部才加载：
+   主脚本跑首次 refreshPhoneBadge() 时 window.icon 还不存在，那一次画不出图标。
+   底部启动脚本等 icons.js 就位后会再调一次本函数补画，不用重新发请求。 */
+function paintPhoneBadges(){
+  const box = $('#phoneBadges');
+  if(!box) return;
+  const ic = window.icon || (() => '');
+  const live = _phoneLive;
+  if(!live.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  const shown = live.slice(0, PHONE_MAX), rest = live.length - shown.length;
+  const nmOf = x => x.name || '未命名手机';
+  const go = "location.href='/settings#sec-phone'";
+  box.innerHTML = shown.map(x => {
+    const kind = PHONE_ICON[x.kind] ? x.kind : 'other';
+    const nm = nmOf(x);
+    const tip = `${nm}（${PHONE_KIND_ZH[kind] || '手机'}）已连接\n点击前往「设置 → 手机连接」`;
+    return `<div class="phonebadge" role="button" tabindex="0" data-no-i18n` +
+      ` title="${esc(tip)}" aria-label="${esc(nm)}" onclick="${go}">` +
+      `${ic(PHONE_ICON[kind], 26)}</div>`;
+  }).join('') + (rest > 0
+    ? `<div class="phonebadge more" role="button" tabindex="0" data-no-i18n` +
+      ` title="${esc('还有 ' + live.slice(PHONE_MAX).map(nmOf).join('、'))}" onclick="${go}">` +
+      `<span>+${rest}</span></div>`
+    : '');
+  box.title = `已连接的手机：${live.map(nmOf).join('、')}\n点击前往设置`;
+  /* ★ 整块不交给 i18n：里面全是用户自己的设备名（`data-no-i18n`），
+     而 title 是我们刚用 JS 拼的、本来就已经是当前语言。 */
+}
+
+async function refreshPhoneBadge(){
+  if(!$('#phoneBadges')) return;
+  try{
+    const d = await (await fetch('/v1/pair/devices')).json();
+    _phoneLive = ((d && d.devices) || []).filter(x => x && x.online);
+  }catch(e){ _phoneLive = []; }
+  paintPhoneBadges();
+  if(!$('#phoneBadges')) return;
+  // ★ 自己续期而不是用 setInterval：请求慢的时候也不会堆积重入。
+  //   20 秒 → 5 秒（范老板 2026-10-13）：顶栏角标和侧栏绿点是同一个「在不在」，
+  //   而窗口只有 60 秒。20 秒采样的话最坏要 80 秒才变灰，跟「1 分钟」对不上；
+  //   5 秒采样最坏 65 秒，肉眼看就是「一分钟左右灭的」。这个口很便宜（只读设置表）。
+  clearTimeout(_phoneTimer);
+  _phoneTimer = setTimeout(refreshPhoneBadge, 5000);
+}
+window.refreshPhoneBadge = refreshPhoneBadge;
+window.paintPhoneBadges = paintPhoneBadges;
+
 (async ()=>{
   await loadStats(); await loadSources(); await loadTrash();
   // 读取设置页「匹配门槛」（失败保持默认 balanced）
@@ -7625,6 +8125,8 @@ window.refreshMcpBadge = refreshMcpBadge;
     if(s && s.match_level) STATE.matchLevel = s.match_level;
   }catch(e){}
   refreshMcpBadge();
+  refreshPhoneBadge();
+  pollPhoneSources();   // 侧栏手机来源的在线灯（见该函数注释：5 秒采样、变了才重画）
   // 先把服务端（用户数据目录 history.json）的记录拉回来，再决定要不要注入演示记录
   try{ await histLoad(); }catch(e){}
   // 首次启动注入演示记录（服务端和本地都为空时才写，见 seedHistory 注释）
@@ -7993,6 +8495,34 @@ window.refreshMcpBadge = refreshMcpBadge;
   if (window.I18N && typeof applyThemeFromSettings === 'function') {
     applyThemeFromSettings();
   }
+  /* 手机徽章：主脚本跑首次 refreshPhoneBadge() 时 window.icon 还没加载，
+     那一枚徽章会画成没有图标的空壳。这里等 icons.js 就位后按缓存重画一次，
+     不重新发请求（在线状态没变，没必要多问一趟）。 */
+  if (typeof paintPhoneBadges === 'function') paintPhoneBadges();
+
+  /* ★★ 范老板 2026-10-16 第③条：「冷启动进休闲模式，立刻点视频/音频素材想双击
+     播放，会卡住几秒；图像和文档不卡」。
+     查到的：**不是我们的代码慢**。冷启动后实测服务器的媒体路由
+     `/v1/thumb?kind=video` 0.19s、`/v1/file`（37MB mp4）0.037s，都不够「几秒」；
+     而且服务器是 ThreadingHTTPServer，不会被单个请求堵住。
+     真正的那几秒是 **WKWebView 的媒体栈第一次被使用时才初始化**（AVFoundation
+     那一套现拉起来）。图像走纯图片解码、文档走文本渲染，都不碰媒体栈 ——
+     正好对应你观察到的「只有音视频卡」。
+     这里在首页脚本跑完时**提前把媒体栈点着**：一个 1px 的静音 audio 先 load 一次。
+     不放视频预热是因为视频解码器要真解码才初始化，代价更大、收益更小 ——
+     音频这一发已经能把 AVFoundation 那条链拉起来了。 */
+  (function warmMediaStack(){
+    try {
+      var a = document.createElement('audio');
+      a.preload = 'auto';
+      a.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;'
+                      + 'left:-10px;top:-10px;pointer-events:none';
+      /* 0.05 秒的静音 WAV（只有头、没有数据），不占空间、不会出声 */
+      a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=';
+      a.load();
+      document.body.appendChild(a);
+    } catch (e) {}
+  })();
 </script>
 </body>
 </html>

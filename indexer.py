@@ -1810,7 +1810,7 @@ def iter_units(path: str):
 # 索引
 # --------------------------------------------------------------------------
 def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=None,
-                ai_config=None, asr_config=None, kinds=None):
+                ai_config=None, asr_config=None, kinds=None, max_files=None):
     """建立/更新索引。
 
     progress: 可选回调 fn(dict) —— 用于把实时进度上报给 UI。
@@ -1823,6 +1823,11 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
        选中「图片」时只扫图片，选中「全部」才全局扫。
        不影响 purge_stale —— 它只删「磁盘上已不存在」与垃圾文件，
        因此限类型扫描不会误删其他类型的索引记录。
+    max_files: 可选 int —— 库里最多留多少个**不同文件**（不是向量条数：
+       一个视频会拆出很多单元）。免费版配额走这里，`None` = 不限。
+       ★ 只挡**新增**：已经在库里的文件照旧刷新，不然用户一撞上限，
+         连「改个文件名 / 换个封面」都跟不动了。超出的部分不抛错，
+         只是不进这一趟，返回值里的 `limited` 说明被挡掉了几个。
     """
     import mlx.core as mx
     import embed as we
@@ -1885,6 +1890,26 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
                         files.append(os.path.join(dp, fn))
     total = len(files)
     print(f"扫描到 {total} 个候选文件")
+
+    # ★ 免费版配额：库里能留多少个**不同文件**。见 build_index 文档里 max_files 那段。
+    limited = 0
+    if max_files:
+        known = {r[0] for r in cur.execute("SELECT DISTINCT path FROM items").fetchall()}
+        budget = max(0, int(max_files) - len(known))
+        keep_known = [p for p in files if p in known]      # 已在库：照旧刷新
+        fresh = [p for p in files if p not in known]        # 新面孔：受配额管
+        if len(fresh) > budget:
+            limited = len(fresh) - budget
+            fresh = fresh[:budget]
+        files = keep_known + fresh
+        total = len(files)
+        print(f"配额 {max_files}：库里已有 {len(known)} 个，这趟新增额度 {budget}，"
+              f"被挡下 {limited} 个")
+        if limited:
+            report(phase="scanning", total=total, current=0, limited=limited,
+                   message=f"免费版上限 {max_files} 个文件，本趟放入 {len(fresh)} 个，"
+                           f"还有 {limited} 个没进")
+
     report(phase="encoding", total=total, current=0, message=f"共 {total} 个文件")
 
     n_new = n_skip = n_unit = 0
@@ -2152,7 +2177,8 @@ def build_index(roots, db_path=DB_PATH, force=False, model_path=None, progress=N
             "removed": n_removed,
             "failed": n_fail,
             "meta": n_meta,
-            "total": total, "elapsed": round(dt, 1)}
+            "total": total, "elapsed": round(dt, 1),
+            "limited": limited}
 
 
 # --------------------------------------------------------------------------

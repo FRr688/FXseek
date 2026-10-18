@@ -34,3 +34,11 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+# ★ 许可证私钥绝不能进仓库（正常存在 ~/.fxseek-keys/，这里只是兜一层）
+*.key
+fxseek-keys/
+keys/issues.tsv
+
+# ★ 卡密码池 / 签发记录：只在本地，绝不入库
+/keys/

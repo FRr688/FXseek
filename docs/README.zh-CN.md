@@ -1,6 +1,6 @@
 # FXseek 媒体库
 
-**一个自包含的 macOS 本地素材库 —— 用自然语言、自己的声音、或一张参考图，找你硬盘里的图片 / 视频 / 音频 / 文档。**
+**一个自包含的 macOS 本地素材库 —— 用自然语言、自己的声音、或一张参考图，找你硬盘里的图片 / 视频 / 音频 / 文档。配上 iPhone，媒体库跟着你在家里走。**
 
 检索、打标、转写**全部在本机完成，素材不出网**；装完即用，不需要你机器上有 Python 或任何第三方依赖
 （应用自带独立运行时与内置多模态模型）。
@@ -51,6 +51,7 @@
 | 🔍 **文字搜画面** | 不只搜文件名：用向量检索理解"夕阳下的水面""手心里的汗珠"这类**画面内容**，再做精排。 |
 | 🎙 **语音检索** | 按住说话即搜；**哼唱**走声学指纹（Chromaprint）。指纹优先、意图分流、双路兜底。 |
 | 🖼 **以图搜图 / 以音搜素材** | 给一张图或一段音频，找库里的相似素材；命中视频时封面即**命中帧**。 |
+| 📱 **iPhone App** | 在手机上通过 Wi-Fi 浏览、检索（文字／以图／以音）和播放整个媒体库；手机自己的照片和录音在电脑端就是一个普通的索引源，打标与转写两边都能跑。**手机保留一份本地索引，断网也能以图搜图、以音搜音和语义搜索。** |
 | 🗂 **30+ 格式** | 图片 8 种、视频 8 种、音频 8 种；PDF / Office / WPS / 纯文本 / 压缩包清单等文档。 |
 | 🎬 **不只是找** | 缩略图墙、内置播放器、音频**歌词页**（可一键转写）、视频**字幕**、侧栏最近上传、回收站。 |
 | ✨ **漫步时光** | 一键进入"回忆长廊"：只留图片与视频，按列交错缓缓滚动，点一下让某张优雅淡出。 |
@@ -62,7 +63,7 @@
 
 ## 下载（普通用户）
 
-1. 到 [Releases](../../releases) 下载 `FXseek-1.0.3.dmg`
+1. 到 [Releases](../../releases) 下载 `FXseek-1.1.0.dmg`（手机端是 `FXseekMobile-1.1.0.ipa`）
 2. **安装前先删掉旧版**：`/Applications/FXseek.app`（直接覆盖会留下旧文件）
 3. 打开 dmg，把 `FXseek.app` 拖进"应用程序"
 4. 首次启动会**自动下载内置模型（约 1.8 GB）**，默认走国内镜像、失败自动换官方源，带进度条
@@ -76,19 +77,19 @@ GitHub 的下载线路在国内可能很慢甚至连不上。下面几个镜像�
 
 | 线路 | 地址 |
 |---|---|
-| ⚡ 加速 1 | `https://ghfast.top/https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
-| ⚡ 加速 2 | `https://hk.gh-proxy.com/https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
-| ⚡ 加速 3 | `https://ghproxy.net/https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
-| 🌐 官方直链 | `https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-1.0.3.dmg` |
+| ⚡ 加速 1 | `https://ghfast.top/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
+| ⚡ 加速 2 | `https://hk.gh-proxy.com/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
+| ⚡ 加速 3 | `https://ghproxy.net/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
+| 🌐 官方直链 | `https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg` |
 
 镜像都是第三方代理，随时可能失效；如果都打不开，就用官方直链，或者拿你信得过的 GitHub 加速前缀
 拼在直链前面。建议**先试加速、慢就换直链**。
 
-**完整性核对**（文件 283.6 MB / 297,394,752 字节）：
+**完整性核对**（文件 348.3 MB / 365,197,497 字节）：
 
 ```bash
-shasum -a 256 ~/Downloads/FXseek-1.0.3.dmg
-# 应为 3035320aeeaa016260153a54aac27c6918ad961f1e2d56be3b19385bcf46729c
+shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
+# 应为 db54a056b4f32cd40da3616efc887d6ef8db6af54ee6bd69ca7418387b32bbed
 ```
 
 ## 从源码构建（开发者）
@@ -100,7 +101,7 @@ shasum -a 256 ~/Downloads/FXseek-1.0.3.dmg
 ```bash
 bash tools/build_app.sh          # 只出 .app
 bash tools/build_app.sh --dmg    # 出 .app + .dmg
-hdiutil verify dist/FXseek-1.0.3.dmg     # 必须打印 VALID
+hdiutil verify dist/FXseek-1.1.0.dmg     # 必须打印 VALID
 
 # 开发模式：直接起服务，改 ui.html / settings.html 刷新即生效
 ./venv/cpython-3.11/bin/python3.11 app.py --port 8231

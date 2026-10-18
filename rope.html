@@ -1,0 +1,1695 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>暂存区</title>
+<style>
+/* ==========================================================================
+   暂存区窗（工作模式的「绳子」那一层）
+
+   这扇窗的定位是**只负责显示**：
+     · 桌面层级（比所有普通窗口低）、穿透点击 —— 所以「不干扰其它窗口」
+     · 进了工作模式就一直在，不随搜索框一起收起来
+     · 它的兄弟是 work.html（搜索窗），两扇窗通过 /v1/work/hung 交换状态
+
+   ★ 不要在这里接鼠标事件。窗口层在 Windows 上是 setIgnoresMouseEvents(True)，
+     这里写了也收不到；真要交互（拖动明信片、点 ×、点收工）都在搜索窗那一层做，
+     那边是全屏最高层级，坐标和这里一一对应。
+   ========================================================================== */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;
+  pointer-events:none;
+  font:13px/1.45 -apple-system,"PingFang SC","Helvetica Neue",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+
+#rope{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible}
+
+/* ---- 明信片 ---- */
+#stage{position:absolute;inset:0}
+
+/* ---- 「收工」按钮：常驻左边缘的独立按钮（范老板 10-14 第⑤条）----
+   它以前长在**搜索窗**（work.html）里，只有绳上挂了东西才出现、搜索层一收走
+   就跟着没了。范老板要的是「一直在桌面上、吸附在左边缘、点得到」——
+   所以整个搬进绳窗：绳窗在整个工作模式里一直在（只有它铺满 visibleFrame）。
+   ★ 绳窗整页是 `pointer-events:none` 的（html,body 那条），只有这个按钮开回
+     auto；宿主那层再按矩形把它放行（workwin._rope_hit_tick）。少了后半句，
+     点击会被整窗穿透掉 —— 按钮看得见、点不着。 */
+/* ★★ 2026-10-15 范老板第一条：收工按钮重做。他的要求是
+   「{收工}字样式要好看明显，按钮依附在左边缘，不要进入『暂存区』范围，
+     它是独立按钮，一直存在在桌面，不用时半收着藏在屏幕边缘」。
+   三件事一次改掉：
+   1. **挪出暂存区**。原来它贴在绳子最左端（top = 绳位），正好落在
+      「绳 ± 卡片」那条带子里 —— 范老板要的编辑态判定会把鼠标停在那儿当成
+      「停在暂存区」，停 3 秒就把暂存区切成编辑态。现在钉在**左边缘垂直居中**，
+      离绳子那一带远远的。
+   2. **半收着**。待机时整体往左推出去 62%，只在屏幕边缘露出一截场记板；
+      鼠标一碰就滑出来（.22s 的 ease-out，回弹感来自 cubic-bezier 的过头段）。
+   3. **字好看**。场记板本身还是原来那套（范老板认过这个造型），但「收工」
+      两个字从中缝里那行 11px 小字提到板子右侧：13px / 700 / 字距 1px 的标题，
+      下面挂一行 11px 的件数。整块装进一枚毛玻璃胶囊，压得住桌面壁纸的杂色。 */
+#collectWrap{
+  position:absolute;left:0;top:50%;z-index:9;
+  pointer-events:auto;cursor:pointer;
+  -webkit-user-select:none;user-select:none;   /* 拖动时别把文字选中 */
+  /* ★ 范老板 2026-10-15 第④条：按钮要能随便拖、能吸附在左右边缘半隐藏。
+     于是「半收着多少个百分比」「悬停滑到哪」都做成变量：默认贴左边缘
+     （-62% 藏出去），`.edge-r` 就翻成 +62% 藏右边。样式本身一个字没改。 */
+  --snap:-62%;--slideto:-6px;
+  /* ★ 两颗按钮住同一个容器、竖排平齐叠放 —— 这就是「一个整体」 */
+  display:flex;flex-direction:column;gap:6px;
+  transform:translate(var(--snap),-50%);
+  transition:transform .24s cubic-bezier(.22,1.1,.36,1),opacity .2s;
+  animation:boardIn .42s cubic-bezier(.3,1.5,.5,1);
+}
+#collectWrap.edge-r{--snap:-38%;--slideto:calc(-100% + 6px)}
+/* ★ 范老板 2026-10-15 第③条：「收工按钮拖到右边屏幕时应该**镜像显示**，而不是
+   让场记板没文字那端漏在外面」。原来贴右边时露出来的是**板子**（元素最左边那截），
+   和贴左边时露出「收工」两个字完全不对称，看着像拿反了。这里把内容整体镜像：
+   板子挪到右边、文字挪到左边并改成右对齐，板子本身的斜条纹也翻一面 —— 于是
+   贴右边时露出来的同样是「收工 0 个」，左右两边是一对镜像。 */
+#collectWrap.edge-r #collect{flex-direction:row-reverse;
+  padding:7px 14px 7px 16px}       /* 内边距跟着镜像，板子那侧仍是 14px 留白 */
+#collectWrap.edge-r .board{transform:scaleX(-1)}
+#collectWrap.edge-r .lab{align-items:flex-end;text-align:right}
+/* ★ 贴右边时 `left:100%` 会让这个绝对定位元素的**可用宽度变成 0**，shrink-to-fit
+   把文字挤成竖排（第一版就翻车在这里：字全竖起来了）。右边这版必须显式把宽度
+   撑成内容宽，并禁止文字换行。 */
+#collectWrap.edge-r{width:max-content}
+/* ★ 范老板 2026-10-15：「『收工』按钮上方逆时针 30 度以一个样式再加一个按钮
+   「放映」，「收工」和「放映」是一个按钮，就像扇形多选项按钮」。
+   于是「放映」跟「收工」共用同一套外观，只是绕自己**左下角**逆时针转 30°、
+   再整体抬到「收工」正上方 —— 两个从同一个支点扇出去，看着是一组。
+   贴右边时方向全部镜像（转 +30°、绕右下角、内容左右翻），跟「收工」一致。 */
+#showWrap{
+  /* ★ 用 `bottom:50%` 钉在竖直中点，而不是拿 top:50% 再减一个猜出来的高度：
+     这样「放映」一定坐在「收工」正上方，按钮多高都不会错位。
+     绕**左下角**逆时针 30° → 两个按钮从同一个支点扇出去。 */
+  position:absolute;left:0;top:50%;z-index:9;
+  pointer-events:auto;cursor:pointer;
+  -webkit-user-select:none;user-select:none;
+  /* ★ 范老板 2026-10-15（第二条意见）：「把『放映』和『收工』做成一个按钮…
+     做成平齐叠放吧」。所以不再逆时针转 30°，改成**平齐叠放**：
+     只把 margin-bottom 抬到刚好压在「收工」上方一条缝的位置。
+     拖动时两者一起动是天然的 —— 它用的是 `bottom:50%`，
+     相对的是 #collectWrap 的盒子，父元素一动它就跟着动。 */
+  /* ★ 范老板：「『放映』按钮又按不了了」。藏 46% 时露在外面只有几十个点，
+     很难点中 —— 改成只藏 22%，一眼看得见、一点就中。 */
+  --snap:-22%;--slideto:-6px;--fan:0deg;
+  transform:translate(var(--snap),0) rotate(var(--fan));
+  transform-origin:0% 100%;
+  transition:transform .24s cubic-bezier(.22,1.1,.36,1),opacity .2s;
+}
+#showWrap.edge-r{
+  /* ★ 「放映」比「收工」窄一点、藏得少一点：它是新增的一颗，藏太狠会点不着
+     （实测藏 38% 时露在外面只剩三十几个点，鼠标很难命中）。 */
+  --snap:-6%;--slideto:calc(-100% + 6px);--fan:30deg;
+  transform-origin:100% 100%;width:max-content;
+}
+#showWrap:hover,#showWrap.pinned{
+  transform:translate(var(--slideto),0) rotate(var(--fan));
+}
+#showWrap.edge-r #show{flex-direction:row-reverse;padding:7px 14px 7px 16px}
+#showWrap.edge-r .board{transform:scaleX(-1)}
+#showWrap.edge-r .lab{align-items:flex-end;text-align:right}
+#showWrap.edge-r{width:max-content}
+/* ★ 范老板 2026-10-15：「『放映』到右边屏幕时没有镜像」。合并之后这两颗都是
+   #collectWrap 的子项，镜像规则必须挂在 #collectWrap.edge-r 上（原来挂在已删除的
+   #showWrap 上，所以一直没生效）。 */
+#collectWrap.edge-r #show{flex-direction:row-reverse;padding:7px 14px 7px 16px}
+#collectWrap.edge-r #show .board{transform:scaleX(-1)}
+#collectWrap.edge-r #show .lab{align-items:flex-end;text-align:right}
+/* 放映中：按钮自己亮起来，用户一眼知道现在处于放映态 */
+#show.on{background:rgba(64,86,140,.92)}
+/* ★ 范老板 2026-10-15：「速度增加一个高档位…高低档位优雅的加在『放映』里面，
+   想个方案做个美观的复合按钮」。做法：在「放映」这颗胶囊的右端嵌一枚小胶囊显示
+   当前档位（低/高），点它只换档、不开始/停止；点胶囊其余地方才是开始/停止。 */
+#show .gear{
+  flex:0 0 auto;margin-left:7px;padding:1px 6px;border-radius:7px;
+  font-size:10px;line-height:15px;font-weight:600;letter-spacing:.02em;
+  background:rgba(255,255,255,.14);color:rgba(255,255,255,.92);
+  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12);
+}
+#show .gear:hover{background:rgba(255,255,255,.26)}
+#collectWrap.edge-r #show .gear{margin-left:0;margin-right:7px}
+#show.on .cico{color:#ffe08a}
+#collect .lab,#show .lab{flex:0 0 auto}
+#collect .ctxt,#collect b{white-space:nowrap}
+@keyframes boardIn{
+  0%{opacity:0;transform:translate(calc(var(--snap) - 8%),-50%) scale(.9)}
+  100%{opacity:1;transform:translate(var(--snap),-50%) scale(1)}
+}
+#collectWrap:hover,
+#collectWrap.pinned{transform:translate(var(--slideto),-50%)}
+#collectWrap:active{transform:translate(var(--slideto),-50%) scale(.97)}
+#collectWrap.busy{opacity:.55;pointer-events:none}
+/* 拖拽中：跟手就是跟手，别让 0.24s 的过渡把位置拖成橡皮筋。
+   吸附落位那一瞬间再把这个类摘掉，过渡就回来了。 */
+#collectWrap.dragging{transition:none;animation:none;cursor:grabbing;
+  transform:translate(-50%,-50%) scale(1.04)}
+
+#collect,#show{
+  display:flex;align-items:center;gap:11px;border:0;
+  /* ★ 左边留 14px：贴屏幕最左边时板子不会被裁掉半个。 */
+  padding:7px 16px 7px 14px;margin:0;cursor:pointer;
+  border-radius:19px;
+  background:rgba(24,26,34,.80);
+  box-shadow:0 10px 26px rgba(0,0,0,.42),
+             inset 0 1px 0 rgba(255,255,255,.13),
+             inset 0 0 0 .5px rgba(255,255,255,.09);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);
+  backdrop-filter:blur(22px) saturate(150%);
+}
+#collectWrap:hover #collect,
+#showWrap:hover #show{background:rgba(32,35,45,.88)}
+/* 场记板本体：结构没动，只是不再整块斜放 */
+#collect .board,#show .board{
+  display:block;width:56px;flex:0 0 56px;position:relative;
+  filter:drop-shadow(0 4px 9px rgba(0,0,0,.42));
+}
+#collect .cbody,#show .cbody{
+  display:flex;align-items:center;justify-content:center;
+  height:26px;border-radius:3px 3px 7px 7px;
+  background:linear-gradient(180deg,#3b414b,#20242b 62%,#171a20);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 0 0 .5px rgba(0,0,0,.55);
+}
+#collect .ctop,#show .ctop{
+  height:9px;border-radius:5px 5px 2px 2px;overflow:hidden;
+  background:repeating-linear-gradient(58deg,#f2f3f5 0 8px,#1b1f26 8px 16px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 0 .5px rgba(0,0,0,.5);
+  transform:translateY(1px);
+}
+#collect .clap{
+  height:5px;margin:0 2px 1px;border-radius:4px 4px 1px 1px;
+  background:repeating-linear-gradient(58deg,#e9eaee 0 7px,#12151a 7px 14px);
+  box-shadow:0 1px 2px rgba(0,0,0,.5);
+  transform-origin:3px 100%;
+  transform:rotate(-9deg) translateY(-2px);
+  transition:transform .14s cubic-bezier(.3,1.6,.5,1);
+}
+#collectWrap.busy .clap{transform:rotate(0) translateY(0)}
+#collectWrap:hover .clap{transform:translateY(-3px) rotate(-7deg)}
+#collect .cico,#show .cico{width:12px;height:12px;flex:0 0 12px;color:#ffd166}
+
+/* 「收工」两个字 + 件数 */
+#collect .lab{display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  text-align:left}
+#collect .ctxt,#show .ctxt{
+  font:700 13px/1 -apple-system,"PingFang SC",system-ui,sans-serif;
+  color:#fbfcfe;letter-spacing:1.2px;
+  text-shadow:0 1px 2px rgba(0,0,0,.55);
+}
+#collect b{font:500 11px/1 -apple-system,"PingFang SC",system-ui,sans-serif;
+  color:rgba(255,255,255,.48);letter-spacing:.2px}
+/* 小提示药丸：按钮在绳窗，work.html 那个 toast 够不着这里。
+   ★ 范老板 2026-10-15：「截图中说明文字移到屏幕中间」。
+   以前钉在左上角（left:20px;top:0），人盯着屏幕中间操作时根本看不见。
+   现在摆到屏幕正中（只是视觉居中，pointer-events 仍是 none，不挡任何点击）。 */
+#tst{
+  position:absolute;left:50%;top:50%;z-index:10;pointer-events:none;
+  max-width:min(560px,72vw);padding:10px 20px;border-radius:999px;
+  opacity:0;text-align:center;
+  transform:translate(-50%,calc(-50% + 10px));
+  transition:opacity .22s,transform .22s;
+  background:rgba(24,26,32,.94);color:#eef1f5;
+  box-shadow:0 10px 26px rgba(0,0,0,.4),inset 0 0 0 .5px rgba(255,255,255,.12);
+  font:500 13px/1.45 -apple-system,"PingFang SC",system-ui,sans-serif;
+}
+#tst.on{opacity:1;transform:translate(-50%,-50%)}
+#tst.bad{background:rgba(74,24,26,.95)}
+#tst b{color:#8fe3c0}
+.post{
+  position:absolute;width:172px;
+  transform-origin:50% -14px;      /* 摆动支点在夹子上，不在卡片顶边 */
+  will-change:transform,opacity;
+}
+/* ★ 范老板 2026-10-15 第③条：「只有缩略图动，明信片框不动，两者应该是一个整体」。
+   以前白卡片的外观（白底 / 圆角 / 内边距 / 投影）画在**不转的** `.post` 上，
+   而旋转写在内层 `.sway` 上 —— 照片和文件名在白框里扭，白框自己纹丝不动，
+   看着就是「缩略图在飘、明信片没动」。
+   现在把整张明信片的外观搬到 `.sway`（本来就是「会转的那一层」），一转就是
+   整张卡一起转。`.post` 退化成一块纯定位用的空盒子（只跑 translate / opacity），
+   夹子 `.clip` 与摘卡按钮 `.x` 仍挂在它下面 —— 跟着卡片平移，但不跟着扭。 */
+/* ★ 范老板 2026-10-15：明信片图片区**宽度恒定**（卡片 172px 不变），高度按
+   「主流明信片比例」里最接近的那一档走（见 __phFit / PH_BUCKETS）。
+   这里 4:3 只是**没有缩略图**时的兜底（音频/文档本来就是 4:3，正好对上）。 */
+.post .ph{
+  width:100%;aspect-ratio:4/3;border-radius:3px;overflow:hidden;background:#20242b;
+  position:relative;
+}
+.post .ph .ic{position:absolute;inset:0;display:block}
+.post .ph .ic svg{width:100%;height:100%;display:block}
+.post .ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+/* ★ 范老板 2026-10-15 第③条：「所有明信片的右下角加上我们的logo，这样看着更像
+   拍立得明信片，记得 logo 的黑色背景去掉再加过去」。图是内联的 base64（不引外部
+   文件，省得路径/静态目录对不上）；黑底已经在生成时抠掉了，所以贴在照片上不会
+   出现一块黑方块。pointer-events:none —— 它只是印章，不能挡住卡片的点击。 */
+.post .plogo{
+  position:absolute;right:3px;bottom:3px;height:13px;width:auto;
+  pointer-events:none;z-index:2;opacity:.95;
+}
+.post .lb{
+  padding:5px 1px 6px;font-size:10.5px;color:#3b4048;font-weight:500;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;
+}
+.post .nm{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 视频/音频那种没有缩略图的，给个深色底 + 图标，别露一块惨白 */
+.post .ph.nope{background:#20242b}
+.post .ph.nope svg{width:100%;height:100%;display:block}
+
+/* ---- 夹子 ---- */
+.clip{position:absolute;left:50%;top:-18px;transform:translateX(-50%);
+  width:30px;height:44px;pointer-events:none}
+.clip svg{width:30px;height:44px;display:block;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+/* ==========================================================================
+   让画面「活」起来的三样东西（范老板 10-14：工作模式不想枯燥乏味，
+   并且强调工作模式本身占用资源要小）。
+   ★ 全部走 CSS 合成动画（transform/opacity），不碰布局属性、不引图片、
+     不加定时器 —— 主线程几乎没有开销，风扇不会转。
+   ========================================================================== */
+
+/* ---- 1. 明信片被风吹得轻轻晃 ----
+   摆动的**支点留在夹子上**：`.sway` 是 static 的，所以 .clip 依然相对
+   .post 定位、稳稳咬在绳上，只有卡片本身在下面摆 —— 物理上才对。 */
+/* ★ 摆动整个搬到 JS 里驱动了（见脚本末尾的 swayTick）：CSS @keyframes 做不出
+   范老板第⑤条要的两件事 —— 鼠标划过的**冲量**大小取决于光标速度，而且要和
+   常驻的微风**叠加**在一起。这里只留支点：夹子咬在绳上，卡片绕夹子摆。 */
+.post .sway{transform-origin:50% -14px;will-change:transform;
+  background:#fff;border-radius:5px;padding:7px 7px 0;
+  box-shadow:0 10px 22px rgba(0,0,0,.34),0 1px 0 rgba(255,255,255,.6) inset,
+             0 0 0 1px rgba(0,0,0,.10)}
+
+/* ---- 2. 绳上的四足狒狒（桌面宠物那种自己在动） ----
+   形象不再是手画的 SVG，而是 AI 生成、离线抠好背景的 8 帧行走雪碧图
+   （tools/make_rope_baboon.py → assets/rope_baboon.png），跟菜单栏图标
+   是同一只侧身四足狒狒。逐帧靠 background-position + steps(8) 在合成层上跑，
+   JS 每帧只写一个 transform。动作分三档，由 JS 挂 class 切换：
+   `.crawl` 慢走 / `.run` 撒腿快跑 / `.hop` 蹦跳。 */
+#ape{position:absolute;left:0;top:0;pointer-events:none;will-change:transform;
+  width:44px;height:40px;                  /* ★ 等比缩到原始 97×88 的 45% */
+  background-image:url("/assets/rope_baboon.png");
+  background-repeat:no-repeat;
+  background-size:352px 40px;              /* 8 帧 × 44px（原图是 2x 的 194×176） */
+  background-position:0 0;
+  filter:drop-shadow(0 3px 5px rgba(0,0,0,.40)) drop-shadow(0 0 1px rgba(0,0,0,.22));
+  animation:apeWalk .78s steps(8) infinite}
+@keyframes apeWalk{from{background-position:0 0}to{background-position:-352px 0}}
+#ape.run{animation-duration:.30s}
+#ape.hop{animation-duration:.44s}
+
+/* ---- 3. 绳上那张空白示例明信片（没东西挂着时顶上） ---- */
+.post.ghost{opacity:.62}
+.post.ghost .sway{background:rgba(255,255,255,.88);
+  box-shadow:0 8px 18px rgba(0,0,0,.26),0 0 0 1px rgba(0,0,0,.08)}
+.post.ghost .ph{background:#d7dade;border:1.5px dashed #99a0aa;
+  box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.post.ghost .ph .ic{position:static;inset:auto;width:38px;height:38px;opacity:.75}
+.post.ghost .lb{color:#6f7681}
+
+/* ===== 编辑态（范老板 2026-10-15 第①条）=============================
+   暂存区两种状态：
+     · 待编辑态（默认）：窗口压在桌面图标**下面**、整窗穿透点击 ——
+       鼠标碰不到明信片，只有狒狒在走、明信片随风轻轻摆动。
+     · 编辑态：鼠标在暂存区里停留满 3 秒自动切过来，窗口抬到桌面图标
+       **上方**，这时才能悬停 / 拖动 / 删掉明信片。
+   两种状态下窗口的**层级**由 workwin 按 /v1/work/ropeedit 落。 */
+/* ★ 整页是 `pointer-events:none`（见 html,body 那条），所以明信片默认**收不到
+   任何鼠标事件** —— 编辑态里必须把它开回来，否则 pointerdown 的 target 是
+   body，`closest(".post")` 永远拿不到，拖动和 × 就全是死的。 */
+body.editing .post{pointer-events:auto;cursor:grab}
+body.editing .post.hot{
+  z-index:5;
+  filter:drop-shadow(0 16px 30px rgba(0,0,0,.46));
+}
+body.editing .post.dragging{cursor:grabbing;z-index:6;transition:none !important}
+.post .x{
+  display:none;position:absolute;top:-10px;right:-10px;z-index:7;
+  width:23px;height:23px;padding:0;border:0;border-radius:50%;cursor:pointer;
+  background:rgba(26,28,35,.94);color:#fff;
+  font:600 15px/23px -apple-system,"PingFang SC",system-ui,sans-serif;
+  box-shadow:0 4px 12px rgba(0,0,0,.45),inset 0 0 0 .5px rgba(255,255,255,.24);
+}
+.post .x:hover{background:rgba(214,62,62,.96)}
+/* ★ 范老板 2026-10-15 第⑥条：「只要暂存区处于编辑状态，每个明信片右上角的黑色
+   × 就要显示出来，这样用户就知道进入编辑模式」。
+   原来只有鼠标**悬停到哪张**才把哪张的 × 亮出来（`body.editing .post.hot .x`），
+   整块暂存区看着跟平时没区别，用户不知道「现在能拖了」。
+   现在一进编辑态，**所有**卡片的 × 一起出现；正在拖的那张除外（手指按着，
+   旁边冒出个删除钮容易误点），悬停那张再加一圈高亮继续保留。 */
+body.editing .post .x,
+body.layer   .post .x{display:block}
+body.editing .post.dragging .x,
+body.layer   .post.dragging .x{display:none}
+body.editing .post.hot .x{
+  background:rgba(214,62,62,.96);transform:scale(1.1);
+  box-shadow:0 4px 14px rgba(214,62,62,.55),inset 0 0 0 .5px rgba(255,255,255,.32);
+}
+/* 左下角的状态字：告诉用户「现在能跟明信片交互了」，3 秒后自己淡掉。 */
+#editHint{
+  position:absolute;left:50%;bottom:26px;transform:translateX(-50%);
+  padding:7px 15px;border-radius:999px;white-space:nowrap;
+  background:rgba(24,26,34,.82);color:#e8eaee;
+  font:500 12px/1.3 -apple-system,"PingFang SC",system-ui,sans-serif;
+  box-shadow:0 8px 22px rgba(0,0,0,.36),inset 0 0 0 .5px rgba(255,255,255,.13);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  opacity:0;pointer-events:none;transition:opacity .28s;z-index:8;
+}
+#editHint.on{opacity:1}
+</style>
+</head>
+<body>
+<svg id="rope" aria-hidden="true">
+  <defs>
+    <!-- 钢丝绳的「螺纹」：用两股反向的短线叠在一起，远看就是拧出来的纹路 -->
+    <linearGradient id="ropeBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#5c636c"/>
+      <stop offset=".35" stop-color="#20242a"/>
+      <stop offset=".62" stop-color="#0c0e11"/>
+      <stop offset="1"   stop-color="#2a2f36"/>
+    </linearGradient>
+  </defs>
+  <!-- ★ 粗细就靠这三个 stroke-width。原来是 7/4.8，在 2x 屏上糊成一坨粗绳；
+       范老板要「调细点、画面好看点」，芯收到 3.4，投影跟着收到 5 并且 blur
+       从 4px 降到 2.5px —— 投影糊太开，视觉上等于把绳又加粗回去。 -->
+  <path id="rpShadow" fill="none" stroke="rgba(0,0,0,.30)" stroke-width="5"
+        stroke-linecap="round" filter="blur(2.5px)"/>
+  <path id="rpCore" fill="none" stroke="url(#ropeBody)" stroke-width="3.4"
+        stroke-linecap="round"/>
+  <!-- 螺纹。★ 不能用 stroke-dasharray 假装：虚线是一串**横向**的方块，
+       放大看就是拉链，不像拧出来的钢丝。真螺纹是沿绳身斜着排的一根根短线，
+       所以这里按弧长采样、逐段画短线（见 JS 里的 buildTwist）。
+       两股错开半个周期，看着才是「绞」在一起的。 -->
+  <g id="rpTwist" stroke-linecap="round"></g>
+  <path id="rpSheen" fill="none" stroke="rgba(255,255,255,.22)" stroke-width=".8"
+        stroke-linecap="round"/>
+</svg>
+<div id="stage"></div>
+
+<!-- 绳上那只四足狒狒。8 帧行走雪碧图（assets/rope_baboon.png）逐帧播放，
+     位置由 JS 沿绳身推进。★ 图里狒狒的**脚正好落在帧底**，所以 JS 把帧底
+     贴到 ropeYAt(x) 上就等于「踩在钢丝绳上走」。 -->
+<div id="ape" class="crawl" aria-hidden="true"></div>
+
+<!-- 「收工」：常驻左边缘的独立按钮（范老板第⑤条）。点一下就收工。 -->
+<div id="collectWrap">
+<button id="show" title="放映：明信片摆正、等距从左往右缓慢平移；再点一次停止">
+  <span class="board">
+    <div class="ctop"></div>
+    <div class="cbody">
+      <svg class="cico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5.6v12.8L19 12z"/></svg>
+    </div>
+  </span>
+  <span class="lab"><span class="ctxt">放映</span></span><span class="gear" id="gear">慢</span>
+</button>
+<button id="collect" title="收工：把绳上的素材收进桌面的 FXseek 文件夹">
+  <span class="board">
+    <div class="clap"></div>
+    <div class="ctop"></div>
+    <div class="cbody">
+      <svg class="cico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.6l5.2 5.2L19.5 6.8"/></svg>
+    </div>
+  </span>
+  <span class="lab"><span class="ctxt">收工</span><b id="cn">0 个</b></span>
+</button></div>
+<div id="tst"></div>
+<div id="editHint">编辑态：可以拖动明信片换位置，点右上角 × 摘下来</div>
+
+<script>
+/* ==========================================================================
+   暂存区
+   ========================================================================== */
+const $  = (s) => document.querySelector(s);
+const W  = () => innerWidth, H = () => innerHeight;
+
+/* 绳子的位置：屏高的 8.5%。
+   ★ 这个数是从范老板的标注量出来的（他在截图上画了一条直线标绳位）。
+     2026-10-14 他要求「位置向上移点」+「暂存区和搜索框间距再调大点，不挡住
+     悬挂后的明信片」：原来绳在 26.2%、搜索框在 42.5%，中间的 16.3% 只有
+     140px，而垂下来的明信片高 ~170px —— 卡片下半截正好被搜索框压住。
+     先收到 12.5%，再「继续上移」到 8.5% → 5.5% → 3.2%（范老板连说两次「不够」）。
+     ★ 再往上就压到狒狒了：狒狒是「站在绳子上」的，它需要 APE_H 那么高的
+       头顶空间（帧底贴在绳上），所以绳位的最低安全值 ≈ APE_H / 屏高。
+       想再高只能先把狒狒再缩小 —— 两个数要一起改。
+     绳窗铺的是 NSScreen.visibleFrame（已经扣掉菜单栏），所以这里永远不会
+     顶到菜单栏和刘海。 */
+const ROPE_AT = 0.032;
+const CARD_W  = 172;
+
+const S = { ropeY: 0, sag: 18, items: [], flying: false, busy: false,
+            showOn: false, showX: 0 };
+/* 放映：范老板 2026-10-15「点『放映』后明信片全部摆正、等距排列，从左到右
+   缓慢平移、循环移动」。SHOW_GAP 是等距槽位，SHOW_SPEED 是平移速度
+   （px/s，故意很慢）。 */
+const SHOW_GAP = CARD_W + 46;
+/* ★ 范老板 2026-10-15：「速度增加一个高档位，现在的速度是低档位」。
+   低档 22px/s（原来那档），高档 64px/s（约 3 倍，一张卡穿过整屏约 24 秒）。 */
+const SHOW_GEARS = [22, 64];
+const SHOW_GEAR_NAME = ["慢", "快"];
+// 收工落点（绳窗 client 坐标，点）。★ 2026-10-14 改（范老板第③条）：以前飞向
+// 「我们自己画的那个假 FXseek 文件夹」，现在假文件夹取消了 —— 明信片直接飞向
+// 左下角 Dock 最左边那个**访达**图标，而那个 FXseek 文件夹改成收工之后由服务端
+// 真在桌面上建出来（带系统红色标签）。
+// ★ 落点故意越过窗口下边界（y > H()）：绳窗只铺 visibleFrame（不含 Dock），
+//   卡片滑到窗口下沿就被裁掉，看上去正好是「钻进 Dock 里没了」。
+//   权威值仍旧由服务端给（只有它问得到屏幕高度），问不到就用这里的兜底。
+let DEST = { x: 64, y: Math.round(H() + 32) };
+
+/* ------------------------------------------------------------------ 绳子 */
+/* y = 绳顶 + sag*(1 - t²)：t = -1..1，(1-t²) 在中间取 1、两头取 0，
+   于是中间最低、两头回到同一水平 —— 就是一根两头固定、自然下垂的绳。
+   ★ 屏幕坐标 y 朝下，所以是「加」而不是「减」；写成减的会得到一座拱桥。 */
+function ropeYAt(x){
+  const t = Math.max(-1, Math.min(1, (x / Math.max(1, W())) * 2 - 1));
+  return S.ropeY + S.sag * (1 - t * t);
+}
+
+function layout(){
+  S.ropeY = Math.round(H() * ROPE_AT);
+  // 屏越宽垂得越多，但夹在 12–26px 之间：27 寸屏上垂 80px 就不像绳了，
+  // 小窗口里垂 3px 又看不出来。
+  S.sag = Math.max(12, Math.min(26, Math.round(W() * 0.017)));
+  // 采样够密就行：4px 一段在这个宽度上曲线已经看不出折线
+  const N = Math.max(60, Math.round(W() / 4)), pts = [];
+  for (let i = 0; i <= N; i++){
+    const x = (W() * i) / N;
+    pts.push([x, ropeYAt(x)]);
+  }
+  const dStr = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  ["rpShadow", "rpCore", "rpSheen"].forEach(id =>
+    document.getElementById(id).setAttribute("d", dStr));
+  document.getElementById("rpSheen").setAttribute("transform", "translate(0,-1.0)");
+  buildTwist(pts);
+  paint();
+  placeCollect();
+}
+
+/* 螺纹：沿绳身每隔几像素画一根**斜的**短线，两股错开 —— 放大看才是钢丝绳，
+   不是拉链。用 SVG <line> 逐根画，不引第三方库。 */
+function buildTwist(pts){
+  const g = document.getElementById("rpTwist");
+  const STEP = 3.6, HALF = 1.3;      // 间距 / 斜线的半长（绳调细了，螺纹跟着收）
+  const out = [];
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++){
+    const [x0, y0] = pts[i-1], [x1, y1] = pts[i];
+    const seg = Math.hypot(x1 - x0, y1 - y0) || 0.001;
+    // 沿这一段按 STEP 的间隔插值取点
+    for (let t = 0; t < seg; t += STEP){
+      const u = t / seg;
+      const x = x0 + (x1 - x0) * u, y = y0 + (y1 - y0) * u;
+      const k = Math.floor(acc / STEP);
+      const dy = (k % 2) ? 1.1 : -1.1;            // 两股上下错开
+      // ★ 两股都取**比底色亮**的灰：一开始把另一股写成近黑，结果它在深色绳身上
+      //   整个消失，放大只剩一排亮点 —— 看着像电线上的绝缘珠，不像绞绳。
+      const col = (k % 2) ? "#9aa2ac" : "#5f666f";
+      const op  = (k % 2) ? 0.66 : 0.85;
+      out.push('<line x1="' + (x - HALF).toFixed(1) + '" y1="' + (y - HALF*0.55 + dy).toFixed(1)
+             + '" x2="' + (x + HALF).toFixed(1) + '" y2="' + (y + HALF*0.55 + dy).toFixed(1)
+             + '" stroke="' + col + '" stroke-width="1.3" opacity="' + op + '"/>');
+      acc += STEP;
+    }
+  }
+  g.innerHTML = out.join("");
+}
+
+/* ------------------------------------------------------------------ 明信片 */
+const KICON = {
+  video: '<svg viewBox="0 0 24 24" fill="none" stroke="#8d95a3" stroke-width="1.4"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 12l6-3.6v7.2z" fill="#8d95a2" stroke="none"/></svg>',
+  audio: '<svg viewBox="0 0 24 24" fill="none" stroke="#8d95a3" stroke-width="1.4"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.6"/><circle cx="16.5" cy="16" r="2.6"/></svg>',
+  document: '<svg viewBox="0 0 24 24" fill="none" stroke="#8d95a3" stroke-width="1.4"><path d="M6 2.5h7l5 5v14H6z"/><path d="M13 2.5v5h5"/></svg>'
+};
+const CLIP = `<div class="clip"><svg viewBox="0 0 30 44">
+  <defs>
+    <linearGradient id="cg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8f97a1"/><stop offset=".35" stop-color="#e6eaee"/>
+      <stop offset=".62" stop-color="#a8b0ba"/><stop offset="1" stop-color="#6d747d"/>
+    </linearGradient>
+  </defs>
+  <path d="M10 22 V9 a5 5 0 0 1 10 0 v20 a3.5 3.5 0 0 1-7 0 V11"
+        fill="none" stroke="url(#cg)" stroke-width="3.4" stroke-linecap="round"/>
+  <rect x="8.5" y="19" width="13" height="6.5" rx="2.2" fill="url(#cg)"/>
+  <rect x="8.5" y="19" width="13" height="2.2" rx="1.1" fill="rgba(255,255,255,.45)"/>
+</svg></div>`;
+
+function thumbOf(it){
+  return "/v1/thumb?w=320&path=" + encodeURIComponent(it.path);
+}
+
+/* 没带 x 的条目（不是拖上来的，是外部直接调接口挂的，或者早先版本存的）
+   得自己排一下。★ 不能塌到 0：`left = x` 配 `translateX(-50%)`，x=0 时
+   半张卡片在屏幕外，看着像「收工按钮旁边贴了一张残图」。 */
+function autoX(i, n){
+  const W_ = W() || 1200;
+  const slot = Math.min(CARD_W + 26, (W_ - 120) / Math.max(1, n));
+  const total = slot * (n - 1);
+  return Math.round(W_ / 2 - total / 2 + slot * i);
+}
+
+function paint(){
+  const stage = $("#stage");
+  const seen = new Set();
+  const n = S.items.length;
+  // 先给「没 x 的」补齐 x，之后再走原来那套
+  /* ★ 自己排的位置（`_auto`）在**张数变了**的时候要重排一遍：autoX 是按当前
+     张数算的槽位，挂第 8 张时前 7 张还是按 n=1..7 排的老位置 —— 不重排就会
+     挤成一堆。用户自己拖过的（x 是手给的，`_auto` 为 false）永远钉在原地。 */
+  const nChanged = (S._lastN !== n);
+  S.items.forEach((it, i) => {
+    if (it.x == null || (it._auto && nChanged)){ it.x = autoX(i, n); it._auto = true; }
+  });
+  S._lastN = n;
+  S.items.forEach((it, i) => {
+    seen.add(String(it.id));
+    let el = stage.querySelector('.post[data-id="' + it.id + '"]');
+    if (!el){
+      el = document.createElement("div");
+      el.className = "post";
+      el.dataset.id = it.id;
+      // ★ 别按 kind 猜有没有缩略图：`/v1/thumb` 对音频会给波形图、对视频给首帧，
+      //   按 kind 判会把这些白扔了，卡片上只剩一个图标 —— 用户的原话是
+      //   「明信片缩略图都没了」。全部先试着加载，加载失败再退回图标。
+      const good = true;
+      el.innerHTML = CLIP +
+        // ★ 图标先铺满、缩略图绝对定位盖在上面；图**加载失败就 remove 掉自己**，
+        //   底下那张图标自然露出来。按 kind 去猜有没有缩略图是不行的 ——
+        //   `/v1/thumb` 对音频会给波形图、对视频给首帧，猜错就等于白扔缩略图，
+        //   卡片上只剩一个音符图标（用户原话：「明信片缩略图都没了」）。
+        '<div class="sway"><div class="ph">' +
+          '<span class="ic">' + (KICON[it.kind] || KICON.document) + '</span>' +
+          '<img src="' + thumbOf(it) + '" alt="" onload="__phFit(this)" onerror="this.remove()">' +
+        '</div><div class="lb"><span class="nm"></span></div>' +
+          '<img class="plogo" alt="" src="data:image/png;base64,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">' +
+        // ★ 「×」是编辑态才出现的（范老板第①条：编辑态才能跟明信片交互）。
+        //   ★★ 范老板 2026-10-15：「明信片右上角的黑色 × 是固定在右上角的，
+        //   应该跟随明信片一起动」。它原来挂在 `.sway` **外面**（`.post` 的
+        //   直接子节点）—— 而卡片每帧的摆动/倾斜是 swayTick 写在 `.sway` 上的，
+        //   于是照片在摆、× 却一动不动地杵在原地，看着像贴错了位置。
+        //   现在挂进 `.sway`：它跟着卡片一起倾斜、一起位移，就长在右上角上。
+        //   （命中判定走浏览器自己的 hit-test，跟着 transform 走，不会算飘。）
+        '<button class="x" title="摘下来">\u00d7</button>' +
+        '</div>';
+      el.querySelector(".nm").textContent = it.name;
+      /* ★ 这里原来给 `.sway` 配了随机 animationDuration/animationDelay（CSS
+         摆动时代的东西）。摆动整个搬到 JS 的谐振子之后 CSS 动画已经删掉，
+         这两行就是死代码 —— 每张卡片的随机相位改由 swayTick 里的 `_ph`/
+         `_amp` 决定，见那边。 */
+      // 新挂上来的：从上面掉下来 + 落定后摆两下
+      el.style.transform = "translate(" + (it.x - ((it.w || CARD_W) / 2)) + "px," +
+                           (ropeYAt(it.x) - 240) + "px) scale(.86)";
+      el.style.opacity = "0";
+      stage.appendChild(el);
+      /* ★ 2026-10-17 范老板：「有新添加的明信片叠放逻辑错误，新添加的明信片应该
+         在最上面，现在是跑到最下面」。
+         真凶：新卡片建出来时只有 `position:absolute`、没有 z-index（= `auto`），
+         而 raise() 早就给「碰过」的卡片写过 21、22… 的递增值 —— 定位元素之间
+         `z-index:auto` 算 0，永远压在 21 底下，于是新挂的卡片一出现就藏在老卡
+         后面（DOM 顺序那套只在大家都是 auto 时才管用）。
+         所以建的同时就发一个最高层级，跟「谁最后被碰过谁在最上面」是同一套规则。 */
+      raise(el);
+      requestAnimationFrame(() => {
+        el.style.transition = "transform .46s cubic-bezier(.34,1.3,.5,1),opacity .2s";
+        el.style.opacity = "1";
+        settle(el, it.x, 0);
+      });
+      return;
+    }
+    // ★ 放映中卡片的位置由面板自己按 SHOW_GAP 推进，别在这里按 it.x 拽回去。
+    if (!el._flying && !S.showOn && el._x !== it.x){ settle(el, it.x, 0); }
+  });
+  // 被摘掉的（不是收工那次）直接消失。★ 跳过 .ghost —— 那是示例卡，不在
+  // 服务端的清单里，被这个循环当成「已摘掉」删掉，桌上就永远看不到示例了。
+  [...stage.querySelectorAll(".post:not(.ghost)")].forEach(el => {
+    if (!seen.has(el.dataset.id)) el.remove();
+  });
+  paintGhost();
+}
+
+/* ------------------------------------------------- 绳上那张空白示例明信片 */
+/* 范老板：「钢丝绳放个空白示例明信片挂着，用户自然知道如何操作」。
+   只在暂存区空着的时候出现，挂上第一张真卡片就自己让位。 */
+function paintGhost(){
+  const stage = $("#stage");
+  const el = stage.querySelector(".post.ghost");
+  if (S.items.length){ if (el) el.remove(); return; }
+  if (el){ placeGhost(el); return; }
+  const g = document.createElement("div");
+  g.className = "post ghost";
+  g.innerHTML = CLIP +
+    '<div class="sway"><div class="ph"><span class="ic">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.3">' +
+      '<rect x="3" y="4" width="18" height="16" rx="2.5"/>' +
+      '<path d="M3 16.5l5-5 4 4 3-3 6 6"/>' +
+      '<circle cx="9" cy="9.2" r="1.7"/></svg>' +
+    '</span></div><div class="lb"><span class="nm">拖一张素材挂在这儿</span></div></div>';
+  // 从上面掉下来，和真卡片一个入场动作
+  stage.appendChild(g);
+  const x = Math.round(W() * 0.5);
+  g.style.transform = "translate(" + (x - CARD_W / 2) + "px," + (ropeYAt(x) - 240) + "px)";
+  g.style.opacity = "0";
+  requestAnimationFrame(() => { g.style.transition = "transform .5s cubic-bezier(.34,1.3,.5,1),opacity .3s";
+                                g.style.opacity = ".62"; placeGhost(g); });
+}
+
+function placeGhost(el){
+  const x = Math.round(W() * 0.5);
+  el._x = x;
+  el.style.transform = "translate(" + (x - CARD_W / 2) + "px," + (ropeYAt(x) + 4) + "px)";
+}
+
+/* ★ 明信片图片区的比例 = **几种主流尺寸**，不是原样自适应。
+   范老板 2026-10-15 提了五版，最后这版（⑤）才是定稿：
+     ①「做成 16:9 或 9:16」→ ②「不要统一，按本身比例来」→
+     ③「注意不要过长了，把搜索框都挡住了」→
+     ④「不要全部自适应，看上去很乱，真实明信片就那几种主流比例就行，
+        9:16 竖向挂上去很丑」→
+     ⑤「**9:16 比例不要，丑，删除**」。
+   ⑤「只保留 4x3、1x1 两种明信片比例，然后明信片尺寸稍微调大一点。」
+   —— 现在表里就剩 **4:3（横版）** 和 **1:1（方版）** 两种，别的全删。
+   任何图（含 16:9 宽幅、9:16 竖拍）都被收进这两档之一：宽幅收 4:3 裁两边、
+   竖拍收 1:1 裁上下（object-position 保头）。挂出来永远只有两种形状，
+   齐整、好认，也不会再有细长条。
+   尺寸按同一条一起调大：卡片 152 → **172px**，图片区 138 → **158px**
+   （明信片本来就该有点存在感）。最高的 1:1 也只有 158px、总高 191px ——
+   绳下那排搜索框照样露着。
+   音频/文档保持原来那个 4:3（服务端给的波形图本来就是 320×240，正好 4:3）。 */
+const PH_BUCKETS = [4/3, 1];                         // 只有这两档：横版 4:3 / 方版 1:1
+const PH_AUDIO_DOC = 4/3;                            // 音频/文档：统一的老比例
+const PH_W = 158;                                    // 图片区标准宽（卡片 172 − 两侧 7px）
+function itemOf(el){
+  const id = el && el.dataset && el.dataset.id;
+  if (id == null) return null;
+  return (S.items || []).find(o => String(o.id) === String(id)) || null;
+}
+window.__phFit = function(img){
+  const ph = img && img.parentElement;
+  if (!ph) return;
+  const w = img.naturalWidth || 0, h = img.naturalHeight || 0;
+  if (!w || !h) return;
+  const post = ph.closest(".post");
+  const it = itemOf(post);
+  const kind = it && it.kind;
+  const raw = w / h;
+  let r;
+  if (kind === "image" || kind === "video" || kind == null){
+    /* 取「对数距离最近」的那一档：比例这东西是乘除关系，用 log 比用差值公平
+       （3:2 和 4:3 之间该选谁，跟 4:3 和 1:1 之间是同一把尺子）。 */
+    r = PH_BUCKETS.reduce((best, b) =>
+          Math.abs(Math.log(b / raw)) < Math.abs(Math.log(best / raw)) ? b : best,
+          PH_BUCKETS[0]);
+  } else {
+    r = PH_AUDIO_DOC;            // 音频 / 文档：统一
+  }
+  const ih = Math.round(PH_W / r);
+  if (ph._h === ih) return;
+  ph._h = ih;
+  ph._r = r;
+  ph.style.width = "100%";
+  ph.style.height = ih + "px";
+  /* 只有两档，裁得最狠的是**竖图被收进 1:1**（手机竖拍），要保头、重心往上挪；
+     其余（含宽幅收进 4:3）一律居中。 */
+  img.style.objectPosition = (raw < 0.9) ? "50% 32%" : "50% 50%";
+  if (post && post._x != null) place(post, post._x);
+  try{ pushRopeHit(); }catch(e){}
+};
+
+/* ★ 卡片宽度不是恒定的（竖图会被压窄，见 __phFit）—— 所有「按 x 居中」的
+   地方都得用**这张卡自己的**宽度，不能一律拿常量 CARD_W 去算，否则窄卡会
+   偏右、宽卡会偏左，而且拖动时命中区和画面会对不上。 */
+function cwOf(el){ return (el && el._cw) || CARD_W; }
+
+function place(el, x){
+  el._x = x;
+  el.style.transform = "translate(" + (x - cwOf(el) / 2) + "px," +
+                       (ropeYAt(x) + 4) + "px)";
+}
+
+function settle(el, x, delay){
+  el._x = x;
+  const y = ropeYAt(x);
+  setTimeout(() => {
+    el.style.transition = "transform .38s cubic-bezier(.3,1.2,.55,1),opacity .2s";
+    el.style.transform = "translate(" + (x - cwOf(el) / 2) + "px," + (y + 4) + "px)";
+  }, delay || 0);
+}
+
+/* --------------------------------------------------------------- 收工起飞 */
+function flyAway(){
+  const stage = $("#stage");
+  /* ★ 防重入：起飞有**两条路** —— 用户点「收工」按钮（collectNow 立即调它），
+     以及 700ms 轮询拿到服务端那面 fly 旗子（用户是在**搜索窗**里点的收工，
+     这边只能等旗子）。两条路可能撞在一起：按钮那条先飞，紧跟着轮询又飞一遍，
+     第二次会把已经在飞的四张卡片的 transition/transform 重写一遍 —— 视觉上
+     是飞到半路突然抖一下重新起步。
+     所以拿 S.flying 当闸门：一轮飞行放完（或根本没卡片可飞）才放行下一轮。
+     范老板第⑥条要的「按下立即触发」由 collectNow 同步调 flyAway() 保证，
+     这条闸门不会把那条路挡住。 */
+  if (S.flying) return;
+  const cards = [...stage.querySelectorAll(".post:not(.ghost)")];
+  if (!cards.length) return;
+  /* ★ 范老板 2026-10-16：「明信片平移状态时，点击『收工』没有出现飘旗动效，
+     只有停止移动才有」。根因两条：① 放映中 showTick 每帧都在改 transform，
+     起飞那一下刚写上就被下一帧覆盖掉；② paint() 会按 it.x 把卡片拽回原位。
+     修法：起飞前把放映态**静默收掉**（只改状态和按钮文案，不做「送回原位」
+     那段过渡，卡片就留在当前平移到的位置上直接起飞），并给每张卡打个
+     _flying 标记，让 paint() 这一轮别再碰它们。 */
+  if (S.showOn){
+    S.showOn = false;
+    const sb = $("#show"), st = sb && sb.querySelector(".ctxt");
+    if (sb) sb.classList.remove("on");
+    if (st) st.textContent = "放映";
+    pushRopeHit();
+  }
+  S.flying = true;
+  // 离访达越近的越先飞 —— 像把一摞牌从近到远依次收走，而不是整摞抽走
+  cards.sort((a, b) => (a._x || 0) - (b._x || 0));
+  // 落点 = 左下角 Dock 最左边那个「访达」图标（见上面 DEST 的注释）。
+  const dx = DEST.x, dy = DEST.y;
+  cards.forEach((el, i) => {
+    el._flying = true;                     // 起飞中：paint() 不许再动它
+    const r = el.getBoundingClientRect();
+    const tx = r.left + r.width / 2, ty = r.top + r.height / 2;
+    setTimeout(() => {
+      el.style.transition = "transform .66s cubic-bezier(.42,-0.15,.7,.6),opacity .66s ease-in";
+      el.style.transformOrigin = "50% 50%";
+      el.style.transform = "translate(" + (r.left + (dx - tx)) + "px," +
+                           (r.top + (dy - ty)) + "px) scale(.16) rotate(" +
+                           ((i % 2 ? 1 : -1) * (18 + i * 4)) + "deg)";
+      el.style.opacity = "0";
+    }, i * 45);
+  });
+  /* ★ 卡片全部落定之后才叫服务端「结账」。放在动画之后而不是用户点「收工」
+     的那一刻，是因为范老板第③条要的是「**等全部明信片飞完后**，电脑桌面自动
+     生成 FXseek 文件夹」—— 真文件夹必须等这扇窗的动画放完才出现，而动画在
+     这扇窗、落盘在服务端，所以只能由这里回调一下。 */
+  setTimeout(async () => {
+    stage.innerHTML = ""; S.items = []; S.flying = false; updateCollect();
+    try{
+      await fetch("/v1/work/settled", {method: "POST", cache: "no-store",
+                                       headers: {"Content-Type": "application/json"},
+                                       body: "{}"});
+    }catch(e){ /* 服务没起来就算了：暂存区里的东西下一轮收工时会补落盘 */ }
+  }, cards.length * 45 + 780);
+}
+
+/* ------------------------------------------------------------------ 同步 */
+/* 绳窗不发任何指令，只问「现在挂着什么」。真值以服务端为准 —— 搜索窗挂上、
+   摘掉、移动都只是在改服务端那份清单，这里下一次轮询就跟上了。
+   700ms 够快（人手放下卡片到看见它出现，感知不到延迟），又不至于太吵。 */
+let lastSig = "";
+async function poll(){
+  try{
+    // ★ 用 POST：只有绳窗能消费「该起飞了」那面旗子（GET 是偷看）。
+    const r = await fetch("/v1/work/hung", {method: "POST", cache: "no-store",
+                                            headers: {"Content-Type": "application/json"},
+                                            body: "{}"});
+    const j = await r.json();
+    const items = j.items || [];
+    // ★ 服务端只会给「它记着的」x，页面自己刚摆好、还没回写的那些是 null。
+    //   直接 `S.items = items` 会把这些 null 覆盖进来，于是拖动时
+    //   `pointerdown` 拿到的 `it.x` 是 null —— `null + dx` 恰好等于 dx，
+    //   一次没移动的点击就把卡片甩到屏幕最左边（`Math.round(null)` = 0）。
+    items.forEach(it => {
+      if (it.x != null) return;
+      const old = S.items.find(o => String(o.id) === String(it.id));
+      if (old && typeof old.x === "number" && isFinite(old.x)) it.x = old.x;
+    });
+    const sig = JSON.stringify(items);
+    S.items = items;
+    updateCollect();
+    // ★ 只认服务端那面旗子，不再加 `&& !wasEmpty`：那一版在
+    //   「上一轮刚好是空的」时会把整段动画跳过去（点完收工卡片凭空没了、
+    //   什么都没有）。手里真没东西时 flyAway() 自己会早退。
+    if (j.fly){ flyAway(); lastSig = sig; }
+    else if (sig !== lastSig){ paint(); lastSig = sig; }
+  }catch(e){ /* 服务还没起来 / 刚重启，下一轮再说 */ }
+  // ★ 必须走 `finally` 排下一轮，不能在分支里 `return`。
+  //   原来收工那支写的是 `… ; return;`，一下就跳过了下面这行 ——
+  //   收工一次之后**轮询彻底停了**：桌面上的绳子还在、搜索框还在，
+  //   但之后挂什么都不会再出现，像功能坏了。这个 bug 只在「收工过一次」
+  //   之后才显形，第一次用完全看不出来。
+  finally{ setTimeout(poll, 700); }
+}
+
+async function loadDest(){
+  // ★ 落点**以服务端为准**（只有它问得到屏幕尺寸）。算不出来就用手里那个
+  //   兜底值，绝不因为一个请求失败把收工动画卡住。
+  try{
+    const j = await (await fetch("/v1/work/dockpos", {cache:"no-store"})).json();
+    if (j && j.ok && typeof j.x === "number"){
+      DEST.x = j.x; DEST.y = j.y;
+    }
+    console.log("[rope] 收工落点（访达）= ", DEST.x, DEST.y, j && j.from);
+  }catch(e){}
+}
+
+/* ------------------------------------------------- 绳上那只卡通狒狒 */
+/* 范老板要「像桌面宠物一样自己在动」：大部分时间倒着手慢慢爬，时不时撒腿跑一段，
+   偶尔蹦两下（上窜下跳）。迈手脚、颠身、甩尾全部交给 CSS 合成层，
+   这里每帧只写一个 transform —— 不读布局、不写会触发布局的属性。
+   按 ~30fps 节流，120Hz 屏上不空转，但**推进量用真实间隔**，节流不改速度。 */
+const APE = document.getElementById("ape");
+const APE_W = 44, APE_H = 40, APE_FOOT = 2;  // 图里狒狒的脚贴在帧底（比 CSS 小一档）
+const APE_V = { crawl: 23000, run: 7200 };   // 横穿全屏的毫秒数（越小越快）
+let apeX = 0, apeDir = 1, apePhase = 0, apeLast = 0, apeAcc = 0;
+let apeMode = "crawl", apeLeft = 2600, apeHopN = 0, apeHopT = 0, apeHopDur = 1, apeHopH = 0;
+
+function apeNext(){                        // 换动作时给 CSS 挂 class（换帧速）
+  const r = Math.random();
+  if (apeMode === "crawl"){
+    if (r < .34){ apeMode = "run";  apeLeft = 1200 + Math.random() * 1700; }
+    else if (r < .60){ apeMode = "hop"; apeHopN = 2 + (Math.random() * 2 | 0); apeHopT = 0; }
+    else { apeLeft = 2600 + Math.random() * 4200; }        // 继续爬
+  } else if (apeMode === "run"){
+    if (r < .30){ apeMode = "hop"; apeHopN = 1 + (Math.random() * 2 | 0); apeHopT = 0; }
+    else { apeMode = "crawl"; apeLeft = 2200 + Math.random() * 3800; }
+  } else {
+    apeMode = r < .5 ? "crawl" : "run";
+    apeLeft = apeMode === "run" ? 1100 + Math.random() * 1400
+                                : 2400 + Math.random() * 3600;
+  }
+  APE.className = apeMode;
+}
+
+function apeTick(ts){
+  requestAnimationFrame(apeTick);
+  if (!APE) return;
+  if (!apeLast){ apeLast = ts; return; }
+  const dt = Math.min(80, ts - apeLast); apeLast = ts;
+  apeAcc += dt;
+  if (apeAcc < 33) return;                 // ~30fps 够顺了
+  const step = apeAcc; apeAcc = 0;         // 推进量用真实间隔，节流不改速度
+
+  let lift = 0;
+  if (apeMode === "hop"){
+    if (apeHopT <= 0 && apeHopN > 0){      // 起跳
+      apeHopDur = 340 + Math.random() * 190;
+      apeHopH   = 16  + Math.random() * 13;
+      apeHopT   = apeHopDur;
+    }
+    if (apeHopN > 0){
+      apeHopT -= step;
+      const u = 1 - Math.max(0, apeHopT) / apeHopDur;      // 0 → 1
+      lift = Math.sin(Math.PI * Math.min(1, u)) * apeHopH; // 抛物线
+      if (apeHopT <= 0){ apeHopN--; apeHopT = 0; }
+    } else { apeNext(); }
+  } else {
+    apeLeft -= step;
+    if (apeLeft <= 0) apeNext();
+  }
+
+  const sp = apeMode === "hop" ? APE_V.crawl * .55 : APE_V[apeMode];
+  apeX += apeDir * (W() / sp) * step;
+  const M = 52;
+  if (apeX > W() - M){ apeX = W() - M; apeDir = -1; }
+  if (apeX < M){ apeX = M; apeDir = 1; }
+
+  apePhase += step;
+  // 快跑时压低身子往前扎，蹦的时候跟着节奏点头
+  const tilt = apeMode === "run" ? 4.5 * apeDir
+             : apeMode === "hop" ? Math.sin(apePhase / 90) * 3.5
+             : Math.sin(apePhase / 300) * 2.2;
+  const y = ropeYAt(apeX) - APE_H + APE_FOOT - lift;
+  APE.style.transform = "translate(" + (apeX - APE_W / 2).toFixed(1) + "px," +
+                        y.toFixed(1) + "px) rotate(" + tilt.toFixed(2) +
+                        "deg) scaleX(" + (apeDir < 0 ? -1 : 1) + ")";
+}
+apeX = Math.round(W() * 0.42);
+APE.className = apeMode;
+requestAnimationFrame(apeTick);
+
+/* ==========================================================================
+   摆动：一个阻尼谐振子同时管「风」和「拨弄」
+   --------------------------------------------------------------------------
+   ★ 范老板第⑤条要的是两件事，而且必须**同时**成立：
+       ⑤a 非编辑态：绳子上的明信片像风铃一样自己轻轻摆（随机、不同步、舒服）；
+       ⑤b 编辑态：鼠标轻轻划过去，它像被拨了一下的铃铛 —— 荡出去，然后**慢慢**
+           收住。
+     CSS @keyframes 做不到 ⑤b：冲量大小取决于光标划过的速度，而且还要叠在 ⑤a
+     那阵常驻的微风上。所以摆动整个搬到 JS：
+         av += (-K*ang - C*av + wind) * dt;   ang += av * dt
+     K 是刚度（摆多快）、C 是阻尼（收多慢）、wind 是持续的小随机力矩。
+     「被拨一下」= 往 av 上加一次冲量：冲量大就荡得高、收得慢，正是铃铛。
+     ★ 每帧只写一个 `style.rotate`（合成层属性），不读布局、不碰 `transform`，
+       所以不和明信片的定位（transform: translate）打架。
+   ========================================================================== */
+const SW = { raf: 0, last: 0, timer: 0, still: 0, ptr: null, woke: 0 };
+
+function swayTick(ts){
+  const now = (ts || 0) / 1000;
+  // 第一帧、以及从后台回来那一帧的 dt 会是个大数 —— 夹住，不然卡片会瞬间弹飞
+  const dt = SW.last ? Math.min(0.05, Math.max(0.001, now - SW.last)) : 0.016;
+  SW.last = now;
+  document.querySelectorAll("#stage .post").forEach(el => {
+    if (el._ang === undefined){                  // 每张卡片一套自己的相位和幅度
+      el._ang = 0; el._av = 0; el._wind = 0;
+      el._ph = Math.random() * 6.2832;
+      el._amp = 0.80 + Math.random() * 0.75;
+      el._f3 = 0.055 + Math.random() * 0.055;   // 每张卡第三层的频率也各不相同
+    }
+    const t = now + el._ph;
+    /* 三层互质频率叠出来的「阵风」：单条正弦看着像节拍器，叠两条也还是有点
+       规律，叠到三条（周期 11.4s / 30s / 90~120s，且第三层 freq 每卡不同）就
+       够像真的风了 —— 每张卡片的「呼吸」长短不一，不会齐步走。
+       都比摆动本身的周期（2π/√K ≈ 2.5s）慢得多，所以风是「推着它慢慢偏」
+       而不是「催它共振」，卡片不会越荡越疯。这是故意的。 */
+    const gust = (Math.sin(t * 0.55) * 0.42 +
+                  Math.sin(t * 0.21 + 1.7) * 0.36 +
+                  Math.sin(t * el._f3 + 2.9) * 0.22) * el._amp;
+    el._wind += (gust - el._wind) * Math.min(1, 1.6 * dt);
+    /* ★ 三个系数别乱调，它们之间的关系就是「看着舒服」：
+         K = 5.4   → 自然频率 ω₀=√K≈2.32 rad/s，自己摆的周期约 2.7s
+         C = 0.92  → ζ=C/(2√K)≈0.20，被拨一下要荡四五下才收住（铃铛感）
+         WIND = 38 → 静止摆幅 ≈ 阵风×(WIND/K) = 阵风×7.0deg，即典型 ±4~6deg、
+                     阵风最大的那几秒 ±10deg 上下
+       ★ 2026-10-15 第④条：范老板「摆动幅度太小，看不出随风飘动的效果」。
+         第一版 16/6.2/0.65~1.35 → 实测峰峰值只有 ~2.4deg，确实看不出；
+         调到 28/5.4 之后挂实例一量，峰峰值 ~4.4deg，还是偏含蓄；最终
+         38/5.4 + 把 gust 的低通系数 0.9→1.6（原来的风被滤得太狠，`_wind`
+         只能爬到阵风的四成，等于白给了系数）。每卡幅度 0.80~1.55，
+         峰值摆幅约 ±6~11deg —— 一眼看得见在飘，又没到「飞」。
+       （⚠️ 第一版把 WIND 写成 0.22，算出来摆幅 0.035deg —— 肉眼完全看不见，
+         实测 style.rotate 在 0.01~0.03 之间爬，白写。）
+       ★ 量摆幅的办法：`screencapture` 抓几帧，对明信片右边缘做 `x_max(y)` 线性
+         拟合，斜率就是倾角。要更细的数就把 `{ang, av, wind, amp, dt}` 每 30 帧
+         POST 给一个临时路由打日志 —— 一眼能看出是「风没起来」还是「系数不对」。 */
+    const K = 5.4, C = 0.92, WIND = 38.0;
+    el._av += (-K * el._ang - C * el._av + el._wind * WIND) * dt;
+    el._ang += el._av * dt;
+    /* ★★ 摆动必须写在**里面那层 `.sway`** 上，不能写 `.post` 的 `style.rotate`！
+       CSS Transforms L2 的合成顺序是 `translate → rotate → scale → transform`，
+       而 `.post` 的定位恰恰是 `transform: translate(x,y)`（settle() 写的）——
+       它在矩阵链里排在 rotate **后面**，等于「先绕元素自己的原点转、再整体平移」。
+       结果每张卡片都绕**屏幕左上角那一个固定点**（transform-origin 50% -14px，
+       约等于 (76,-14)）转，离它越远力臂越长：x=1000 的卡片转 1° 就横向甩 16px，
+       还带着肉眼可见的上下位移 —— 正是范老板说的「都快飞起来了」「明信片挂在
+       绳子上怎么可以上下移动呢」。
+       写在内层 `.sway` 上就没这问题：它自己没有定位 transform，支点
+       （`transform-origin:50% -14px`）就落在夹子咬绳的地方，才是真钟摆 ——
+       卡片绕夹子左右摆，几乎不带上下位移。 */
+    /* ★★ 范老板新②（2026-10-15）：「鼠标悬浮在哪张明信片上时，明信片恢复到
+       摆正姿态不再晃动；拖拽时也摆正不动；鼠标离开才恢复自然摆动，而且恢复
+       摆正的过程要保留自然的过渡动画。」
+       做法是给每张卡一个 `_up`（0→1 的「正在被按住」程度），渲染时把真实
+       摆角乘上 `(1 - _up)`：
+         · 悬停/拖动 → 目标 1，`_up` 用指数缓动爬上去（约 .35s）→ 角度平滑
+           收成 0（这就是范老板要的那段过渡动画，不需要 CSS transition，
+           CSS 那条还会和这里每帧写 transform 打架）。
+         · 鼠标离开 → 目标 0，`_up` 再降回去 —— 于是卡片**从 0 度接着**荡，
+           而不是「啪」一下跳回物理角度。
+       ★ 注意物理本身（`_ang`/`_av`/风）一直照跑不误，只是没画出来。
+         这样松手瞬间的角度一定是连续的，绝不会出现跳变。
+         也正因为如此，不能改 `_ang` 或把风关掉 —— 那才会看到「顿一下再动」。 */
+    // ★ 放映时**全部**摆正（范老板：「明信片就会全部摆正姿态」）——复用悬停
+    //   那套 `_up` 缓动，于是进入/退出放映都是平滑收放，不会「啪」一下跳。
+    const wanted = (S.showOn ||
+      (ES.on && (ES.hover === el || (ES.drag && ES.drag.el === el)))) ? 1 : 0;
+    if (el._up === undefined) el._up = wanted ? 1 : 0;
+    else el._up += (wanted - el._up) * Math.min(1, 9.0 * dt);
+    if (Math.abs(el._up - wanted) < 0.002) el._up = wanted;   // 收尾，别留一串 0.0001
+    const shown = el._ang * (1 - el._up);
+    const sw = el.querySelector(".sway");
+    if (sw) sw.style.transform = "rotate(" + shown.toFixed(3) + "deg)";
+  });
+  if (S.showOn) showTick(dt);
+  SW.raf = requestAnimationFrame(swayTick);
+}
+
+/* --------------------------------------------------------------- 放映
+   范老板 2026-10-15：「点击『放映』后，明信片就会全部摆正姿态并以等距排列
+   开始从左到右缓慢平移，循环移动，当暂存区变编辑状态时，鼠标选中其中一个
+   明信片，整个移动停止……鼠标离开明信片，移动自动恢复。停止循环移动的方式
+   是再次点击『放映』按钮。」
+   · 等距 = 固定槽位 SHOW_GAP；位置写 `place()`（不带过渡，所以是连续平移）。
+   · 暂停条件 = **编辑态 + 鼠标停在某一张上**（`ES.on && ES.hover`）。只判
+     hover 不判编辑态的话，鼠标只是从卡片上划过也会停；两个都满足才停，
+     正好对应他说的「暂存区变编辑状态时，鼠标选中其中一个明信片」。
+   · 循环 = 整队从左屏外走到右屏外再绕回。 */
+function showTick(dt){
+  const W_ = W() || 1200;
+  const paused = ES.on && !!ES.hover;
+  const step = paused ? 0 : SHOW_GEARS[S.showGear || 0] * dt;
+  /* ★★ 范老板 2026-10-15（第二版）：「是缓慢循环滚动，当明信片整个过完右边
+     屏幕又会接龙一样从左边屏幕边缘出来，而不是等所有明信片过完才开始循环」。
+     ⇒ **一张一张各自循环**，不是整队一起绕。
+     上一版（整队绕）有两个毛病：① 绕的时机是「整队都跑出去」，画面会空一大段，
+     看着像停住了；② 整队一起位移时，还在屏幕中间的那几张会**当场瞬移**。
+     现在每张卡片自己记位置（`el._sx`）：往右走，**整个**过完右边缘（左边沿都
+     出屏）就直接减去一个 `屏宽 + 卡宽`，从左边屏幕外接着进来 —— 因为它是在
+     屏幕外换的位置，用户看不到任何跳变，感觉就是「出了右边、马上从左边接上」，
+     一张接一张像接龙。间距恒定（每张位移量相同），所以永远是等距的。 */
+  const _els = [...document.querySelectorAll("#stage .post")];
+  /* ★ 范老板 2026-10-15 第①条：「停止放映后把明信片顺序更换了一下，再按放映，
+     应该按我现在调整后的顺序平移才对」。原来槽位是按 DOM 下标给的，而 DOM 顺序
+     是素材列表的顺序，跟用户在绳上拖出来的左右顺序无关 —— 于是第二次放映还是老
+     顺序。现在按**当前实际 x** 从左到右排一次，谁在左边谁先走。 */
+  if (!S.showOrd || S.showOrd.length !== _els.length){
+    S.showOrd = _els.slice().sort((a, b) => (a._x ?? 1e9) - (b._x ?? 1e9));
+    /* ★ 范老板 2026-10-15：「平移的明信片是等距的，不能有重叠现象」。
+       原来每张卡的绕回距离是 `屏宽 + 自己那张的宽` —— 宽卡和窄卡的绕回点不一样，
+       窄卡先绕回来就可能压在还没出屏的宽卡上。改成**全队共用一个**（按最宽那张
+       算），这样谁绕回来落点都严格相差 SHOW_GAP，永远等距、不会叠。 */
+    S.showMaxW = _els.reduce((m, el) => Math.max(m, cwOf(el)), 0);
+  }
+  /* ★★ 范老板 2026-10-15：「明信片还是叠在一起平移，我要的是**平铺等距移动**、
+     每个明信片都能清清楚楚被看到」。⇒ 不再让每张卡各记各的进度，改成**全队共用
+     一个进度**的严格平铺：每张卡占一个固定格子 `slotW`（按最宽那张 + 34px 缝），
+     位置 = (S.showX + 名次*slotW) mod 队总长。间距永远是 slotW（大于最宽卡），
+     既不可能叠、也不会因为谁先绕回来而错位；进场那一帧关掉过渡，瞬时就位。 */
+  const slotW = (S.showMaxW || CARD_W) + 34;
+  /* ★ 范老板 2026-10-16：「素材很少就几张的时候，平移会在中间就消失，应该走到
+     右边屏幕边缘才消失」。原来绕回周期 = 队总长（张数 × 格子宽）——只挂两三张时
+     它比屏幕还窄，卡片刚走到屏幕中间就被 `% span` 弹回左边，看着正是「半路消失」。
+     把周期下限抬到「一屏 + 一格」：卡片必须真的走完右边缘才绕回，再从左边屏外接
+     进来。张数少时队列后面会留一段空档 —— 那对短队列是对的。 */
+  const span  = Math.max(_els.length * slotW, W_ + slotW);
+  const fresh = !S.showSeq;
+  _els.forEach((el) => {
+    const rank = Math.max(0, S.showOrd.indexOf(el));
+    if (fresh) el.style.transition = "none";
+    let p = (S.showX + rank * slotW) % span;
+    if (p < 0) p += span;
+    place(el, p - slotW);          // 整体左移一格 → 第一张从屏幕左侧外面排队进来
+  });
+  if (fresh){
+    S.showSeq = true;
+    requestAnimationFrame(() => _els.forEach(el => { el.style.transition = ""; }));
+  }
+  S.showX += step;
+  const now = performance.now();
+  if (!S._hitT || now - S._hitT > 250){ S._hitT = now; pushRopeHit(); }
+}
+
+/** 开/关放映。关的时候把卡片平滑送回它们各自的位置。 */
+function setShow(on){
+  on = !!on;
+  if (S.showOn === on) return;
+  /* ★ 范老板 2026-10-15：「没挂明信片时点击放映，应该有文字提示，而不是让示例
+     明信片开始移动」。绳上那张虚线卡是 `.ghost`（空态占位），它不该参与放映；
+     一张真卡都没有时直接提示走人，不进入放映态。 */
+  if (on && !document.querySelectorAll("#stage .post:not(.ghost)").length){
+    toast("绳子上还没有明信片 —— 先从搜索框把要收的拖上来");
+    return;
+  }
+  S.showOn = on;
+  S.showX = 0;
+  const b = $("#show"), t = b && b.querySelector(".ctxt");
+  if (b) b.classList.toggle("on", on);
+  if (t) t.textContent = on ? "停止" : "放映";
+  const els = [...document.querySelectorAll("#stage .post")];
+  if (on){
+    /* 平移是每帧直接改 transform，必须先把卡片上那条 .38s 的过渡摘掉，
+       否则每帧都在追一个 0.38 秒前的目标，走起来像拖着橡皮筋。 */
+    els.forEach(el => { el.style.transition = "none"; delete el._sx; });
+    S.showOrd = null;
+  S.showX = 0;        // 平铺队列的全局进度
+  S.showSeq = false;  // 下一次进入要「瞬时就位」      // 重新按当前摆放顺序排一遍
+  } else {
+    els.forEach(el => {
+      const it = S.items.find(o => String(o.id) === el.dataset.id);
+      if (it) settle(el, it.x, 0);      // settle() 会把过渡装回去
+    });
+    S._lastN = -1;                      // 让 paint() 下一轮重新同步
+    paint();
+  }
+  pushRopeHit();
+}
+
+
+/* ------------------------------------------------------- 光标：拨弄 + 停驻 */
+/* ★ 绳窗是 `setIgnoresMouseEvents_(True)` 的 —— 它**永远收不到 mousemove**。
+   所以「鼠标划过明信片」这种交互只能反过来问宿主：原生那层随时读得到
+   `NSEvent.mouseLocation()`，跟鼠标事件一起刷新。页面按 ~55ms 问一次，
+   本地回环、返回体几十字节，开销可以忽略。 */
+async function pollPtr(){
+  SW.timer = 0;
+  try{
+    const j = await (await fetch("/v1/work/pointer", {cache:"no-store"})).json();
+    if (j && j.on){
+      /* ★ 鼠标停在暂存区上就算「人在」。可「人在」这件事得让**搜索窗**知道 ——
+         它那个「1 分钟没人动就自动收起」的计时器只认它自己页面上的 pointermove/
+         pointerdown/keydown，而绳窗是穿透点击的、一个鼠标事件都收不到。所以这里
+         按 1s 节流报给服务端，搜索窗轮询 /v1/work/hung 时顺带拿走。
+         ★★ 千万别在这里写 idleReset()：那是 work.html 里的函数，rope.html 里
+           根本没有。调了就是每轮一个 ReferenceError，被下面 catch 一口吞掉，
+           连 SW.ptr 都会跟着被重置成 null —— 结果是 ④ 完全失效，还不报错。 */
+      if (inStage(j.x, j.y)) stageAlive();
+      else stageTs = 0;
+      const now = performance.now();
+      const p0 = SW.ptr;
+      if (p0){
+        const dx = j.x - p0.x, dy = j.y - p0.y;
+        /* ★ 2026-10-14 范老板第④条：「搜索区和暂存区是两个独立的窗口，鼠标停留
+           3 秒时候搜索框别跟着出现」。原来这里还有一句 `else hoverWake(...)` ——
+           鼠标在绳子上搁 3 秒就把搜索层叫出来。整段删掉，两扇窗彻底解耦：
+           搜索层只由唤醒键 / 菜单栏叫出，暂存区只负责显示和「拨铃铛」。 */
+        if (j.edit) pluck(j.x, j.y, dx);
+      }
+      SW.ptr = {x:j.x, y:j.y, t:now};
+    } else { SW.ptr = null; SW.still = 0; }
+  }catch(e){ SW.ptr = null; }
+  SW.timer = setTimeout(pollPtr, 55);
+}
+
+/* 暂存区的范围 = 绳子那一条 + 每张挂着的明信片。绳窗自己就铺满可见屏，所以
+   这里拿页面里的几何直接算，不用服务端再报一份矩形。 */
+function inStage(x, y){
+  if (S.ropeY && Math.abs(y - ropeYAt(x)) < 24) return true;
+  return S.items.some(it => {
+    const cw = it.w || CARD_W;
+    const l = it.x - cw / 2, t = ropeYAt(it.x) - 26;
+    return x >= l - 14 && x <= l + cw + 14 && y >= t && y <= t + 220;
+  });
+}
+
+/* 「鼠标还在暂存区上」的心跳，1s 一次就够（服务端按 2s 的有效窗口算）。
+   见 pollPtr 里那段注释：这声心跳是**唯一**能让搜索窗知道「人还在」的通道，
+   少了它，搜索层会在范老板盯着卡片看的时候到点自己收走，然后 3 秒又被叫回来。 */
+let stageTs = 0;
+function stageAlive(){
+  const t = performance.now();
+  if (t - stageTs < 1000) return;
+  stageTs = t;
+  fetch("/v1/work/stage", {cache:"no-store"}).catch(() => {});
+}
+
+/* ★ 这里原本是 ④「鼠标停在暂存区 3 秒 → 自动叫出搜索层」的 hoverWake()。
+   2026-10-14 范老板第④条把它否了：「搜索区和暂存区是两个独立的窗口，鼠标停留
+   3 秒时候搜索框别跟着出现，唯一的联动就是快捷键唤醒搜索框时，暂存区变可编辑
+   状态」。两扇窗从此解耦：搜索层只由唤醒键 / 菜单栏叫出。
+   `inStage()` 留着还有用 —— ⑤b 的「拨铃铛」要判断光标是不是划过某张明信片。 */
+
+/* ⑤b 拨弄：光标这一跳跨过某张明信片，就给它一次冲量；冲量按光标位移算 ——
+   划得越快，荡得越开，然后自己慢慢收住。 */
+function pluck(x, y, dx){
+  if (!dx) return;
+  document.querySelectorAll("#stage .post:not(.ghost)").forEach(el => {
+    if (el._av === undefined) return;
+    const it = S.items.find(v => String(v.id) === String(el.dataset.id));
+    if (!it) return;
+    const cw0 = it.w || CARD_W;
+    const l = it.x - cw0 / 2, t = ropeYAt(it.x);
+    if (x < l - 12 || x > l + cw0 + 12) return;
+    if (y < t - 30 || y > t + 210) return;
+    /* ★ 冲量单位是「度/秒」—— 因为 `_ang` 是**度**（要直接写进 style.rotate）。
+       摆幅 = 冲量/ω₀ = 冲量/2.49，所以系数按「想要的摆幅」反推：
+         dx=5px（轻轻拂过）→ 冲量 3.1 → 摆幅 1.2deg
+         dx=16px（正常划过）→ 冲量 9.9 → 摆幅 4.0deg
+         dx=30px（飞快甩过）→ 冲量封顶 13 → 摆幅 5.2deg
+       ★ 2026-10-14 范老板第③条那天定的调子：「风铃知道么？左右**轻轻**随机晃动
+         的动效，不是你这种都快飞起来了」。原来封顶 40（摆幅 16deg）会被他说成
+         飞起来 —— 现在峰值压在 5deg 出头，拨一下像铃铛，不吓人。 */
+    el._av += Math.max(-13, Math.min(13, dx * 0.62));
+  });
+}
+
+/* ==========================================================================
+   「收工」按钮（范老板第⑤⑥条）
+   ========================================================================== */
+/* ★ 范老板 2026-10-15 第④条：「收工按钮做成自由悬浮按钮（样式不变），
+   只是用户可以随意拖动，而且可以随意吸附在电脑桌面的左右边缘进行半隐藏吸附」。
+
+   位置记在 localStorage 里（`side` 左/右 + 竖直中心百分比），这样换分辨率、
+   换屏幕都不会跑到看不见的地方；默认还是老样子 —— 左边缘垂直居中。 */
+const COL_KEY = "fxseek.collect.pos";
+function colLoad(){
+  try{
+    const j = JSON.parse(localStorage.getItem(COL_KEY) || "null");
+    if (j && (j.side === "left" || j.side === "right") && isFinite(j.y)) return j;
+  }catch(e){}
+  return {side:"left", y:50};
+}
+function colSave(o){ try{ localStorage.setItem(COL_KEY, JSON.stringify(o)); }catch(e){} }
+
+/** 按当前 side / y 把按钮摆好（不改变它的手感，只改 left/top 与吸附方向）。 */
+function colPlace(o){
+  const el = $("#collectWrap");
+  if (!el) return;
+  o = o || colLoad();
+  el.classList.toggle("edge-r", o.side === "right");
+  el.dataset.side = o.side;
+  el.style.left = o.side === "right" ? "100%" : "0px";
+  el.style.top = Math.max(4, Math.min(96, o.y)) + "%";
+  /* 「放映」跟「收工」是一组：吸附方向 / 左右边缘 / 竖直位置都跟着走。 */
+  const sw = $("#showWrap");
+  if (sw){
+    /* ★ 范老板 2026-10-15：「两个按钮就没有成为一个整体按钮啊，各自飞」。
+       根因：两颗用的是**两套不同的定位算法** —— 「收工」是 top:y% + translateY(-50%)
+       （矩形中心落在 y%），「放映」是 bottom:(100-y)% + margin-bottom，两套算出来的
+       竖直位置本来就差几十个点；横向又各自用不同的 --snap 隐藏比例，于是静止时
+       也是错开的。现在「放映」完全改用「收工」那一套：top = y% - 26px
+       （26px = 半个胶囊高 + 半个缝，正好压在「收工」正上方），并把它当前的
+       --snap 直接抄过来。 */
+    const snap = getComputedStyle(el).getPropertyValue("--snap").trim();
+    if (snap) sw.style.setProperty("--snap", snap);
+    sw.classList.toggle("edge-r", o.side === "right");
+    sw.style.left = o.side === "right" ? "100%" : "0px";
+    sw.style.bottom = "auto";
+    sw.style.top = "calc(" + Math.max(4, Math.min(96, o.y)) + "% - 26px)";
+    sw.style.transform = "translate(var(--snap),-50%) rotate(0deg)";
+  }
+  pushRopeHit();
+}
+
+function placeCollect(){
+  const el = $("#collectWrap");
+  if (!el) return;
+  colPlace(colLoad());
+  updateCollect();
+}
+
+function updateCollect(){
+  const el = $("#collectWrap"), c = $("#cn");
+  if (!el) return;
+  const n = S.items.length;
+  el.classList.toggle("busy", !!S.busy);
+  if (c) c.textContent = n + " 个";
+  pushRopeHit();
+}
+
+/* 把按钮那一条矩形报给宿主，让绳窗只有这一小块吃点击 —— 其余地方照旧穿透，
+   否则一整块铺满屏幕的窗会把这个桌面的点击全吞掉。 */
+let _ropeHitSig = "";
+function pushRopeHit(){
+  const rects = [];
+  /* ★ 拖动「收工」按钮期间必须报**整窗**：绳窗只有报过的矩形才吃鼠标，
+     而拖动时指针必然一会儿在按钮外面 —— 一旦有谁（mouseleave 的重报、
+     700ms 轮询）把它缩回按钮那一小块，宿主立刻判「鼠标离开」→ 窗口切回
+     穿透 → 后面的 pointermove/pointerup 全丢，按钮就卡在半路。 */
+  if (_colDragging) rects.push([0, 0, Math.round(W()), Math.round(H())]);
+  const el = $("#collectWrap");
+  if (!_colDragging && el){
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0)
+      rects.push([Math.round(r.left), Math.round(r.top),
+                  Math.round(r.width), Math.round(r.height)]);
+  }
+  const sw = $("#showWrap");
+  if (!_colDragging && sw){
+    const r = sw.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0)
+      rects.push([Math.round(r.left), Math.round(r.top),
+                  Math.round(r.width), Math.round(r.height)]);
+  }
+  // ★ 编辑态里「暂存区」整块都要吃鼠标（范老板第①条：编辑态才能跟明信片
+  //   交互）。待编辑态一块都不放行 —— 那时整窗穿透，鼠标直接穿到桌面。
+  if (ES.on) rects.push(stageBox());
+  const sig = JSON.stringify(rects);
+  if (sig === _ropeHitSig) return;      // 没变就不报，别每帧打一次服务端
+  _ropeHitSig = sig;
+  fetch("/v1/work/ropehit", {method:"POST", cache:"no-store",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({rects:rects})}).catch(() => {});
+}
+
+/* ============================================ 暂存区两态 + 明信片交互
+   ---------------------------------------------------------------------
+   范老板 2026-10-15 第①条：
+     「暂存区指的是绳（上下）+ 明信片的区域范围。他有两种状态，一种在桌面
+      图标的下面叫「待编辑态」：鼠标无法点击，只有狒狒在动和明信片整体随风
+      轻轻摆动，另一种状态叫「编辑态」：鼠标可以与明信片交互，也可以拖动
+      或是点击取消该明信片操作的状态，位于桌面图标上方。鼠标停留暂存区
+      3 秒后，暂存区自动由「待编辑态」变「编辑态」，此时搜索器不能出现，
+      互相独立。」
+
+   ★ 为什么「判定」写在这一侧（绳窗）而不是宿主的 workwin 里：宿主只知道
+     鼠标在屏幕上的位置，不知道绳子画在哪儿、卡片多大 —— 那套几何全在页面
+     里（ropeYAt / CARD_W / 每张卡的 x）。所以页面每 120ms 问一次
+     `/v1/work/pointer`，自己判「在不在暂存区里」和「停够 3 秒没有」，判完
+     把**意愿**报给 `/v1/work/ropeedit`，层级由宿主在主线程落。
+     120ms 的本地 HTTP 轮询代价可以忽略（同一台机器、没有 TLS）。
+   --------------------------------------------------------------------- */
+const EDIT_AT   = 2000;      // 停留满 2 秒进编辑态（范老板 2026-10-15：3 秒太久）
+const EDIT_POLL = 120;       // 查鼠标的间隔
+const ES = { on: false, since: 0, timer: 0, hover: null, drag: null, hintT: 0,
+             layer: false };   // layer = 搜索层开着（只用来显示 ×）
+
+/* 暂存区矩形：绳的上下各留 30px，下沿包住所有明信片。
+   ★ 收工动画期间（S.flying）只报绳带本身 —— 卡片正飞向左下角，把它们算进
+     包围盒会让这块区域瞬间涨到整个屏幕，编辑态就一直退不出去。 */
+function stageBox(){
+  const top = Math.max(0, Math.round(ropeYAt(0)) - 30);
+  let bot = Math.round(ropeYAt(0)) + 30;
+  if (!S.flying){
+    document.querySelectorAll("#stage .post").forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > bot) bot = r.bottom;
+    });
+  }
+  return [0, top, Math.round(W()), Math.round(bot - top) + 12];
+}
+
+function cardAt(x, y){
+  const list = [...document.querySelectorAll("#stage .post")];
+  /* ★ 新⑤之后「谁在最上面」不再等于「谁在 DOM 里靠后」—— raise() 会给碰过的
+     卡片发一个递增的 z-index。命中判定必须跟着同一套顺序走，否则会出现
+     「明明压在上面，鼠标却选到了下面那张」。 */
+  list.sort((a, b) => (+a.style.zIndex || 0) - (+b.style.zIndex || 0));
+  for (let i = list.length - 1; i >= 0; i--){
+    const el = list[i];
+    if (el.classList.contains("ghost")) continue;
+    if (el.classList.contains("dragging")) continue;
+    const r = el.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el;
+  }
+  return null;
+}
+
+/* ★ 范老板新⑤：「被交互后的明信片在最上层叠放」。
+   卡片是 `position:absolute` 且没有各自的 z-index，叠放顺序就是**DOM 顺序** ——
+   于是两张明信片一重叠，先做出来的那张永远压在下面：拖走它、再放回来，它还是
+   在底下，看着就像「被藏起来了」。这里给「碰过的」卡片发一个递增的层级，
+   而且是**持久**的（离开/松手都不收回）：谁最后被碰过，谁就在最上面。
+   起点 20 高于 `.hot`(5)/`.dragging`(6) 那两条兜底规则，保证内联样式说了算。
+   ★ 2026-10-17：「新建的卡片」也走这里（paint() 里 appendChild 之后立刻 raise）——
+     不这么做，新卡就是 `z-index:auto`(算 0)，一挂上去立刻压在老卡（21+）底下，
+     范老板看到的就是「新添加的明信片跑到最下面」。 */
+let _zTop = 20;
+function raise(el){
+  if (!el || el.classList.contains("ghost")) return;
+  el.style.zIndex = String(++_zTop);
+  if (_zTop > 20000){            // 叠了很多次之后重排一次，别让数字无限涨
+    const all = [...document.querySelectorAll("#stage .post")];
+    all.forEach((e, i) => { e.style.zIndex = String(20 + i); });
+    _zTop = 20 + all.length;
+    el.style.zIndex = String(++_zTop);
+  }
+}
+
+function setHover(el){
+  if (ES.hover === el) return;
+  if (ES.hover) ES.hover.classList.remove("hot");
+  ES.hover = el;
+  if (el){ el.classList.add("hot"); raise(el); }
+  document.body.style.cursor = el ? "grab" : "";
+}
+
+function setEdit(on){
+  on = !!on;
+  if (ES.on === on) return;
+  ES.on = on;
+  document.body.classList.toggle("editing", on);
+  if (!on) setHover(null);
+  const hint = $("#editHint");
+  if (hint){
+    clearTimeout(ES.hintT);
+    if (on){
+      hint.classList.add("on");
+      ES.hintT = setTimeout(() => hint.classList.remove("on"), 3200);
+    } else {
+      hint.classList.remove("on");
+    }
+  }
+  fetch("/v1/work/ropeedit", {method:"POST", cache:"no-store",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({on:on})}).catch(() => {});
+  pushRopeHit();
+}
+
+function tickEdit(x, y){
+  if (ES.drag) return;                       // 拖动中别改状态，否则窗口半路穿透
+  const b = stageBox();
+  const inside = x >= b[0] - 4 && x <= b[0] + b[2] + 4 &&
+                 y >= b[1] - 4 && y <= b[1] + b[3] + 4;
+  const now = Date.now();
+  if (!inside){
+    ES.since = 0;
+    if (ES.on) setEdit(false);               // 一离开立刻回待编辑态
+    return;
+  }
+  if (ES.on) return;
+  if (!ES.since) ES.since = now;
+  if (now - ES.since >= EDIT_AT) setEdit(true);
+}
+
+async function pollPointer(){
+  try{
+    const r = await fetch("/v1/work/pointer", {cache:"no-store"});
+    const j = await r.json();
+    if (j && j.on) tickEdit(j.x, j.y);
+    /* ★ 范老板 2026-10-15：「搜索框出现的时候，暂存区也是处于编辑状态，
+       明信片的 × 同样要显示」。`j.edit` 就是宿主那边「搜索层 isVisible」
+       （workwin.pointer_info），拿它单独挂一个 body.layer —— 只控制 × 的
+       显隐，不动 pointer-events / 命中矩形，避免搜索层开着时整块暂存区
+       吞掉本该给搜索框的点击。 */
+    const lay = !!(j && j.edit);
+    if (lay !== !!ES.layer){
+      ES.layer = lay;
+      document.body.classList.toggle("layer", lay);
+    }
+  }catch(e){ /* 服务端忙就跳过这一拍 */ }
+  ES.timer = setTimeout(pollPointer, EDIT_POLL);
+}
+
+/* ---- 编辑态里的交互：悬停 / ×  / 横向拖动 ---------------------------- */
+document.addEventListener("pointermove", ev => {
+  if (!ES.on){ if (ES.hover) setHover(null); return; }
+  if (ES.drag){
+    const dx = ev.clientX - ES.drag.sx;
+    let nx = ES.drag.x0 + dx;
+    /* ★ 2026-10-15 修 bug：这里原来写的是 `(it && it.w) || CARD_W` —— 可 `it`
+       在这个作用域里**根本没声明**（它是 pointerdown 里的局部变量）。于是每次
+       pointermove 都抛 ReferenceError，整个拖动函数一行没跑完就断了：
+       表现就是「编辑态下明信片按下去纹丝不动」。宽度一律用这张卡自己的
+       `cwOf(el)`（明信片宽度恒定，正常情况下就等于 CARD_W）。 */
+    const _cw = cwOf(ES.drag.el);
+    nx = Math.max(_cw / 2 + 6, Math.min(W() - _cw / 2 - 6, nx));
+    ES.drag.nx = nx;
+    ES.drag.el.style.transform =
+      "translate(" + (nx - _cw / 2) + "px," + (ropeYAt(nx) + 4) + "px)";
+    return;
+  }
+  setHover(cardAt(ev.clientX, ev.clientY));
+});
+
+document.addEventListener("pointerdown", ev => {
+  if (!ES.on) return;
+  /* ★ 放映中卡片自己在平移，谁都不许拖（范老板：「鼠标此时只能对该明信片的
+     操作是点击 X 按钮删除，不能移动它」）。× 走的是 click，不受这里影响。 */
+  if (S.showOn) return;
+  const el = ev.target.closest ? ev.target.closest(".post") : null;
+  if (!el || el.classList.contains("ghost")) return;
+  if (ev.target.closest(".x")) return;        // 点 × 走 click，不算拖动
+  const it = S.items.find(o => String(o.id) === el.dataset.id);
+  if (!it) return;
+  ev.preventDefault();
+  // ★ x 只信「数字」：null / undefined / NaN 都退回 DOM 的真实位置。
+  //   不这么兜底的话，`nx = null` 在 `endDrag` 里会被 `Math.round(null)`
+  //   悄悄变成 0，卡片直接飞到屏幕最左边。
+  const r = el.getBoundingClientRect();
+  const x0 = (typeof it.x === "number" && isFinite(it.x))
+    ? it.x : (r.left + r.width / 2);
+  ES.drag = {el:el, id:it.id, sx:ev.clientX, x0:x0, nx:x0};
+  el.classList.add("dragging");
+  setHover(el);
+}, true);
+
+function endDrag(){
+  if (!ES.drag) return;
+  const d = ES.drag;
+  ES.drag = null;
+  d.el.classList.remove("dragging");
+  if (typeof d.nx !== "number" || !isFinite(d.nx)) return;
+  const it = S.items.find(o => String(o.id) === d.id);
+  if (it){ it.x = Math.round(d.nx); it._auto = false; }   // 手放的位置不再被自动重排
+  settle(d.el, d.nx, 0);
+  if (Math.abs(d.nx - d.x0) >= 2){
+    fetch("/v1/work/hang/move", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id:d.id, x:Math.round(d.nx)})}).catch(() => {});
+  }
+  pushRopeHit();
+}
+document.addEventListener("pointerup", endDrag);
+document.addEventListener("pointercancel", endDrag);
+window.addEventListener("blur", endDrag);
+
+document.addEventListener("click", ev => {
+  if (!ES.on) return;
+  const x = ev.target.closest ? ev.target.closest(".x") : null;
+  if (!x) return;
+  const el = x.closest(".post");
+  if (!el) return;
+  ev.preventDefault();
+  const id = el.dataset.id;
+  fetch("/v1/work/hang/remove", {method:"POST", cache:"no-store",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({id:id})}).then(() => poll()).catch(() => {});
+}, true);
+
+pollPointer();
+
+let _tTimer = 0;
+function toast(msg, bad){
+  const el = $("#tst");
+  if (!el) return;
+  el.innerHTML = msg;
+  el.classList.toggle("bad", !!bad);
+  el.classList.add("on");
+  clearTimeout(_tTimer);
+  _tTimer = setTimeout(() => el.classList.remove("on"), bad ? 5200 : 3400);
+}
+
+/* ★ 按下「收工」**立即**起飞（范老板第⑥条：「点击收工过很久才出现，应该是按下
+   收工立即触发」）。以前是：页面先 POST 复制 → 服务端复制完才放 fly 旗子 →
+   绳窗再等下一次 700ms 轮询才发现 → 三道延迟叠起来，大文件要好几秒。
+   现在先同步放动画，请求在背后发：动画在绳窗、复制在服务端，互不等待。
+   复制要是失败也不要紧 —— 服务端清单没清空，下一轮轮询会把卡片原样画回来，
+   用户看到的就是「飞了又回来」，比「东西凭空没了」好得多。 */
+async function collectNow(){
+  if (S.busy) return;
+  if (!S.items.length){ toast("绳子上还没有素材 —— 先从搜索框把要收的拖上来"); return; }
+  S.busy = true; updateCollect();
+  flyAway();
+  try{
+    const r = await fetch("/v1/work/collect", {method:"POST", cache:"no-store",
+      headers:{"Content-Type":"application/json"}, body:"{}"});
+    const j = await r.json();
+    if (!j || !j.ok) toast("收工没成：" + ((j && j.error) || "未知原因"), true);
+    else if (j.copied === 0) toast("一个都没收到，看看源文件还在不在", true);
+    else if (j.skipped) toast("收走 <b>" + j.copied + "</b> 个，" + j.skipped + " 个没成", true);
+  }catch(e){ toast("收工没成：" + ((e && e.message) || e), true); }
+  finally{ S.busy = false; updateCollect(); }
+}
+
+/* ★ 监听挂在 **#collectWrap** 而不是里面的 #collect 按钮上：拖动开始时我们
+   调了 `setPointerCapture`，指针被捕获后 pointerup 的目标变成捕获元素
+   （也就是 wrap），浏览器据此算出来的 `click` 目标也是 wrap —— 挂在 #collect
+   上的监听器**一次都不会被调用**。现象极具迷惑性：按钮悬停会滑出、看着一切
+   正常，就是点下去没反应，日志里连一条 /v1/work/collect 都没有。 */
+$("#collectWrap").addEventListener("click", ev => {
+  /* ★ 第④条：拖完手一松，浏览器还会照常发一个 click。那一下不能当「收工」，
+     否则用户只是把按钮挪个位置，素材就被收走了。 */
+  if (_colDragged){ _colDragged = false; return; }
+  /* ★★ 关键：拖动时按下就叫了 setPointerCapture，此后浏览器把 click 的
+     target 算成**捕获元素**（#collectWrap），挂在 #show 上的监听器一次都
+     不会触发 —— 「放映」怎么点都没反应就是这个原因（「收工」没事，因为
+     它的监听器本来就挂在这层）。所以按 target 自己分派。 */
+  /* ★ 注意 target 只能是 #collectWrap（pointer capture 把 click 的 target
+     改成了捕获元素），所以「刚才按的是哪颗」必须在 pointerdown 那一刻记下来。 */
+  if (_colPressedGear){                       // 点档位：只换档，不开始/停止
+    S.showGear = ((S.showGear || 0) + 1) % SHOW_GEARS.length;
+    const g = $("#gear"); if (g) g.textContent = SHOW_GEAR_NAME[S.showGear];
+    return;
+  }
+  if (_colPressedShow){ setShow(!S.showOn); return; }
+  collectNow();
+});
+/* ★ 按钮「半收着」的时候，它的包围盒有一大半在屏幕外 —— 鼠标只能碰到露出
+   来的那一小截。滑出/收回去会让包围盒变化，而宿主的点击穿透是按**上一次报
+   上去的那个矩形**判的（_rope_hit_tick），所以每次形变都得立刻重报一发，
+   否则会出现「滑出来了但点不着」或者「收回去了还挡着桌面」。 */
+(function(){
+  const w = $("#collectWrap");
+  if (!w) return;
+  let t = 0;
+  const repost = () => { clearTimeout(t); t = setTimeout(pushRopeHit, 40); };
+  w.addEventListener("mouseenter", repost);
+  w.addEventListener("mouseleave", repost);
+  w.addEventListener("transitionend", repost);
+})();
+
+/* ★ 范老板 2026-10-15 第④条：「收工按钮做成自由悬浮按钮（样式不变），
+   只是用户可以随意拖动，而且可以随意吸附在电脑桌面的左右边缘进行半隐藏吸附」。
+   拖动中把命中矩形临时报成**整窗** —— 绳窗只有报过的矩形才吃点击
+   （宿主 `_rope_hit_tick`），跟手拖的时候指针必然一会儿在按钮外面，不这样
+   中途就会被判成「鼠标离开」→ 窗口切回穿透 → 后面的 pointermove/up 全丢，
+   按钮卡在半路。松手再按吸附结果重报一次就恢复原状。 */
+let _colPressedGear = false;   // 这次按下落在档位小胶囊上
+let _colPressedShow = false;   // 这次按下落在「放映」上（pointer capture 会把 click 的 target 吃掉）
+let _colDragged = false;
+let _colDragging = false;   // 拖动进行中：pushRopeHit 一律报整窗（见上）
+(function(){
+  const w = $("#collectWrap");
+  if (!w) return;
+  let d = null;
+  const reportFull = () => {
+    _ropeHitSig = "";        // 强制下一次 pushRopeHit 真的发出去
+    pushRopeHit();
+  };
+  w.addEventListener("pointerdown", ev => {
+    if (ev.button !== 0 || S.busy) return;
+    _colPressedShow = !!ev.target.closest("#show");
+    _colPressedGear = !!ev.target.closest(".gear");
+    const r = w.getBoundingClientRect();
+    d = {sx:ev.clientX, sy:ev.clientY,
+         ox:(r.left + r.right) / 2, oy:(r.top + r.bottom) / 2, moved:false};
+    try{ w.setPointerCapture(ev.pointerId); }catch(e){}
+    /* ★ 这里**绝对不能** ev.preventDefault()：在 pointerdown 上 preventDefault
+       会把浏览器的兼容鼠标事件（mousedown/mouseup/**click**）一并掐掉，
+       于是「点一下收工」再也不触发 —— 按钮看着好好的，就是没反应，日志里
+       连一条 /v1/work/collect 都没有。拖拽时别选中文字这件事交给 CSS 的
+       user-select:none，不要用 preventDefault 去挡。 */
+  });
+  w.addEventListener("pointermove", ev => {
+    if (!d) return;
+    const dx = ev.clientX - d.sx, dy = ev.clientY - d.sy;
+    if (!d.moved){
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;   // 6px 以内算点击
+      d.moved = true;
+      _colDragging = true;
+      w.classList.add("dragging");
+      reportFull();
+    }
+    const x = Math.max(6, Math.min(W() - 6, d.ox + dx));
+    const y = Math.max(14, Math.min(H() - 14, d.oy + dy));
+    w.style.left = x + "px";
+    w.style.top  = y + "px";
+    /* ★ 范老板 2026-10-15 第②条：「『放映』和『收工』没有合并为一个按钮，无法
+       同时移到右屏幕」。根因：拖动时只改了 #collectWrap 的 left/top，而
+       #showWrap 是**兄弟节点**、用的是自己的 left/bottom，所以拖动过程中两颗
+       是分开的（松手时 colPlace 才把它们怼到一起）。这里记下两者的相对偏移，
+       拖动时一起搬。 */
+    const sw = $("#showWrap");
+    if (sw){
+      if (!d.off){ const a = w.getBoundingClientRect(), b = sw.getBoundingClientRect();
+                   d.off = {x:b.left - a.left, y:b.top - a.top}; }
+      sw.style.bottom = "auto";
+      sw.style.transform = "none";
+      sw.style.left = (x + d.off.x) + "px";
+      sw.style.top  = (y + d.off.y) + "px";
+    }
+  });
+  function endDrag(){
+    if (!d) return;
+    const moved = d.moved; d = null;
+    if (!moved) return;                                   // 没动：交给 click
+    _colDragged = true;
+    setTimeout(() => { _colDragged = false; }, 350);
+    _colDragging = false;
+    w.classList.remove("dragging");
+    const r = w.getBoundingClientRect();
+    const cx = (r.left + r.right) / 2;
+    const side = cx < W() / 2 ? "left" : "right";
+    const y = Math.max(6, Math.min(94, ((r.top + r.bottom) / 2) / H() * 100));
+    colSave({side:side, y:y});
+    colPlace({side:side, y:y});
+    updateCollect();
+  }
+  w.addEventListener("pointerup", endDrag);
+  w.addEventListener("pointercancel", endDrag);
+})();
+
+addEventListener("resize", layout);
+layout();
+placeCollect();
+updateCollect();
+loadDest();
+poll();
+requestAnimationFrame(swayTick);
+pollPtr();
+/* ★ 页面藏起来的时候（退出工作模式 / 切到别的 App）停掉 rAF 和光标轮询：
+   绳窗本来就常驻，不停的话它会一直在后台跑满 60fps。 */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden){
+    if (SW.raf) cancelAnimationFrame(SW.raf); SW.raf = 0;
+    clearTimeout(SW.timer); SW.timer = 0;
+  } else {
+    SW.last = 0;
+    if (!SW.raf) SW.raf = requestAnimationFrame(swayTick);
+    if (!SW.timer) pollPtr();
+  }
+});
+</script>
+</body>
+</html>

@@ -85,7 +85,7 @@ cp -R dist/FXseek.app /tmp/check.app && cp tools/audit_deps.py /tmp/check.app/Co
 (cd /tmp/check.app/Contents/Resources/app && PYTHONDONTWRITEBYTECODE=1 ./venv/cpython-3.11/bin/python3.11 audit_deps.py)
 ./venv/cpython-3.11/bin/python3.11 app.py --port 8231       # run the server; open http://127.0.0.1:8231
 bash tools/build_app.sh --dmg                               # produce .app + .dmg
-hdiutil verify dist/FXseek-1.0.3.dmg                        # must print VALID
+hdiutil verify dist/FXseek-1.1.0.dmg                        # must print VALID
 ```
 
 ---

@@ -361,6 +361,18 @@ def _transcribe_audio_file(base_url: str, api_key: str, model: str,
         raise ASRError(str(e))
 
 
+def _is_no_speech(e) -> bool:
+    """这一段里没人说话（纯音乐尾段/静音）。
+
+    智谱对没有语音的片段回 `1210 … no audio segment found`。这不是故障 ——
+    一首歌最后 4~5 秒常常是伴奏收尾，整首标成失败太冤：跳过这一窗，
+    其余窗照常拼接。四家服务里只有智谱会这么回，别的家会直接给空串。
+    """
+    m = str(e).lower()
+    return any(k in m for k in ("no audio segment", "no speech", "no voice",
+                                "没有音频", "未检测到语音"))
+
+
 def transcribe(base_url: str, api_key: str, model: str, audio_path: str,
                language: str = "", timeout: int = 1800) -> dict:
     """转写本地音频/视频。返回 {text, model, seconds, upload_bytes, chunks}。
@@ -390,9 +402,16 @@ def transcribe(base_url: str, api_key: str, model: str, audio_path: str,
                 # 之后每窗 4~5s（模型加载/编译摊在第一个请求上）。给首窗放宽
                 # 超时，别让本来正常的它被 timeout 掐掉。
                 to = timeout if si else max(timeout, 600)
-                txt = _transcribe_audio_file(base_url, api_key, model, data,
-                                             "audio.mp3", language, timeout=to,
-                                             max_tokens=_token_cap(sec))
+                try:
+                    txt = _transcribe_audio_file(base_url, api_key, model, data,
+                                                 "audio.mp3", language, timeout=to,
+                                                 max_tokens=_token_cap(sec))
+                except ASRError as _e:
+                    if _is_no_speech(_e):
+                        print(f"[转写] 第 {si + 1}/{len(segs)} 窗没人声，跳过（伴奏/静音）")
+                        parts.append("")
+                        continue
+                    raise
                 # 单窗退化 → 把这一窗切细重试一次（只重试一次，避免放大失败）
                 if _looks_degenerate(txt, sec) and sec > ASR_CHUNK_MIN * 1.5:
                     sub, sub_td = _segment_for_asr(sp, ASR_CHUNK_MIN)
@@ -459,9 +478,12 @@ def test_connection(base_url: str, api_key: str, model: str) -> dict:
     ff = _ffmpeg_bin()
     try:
         with tempfile.TemporaryDirectory() as td:
-            fp = os.path.join(td, "test.mp3")
+            # ★ 2026-10-18：以前发的是立体声 mp3，智谱 glm-asr 会先拒
+            #   「只支持单声道」；统一成 16 kHz 单声道（与正式转写同一规格）。
+            fp = os.path.join(td, "test.wav")
             subprocess.run([ff, "-f", "lavfi", "-i",
-                            "sine=frequency=440:duration=1", "-y", fp],
+                            "sine=frequency=440:duration=1", "-ar", "16000",
+                            "-ac", "1", "-y", fp],
                            capture_output=True, timeout=20)
             if not os.path.exists(fp):
                 return {"ok": False, "message": f"ffmpeg 生成测试音频失败（用的 {ff}）"}
@@ -472,6 +494,15 @@ def test_connection(base_url: str, api_key: str, model: str) -> dict:
         return {"ok": False,
                 "message": f"本机找不到 ffmpeg（试过 {ff}），没法生成测试音频"}
     except ASRError as e:
+        # 「no audio segment found」不是配置错 —— 是这段 1 秒正弦波里没有语音，
+        # 服务端（智谱 glm-asr 就是这样）说「没找到可转写的语音段」，说明地址、
+        # 密钥、格式、模型名全都通了，只是没东西可转。当成「通」报出去，
+        # 否则用户会以为自己的 ASR 配错了（范老板 2026-10-18 就是被这句骗的）。
+        msg = str(e)
+        if "no audio segment" in msg.lower() or "no speech" in msg.lower():
+            return {"ok": True,
+                    "message": f"连接成功（模型「{model}」认了地址与密钥；1 秒测试音里没有说话片段，"
+                               f"服务端如实回了 no audio segment found）"}
         return {"ok": False, "message": f"转写失败：{e}"}
     except Exception as e:
         return {"ok": False, "message": str(e)}

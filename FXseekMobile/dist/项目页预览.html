@@ -1,0 +1,622 @@
+<!doctype html><html lang=zh><meta charset=utf-8>
+<title>FXseek 项目页预览</title>
+<style>
+:root{--fg:#1f2328;--mut:#59636e;--bd:#d1d9e0;--ln:#0969da;--bg:#fff}
+@media(prefers-color-scheme:dark){:root{--fg:#e6edf3;--mut:#9198a1;--bd:#3d444d;--ln:#4493f8;--bg:#0d1117}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif}
+.bar{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--bd);padding:10px 20px;display:flex;gap:10px;align-items:center;z-index:9;flex-wrap:wrap}
+.bar b{margin-right:auto;font-size:15px}
+button{font:inherit;padding:7px 16px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--fg);cursor:pointer}
+button.on{background:#8B5CF6;border-color:#8B5CF6;color:#fff}
+.wrap{max-width:900px;margin:0 auto;padding:28px 20px 80px}
+h1{font-size:2em;padding-bottom:.3em;border-bottom:1px solid var(--bd)}
+h2{font-size:1.4em;margin-top:1.6em;padding-bottom:.3em;border-bottom:1px solid var(--bd)}
+h3{font-size:1.12em;margin-top:1.4em}
+a{color:var(--ln);text-decoration:none}a:hover{text-decoration:underline}
+code{background:rgba(140,140,160,.16);padding:.2em .4em;border-radius:6px;font-size:.88em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:rgba(140,140,160,.13);padding:14px;border-radius:10px;overflow:auto}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;display:block;overflow:auto;margin:1em 0;width:100%}
+th,td{border:1px solid var(--bd);padding:8px 14px;text-align:left}
+tr:nth-child(2n) td{background:rgba(140,140,160,.07)}
+img{max-width:100%;height:auto;border-radius:8px;margin:12px 0;border:1px solid var(--bd)}
+hr{border:0;border-top:1px solid var(--bd);margin:2em 0}
+li{margin:.3em 0}
+blockquote{border-left:4px solid var(--bd);margin:1.2em 0;padding:0 1em;color:var(--mut)}
+.hide{display:none}
+</style>
+<div class=bar><b>FXseek · 项目页预览</b>
+<button id=bzh class="on" onclick="sw('zh')">中文主页</button>
+<button id=ben class="" onclick="sw('en')">English page</button>
+</div>
+<div class=wrap><div id=zh class="">
+<h1 id="fxseek">FXseek</h1>
+<p><strong>一个自包含、完全跑在本机的 macOS 素材库 —— 用一句话描述画面、用说话（或者干脆哼一段），也可以直接丢一张参考图，就能找到硬盘里的图片、视频、音频和文档。配上 iPhone，媒体库跟着你在家里走。</strong></p>
+<p>索引、打标、转写<strong>全部在你自己的机器上完成，素材不出网</strong>；不用装 Python，也不用管依赖 ——
+应用自带独立运行时和内置多模态模型。</p>
+<p><strong>简体中文</strong> · <a href="javascript:sw('en')">English</a></p>
+<pre><code>「有气球的画面」        → 找到那张图，并告诉你它为什么匹配
+按住说「找狗的照片」     → 语音 → 意图 → 检索
+哼一段副歌             → 哼唱搜索：声学指纹直接定位那首歌
+丢一张参考图进来        → 以图搜图；命中视频时直接跳到那一帧
+</code></pre>
+<hr>
+<p><img alt="FXseek 主界面 · 夜间主题（简体中文）" src="../../wemm_app/docs/demo/01-night-zh.jpg"></p>
+<h2 id="三段演示">三段演示</h2>
+<p><strong>① 打字就能搜画面</strong> —— 输入「狗」「针织衫」，结果带<strong>匹配度角标</strong>；搜索框里双击还能唤出搜索历史：
+<img alt="文字检索画面演示" src="../../wemm_app/docs/demo/search.gif"></p>
+<p>▶ <a href="https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-search-demo.mp4">完整演示 · 45 秒（有声，1600×900）</a></p>
+<p><strong>② 界面随你</strong> —— 白天 / 夜间主题、简体中文 / English，点一下就换；缩略图墙、列表视图、详情区随意切换：
+<img alt="界面展示" src="../../wemm_app/docs/demo/ui-tour.gif"></p>
+<p>▶ <a href="https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-ui-tour.mp4">完整演示 · 22 秒（有声）</a></p>
+<p><strong>③ 漫步时光</strong> —— 只留图片与视频，按列交错缓缓滚动；点任意一张，它会优雅地淡出：
+<img alt="漫步时光 · 回忆长廊" src="../../wemm_app/docs/demo/memory-lane.gif"></p>
+<p>▶ <a href="https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-memory-lane.mp4">完整演示 · 30 秒（有声）</a></p>
+<blockquote>
+<p>完整演示视频（有声 · 1600×900）与安装包一起放在 <a href="https://github.com/FRr688/FXseek/blob/main/releases">Releases</a>；
+动图为了加载速度压到 620px，看细节请点上面的完整视频或下面的原图。</p>
+</blockquote>
+<h3 id="静态截图看得更清楚">静态截图（看得更清楚）</h3>
+<table>
+<thead>
+<tr>
+<th>白天主题 · English</th>
+<th>漫步时光 · 回忆长廊</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="白天主题（English）" src="../../wemm_app/docs/demo/02-daylight-en.jpg"></td>
+<td><img alt="漫步时光" src="../../wemm_app/docs/demo/03-memory-lane.jpg"></td>
+</tr>
+</tbody>
+</table>
+<h2 id="能做什么">能做什么</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>能力</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔍 <strong>文字搜画面</strong></td>
+<td>不只搜文件名：向量检索看得懂<strong>画面里有什么</strong>（「夕阳下的水面」「手心里的汗珠」），再做深度精排。</td>
+</tr>
+<tr>
+<td>🎙 <strong>语音 / 哼唱搜索</strong></td>
+<td>按住一个键，说出你想要什么；<strong>哼唱搜索</strong>直接走声学指纹（Chromaprint）。指纹优先、意图分流、两路兜底。</td>
+</tr>
+<tr>
+<td>🖼 <strong>以图搜图 / 以音搜素材</strong></td>
+<td>给一张图或一段音频，拿回库里相似的素材；命中视频时，封面<strong>就是</strong>那一帧。</td>
+</tr>
+<tr>
+<td>📱 <strong>iPhone App</strong></td>
+<td>在手机上通过 Wi-Fi 浏览、检索（文字 / 以图 / 以音）和播放整个库；手机自己的照片和语音备忘录在电脑端就是一个普通的索引源，打标和转写两边都能跑。<strong>手机保留一份本地索引，断网也能以图搜图、以音搜素材和语义检索 —— 端侧离线可用。</strong></td>
+</tr>
+<tr>
+<td>🗂 <strong>30+ 格式</strong></td>
+<td>图片 8 种、视频 8 种、音频 8 种，外加 PDF / Office / WPS / 纯文本 / 压缩包清单。</td>
+</tr>
+<tr>
+<td>🎬 <strong>不只是搜</strong></td>
+<td>缩略图墙、内置播放器、最近上传、回收站。</td>
+</tr>
+<tr>
+<td>📜 <strong>音频视频共用一套转写面板</strong></td>
+<td>播放器里有可折叠的<strong>转写</strong>面板 —— 音频叫歌词页，视频则在画面旁滑出（而且视频是<strong>真的让出宽度</strong>，不是把文字盖在上面）。同一个组件，所以两边都有<em>原文 / 优化</em>切换、<em>重新优化</em>、<em>重新转写</em>和<em>还原</em>。视频<strong>字幕</strong>由同一份转写驱动，优化完字幕一起更新。右侧详情栏是只读的：它展示文本，并把你引向播放器，而不是再堆一排按钮。</td>
+</tr>
+<tr>
+<td>🪄 <strong>转写 AI 润色</strong></td>
+<td>转写从来不是完美的。把一段转写交给你的本地对话模型，它会<em>改错字、补标点、标出谁在说话</em> —— 歌曲按歌词处理，访谈得到 <code>Speaker A:</code>。<strong>原文永远保留</strong>：优化后的文本并排放在旁边，两份都能搜，一键还原。「全部优化」带<strong>空闲闸门</strong>（默认开）：等你不碰应用 <code>idle_minutes</code> 之后才跑，你一回来就暂停，回来后接着上次继续 —— 绝不跟你的键盘抢 GPU。</td>
+</tr>
+<tr>
+<td>🎯 <strong>转写逐字对齐</strong></td>
+<td>润色修的是<em>文字</em>，这一步修的是<em>时间</em>。强制对齐模型（Qwen3-ForcedAligner-0.6B，约 1.2 GB，第一次开启时下载）把每个字定位到音频里，于是歌词高亮和视频字幕跟着<strong>单个字</strong>走，而不是整行整行地跳。它对静音很诚实：如果第一个字落在 0:22，<strong>前 22 秒什么都不会高亮</strong> —— 旧的均分猜法会理直气壮地指着一首还没开始唱的歌的第 3 行。它在后台队列没别的事可做时以一次性子进程运行，所以模型不常驻内存。中文歌词效果最好；暂不支持日语和韩语。</td>
+</tr>
+<tr>
+<td>🎨 <strong>高亮样式与配色</strong></td>
+<td>转写旁边的调色盘按钮把高亮切成<strong>逐字</strong>、<strong>整行</strong>和<strong>关闭</strong>（字幕照常显示，只是不再变色），另有五套落在应用现有配色里的预设。音频与视频共用一个设置，播放时实时生效。「逐字」只在确实没有东西可跟时才置灰 —— 而且<strong>原文</strong>和<strong>优化后</strong>的转写各有自己的时间轴（偏移量用 diff 重新映射过），所以打开润色不再以丢掉逐字高亮为代价。</td>
+</tr>
+<tr>
+<td>✨ <strong>漫步时光</strong></td>
+<td>一键进入「回忆长廊」：只留图片和视频，按列交错缓缓滚动；点一张，让它优雅地淡出。</td>
+</tr>
+<tr>
+<td>🤖 <strong>接给本机 AI Agent</strong></td>
+<td>内置 MCP server，6 个 Agent（DSH、Codex、Claude Code……）一键检测与配置。</td>
+</tr>
+<tr>
+<td>🌗 <strong>日常体验</strong></td>
+<td>中英双语界面、深浅色主题（可跟随时间）、索引源管理、本地 HTTP API。</td>
+</tr>
+<tr>
+<td>🔄 <strong>检查更新</strong></td>
+<td><em>关于 → 检查更新</em> 拿你的版本号和 GitHub Releases 比对。连不上 GitHub（离线、被墙、限流）它会直说，并露出一个 <strong>releases</strong> 按钮用浏览器打开 —— 它从不会假装「你已是最新」。</td>
+</tr>
+<tr>
+<td>🪶 <strong>内存友好</strong></td>
+<td>约 3.5 GB 的多模态模型是<strong>按需加载</strong>的 —— 启动只要几十 MB，不是几个 GB，8 GB 的 Mac 也照样流畅。第一次搜索时加载（一两秒），空闲一段时间后<strong>再释放</strong>（默认 5 分钟，可配置）；这段时间里反复搜索复用同一份。</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>低调但重要的一点：<strong>没有一条检索请求会离开这台机器。</strong> 隐私优先不是一句口号 ——
+内置的 WEMM-Embedding-2B 在本地跑，转写也只连你自己指定的本地 / 自建服务。</p>
+</blockquote>
+<h2 id="技术一览">技术一览</h2>
+<ul>
+<li><strong>两套端侧嵌入模型，可切换、可并存</strong> —— 桌面检索走 <strong>WEMM-Embedding-2B</strong>（wemm-2b，2048 维，精度更高）；
+  手机端离线检索走 <strong>EG2 / EmbeddingGemma 2</strong>（Google 的 740M 多模态编码器：文本 270M + 视觉 170M + 音频 300M，
+  768 维，MLX 8bit 权重约 1.2 GB，iPhone 上可用 Core ML 走 ANE）。两者<strong>不是同一个向量空间</strong>，
+  所以桌面会用同一个 EG2 把全库再算一遍、按版本增量同步给手机 —— 手机因此<strong>端侧离线</strong>也能以图搜图、
+  以音搜素材和语义检索，而桌面自己的检索仍然走 WEMM，互不干扰。</li>
+<li><strong>三级检索管线</strong>：文件名 → 向量 → 深度重排（deep re-rank），长尾描述也能命中。</li>
+<li><strong>混合打分</strong>：向量 + 关键词 + 类型 / 时间过滤；空查询、冷缓存都有兜底，不会卡住。</li>
+<li><strong>逐字时间轴</strong>：Qwen3-ForcedAligner-0.6B 强制对齐，歌词高亮与视频字幕跟到字，且对静音诚实。</li>
+<li><strong>零上传</strong>：推理全在本机，密钥、素材、索引都不出设备；局域网模式下手机看到的也是你自己电脑上的库。</li>
+</ul>
+<h2 id="下载">下载</h2>
+<ol>
+<li>到 <a href="https://github.com/FRr688/FXseek/blob/main/releases">Releases</a> 下载 <code>FXseek-1.1.0.dmg</code>（手机端是仓库里的 <code>FXseekMobile/dist/FXseekMobile-1.1.0.ipa</code>，见下方<a href="#-手机端iphone--ipad">手机端</a>）</li>
+<li><strong>安装前先删掉旧版</strong>：<code>/Applications/FXseek.app</code>（直接覆盖会留下旧文件）</li>
+<li>打开 dmg，把 <code>FXseek.app</code> 拖进「应用程序」</li>
+<li>首次启动会<strong>自动下载内置模型（约 1.8 GB）</strong>，默认走国内镜像、失败自动换官方源，带进度条</li>
+<li>未做 Apple 开发者签名，第一次打开若被拦，请<strong>右键 → 打开</strong>（或到「系统设置 → 隐私与安全性」里允许）</li>
+</ol>
+<p><strong>要求</strong>：Apple Silicon（M 系列）+ macOS 13 或更高。已在 Apple M4 上验证。</p>
+<h3 id="国内加速下载">国内加速下载</h3>
+<p>GitHub 的下载线路在国内可能很慢甚至连不上。下面几个镜像给的是<strong>完全相同的文件</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>线路</th>
+<th>地址</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⚡ 加速 1</td>
+<td><code>https://ghfast.top/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+<tr>
+<td>⚡ 加速 2</td>
+<td><code>https://hk.gh-proxy.com/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+<tr>
+<td>⚡ 加速 3</td>
+<td><code>https://ghproxy.net/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+<tr>
+<td>🌐 官方直链</td>
+<td><code>https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+</tbody>
+</table>
+<p>镜像都是第三方代理，随时可能失效；如果都打不开，就用官方直链，或者拿你信得过的 GitHub 加速前缀
+拼在直链前面。建议<strong>先试加速、慢就换直链</strong>。</p>
+<p><strong>完整性核对</strong>（文件 349.5 MB / 366,472,614 字节）：</p>
+<pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
+# 应为 daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
+</code></pre>
+<h2 id="-手机端iphone--ipad">📱 手机端（iPhone / iPad）</h2>
+<p>电脑装上 FXseek 之后，手机也能用同一个库：<strong>局域网直连</strong>，在手机上浏览、检索（文字 / 以图 / 以音）和播放
+整个素材库；<strong>手机 ⇄ 电脑互传</strong> —— 手机自己的照片、录音、文件可以直接传进电脑的索引源，电脑上的素材也能
+存到手机里带走；手机保留一份<strong>本地索引</strong>，所以出了家门、断网也照样能搜（端侧离线）。
+配对走 6 位一次性配对码换长期令牌，回环以外的请求都要令牌，<strong>库本身不出局域网</strong>。</p>
+<h3 id="装到-iphone-上5-步小白版">装到 iPhone 上（5 步，小白版）</h3>
+<p>全程免费，不需要开发者账号。装好后有效期 <strong>7 天</strong>，到期重签一次即可（用 AltStore 会自动续签）。</p>
+<ol>
+<li><strong>下载安装包</strong> —— <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa"><code>FXseekMobile/dist/FXseekMobile-1.1.0.ipa</code></a>（约 25 MB，<a href="https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa">直链</a>）。手机端<strong>免费、只发安装包，源码不公开</strong>（Release 建好后附件里也会放同一份）</li>
+<li><strong>装一个签名工具</strong> —— <a href="https://sideloadly.io">Sideloadly</a>（通用最稳，插线签一次）· <a href="https://altstore.io">AltStore</a>（自动续签，同一个 Wi-Fi）· <a href="https://github.com/opa334/TrollStore">TrollStore</a>（iOS ≤ 16.6.1，装完永久有效）</li>
+<li><strong>把 App 签进手机</strong> —— 数据线连上 iPhone、手机上点「信任此电脑」；打开 Sideloadly，把 ipa 拖进窗口；<strong>Apple ID</strong> 填你平时下 App 的那个账号（密码只发给苹果官方签名服务）；点 <strong>Start</strong>，出现 <strong>Done</strong> 就成了</li>
+<li><strong>手机上允许它</strong> —— 设置 → 通用 → <strong>VPN 与设备管理</strong> → 选你的 Apple ID → <strong>信任</strong>；（iOS 16+）设置 → 隐私与安全性 → 拉到底 → <strong>开发者模式</strong> → 打开，手机重启一次</li>
+<li><strong>试一下</strong> —— 打开 FXseek → 底部「<strong>本机素材</strong>」→ 先放一两首歌或几张图进去 → 播放 → 按锁屏键，看锁屏上有没有「上一首 / 下一首」</li>
+</ol>
+<blockquote>
+<p>⚠️ <strong>如果签名工具报 <code>Login failed (-80045)</code>：不是你弄错了。</strong> 2026 年 10 月 12 日起苹果的账号验证接口在拒签，
+全球所有侧载工具（Sideloadly / AltStore / SideStore…）都报同一个错，报错点在「登录」那一步、还没走到签名。
+先把 Sideloadly 的 anisette 从 Local 换成 Remote，或者用 <a href="https://github.com/nab138/iloader/releases">iloader</a> 装同一个 ipa；
+别对同一个账号连续重试（苹果会限流）。细节见<a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/用户装包指引.md">用户装包指引</a>。</p>
+</blockquote>
+<ul>
+<li>📖 图文详情与常见问题：<a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/用户装包指引.md"><code>FXseekMobile/dist/用户装包指引.md</code></a></li>
+<li>🧩 <strong>免电脑安装</strong>（AltStore 源）：把下面这一行贴进 AltStore 的 <code>Browse → Sources → +</code>，之后就能一键安装、自动续签：</li>
+</ul>
+<pre><code>https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
+</code></pre>
+<p>源文件就是仓库里的 <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/altstore.json"><code>FXseekMobile/dist/altstore.json</code></a>（<code>.ipa</code> 与图标也在同一个目录）。</p>
+<p><strong>手机端完整性核对</strong>（文件 24.9 MB / 26,142,315 字节，构建 37）：</p>
+<pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
+# 应为 e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+</code></pre>
+<h2 id="从源码构建">从源码构建</h2>
+<p>仓库只放源码，构建前需要自备三样东西（都已被 <code>.gitignore</code> 忽略）：
+<code>venv/</code>（自包含 CPython 3.11 + 依赖）、<code>bin/</code>（ffmpeg / ffprobe / fpcalc）、<code>model/</code>（可让首次启动自动下载）。
+<strong>完整步骤与两个真实踩过的坑</strong>见 → <a href="https://github.com/FRr688/FXseek/blob/main/docs/building.md">docs/building.md</a>。</p>
+<pre><code class="language-bash">bash tools/build_app.sh          # 只出 .app
+bash tools/build_app.sh --dmg    # 出 .app + .dmg
+hdiutil verify dist/FXseek-1.1.0.dmg     # 必须打印 VALID
+
+# 开发模式：直接起服务，改 ui.html / settings.html 刷新即生效
+./venv/cpython-3.11/bin/python3.11 app.py --port 8231
+
+# 依赖体检（改打包瘦身列表前务必先跑，见文档里的「空壳元数据」坑）
+./venv/cpython-3.11/bin/python3.11 tools/audit_deps.py
+</code></pre>
+<h2 id="项目结构">项目结构</h2>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app.py</code></td>
+<td>HTTP 服务 + Web UI + 检索 API（纯标准库；每请求从磁盘读前端，改完刷新即生效）</td>
+</tr>
+<tr>
+<td><code>indexer.py</code> / <code>fastsearch.py</code></td>
+<td>索引构建 + 三级检索（文件名 → 向量 → 深度重排）</td>
+</tr>
+<tr>
+<td><code>embed.py</code> / <code>serve.py</code></td>
+<td>模型加载与自检 / OpenAI 兼容的本地向量服务</td>
+</tr>
+<tr>
+<td><code>eg2.py</code> / <code>mobile.py</code></td>
+<td>EG2 向量表与增量同步（手机端离线检索）/ 手机配对、mDNS 广播与局域网鉴权</td>
+</tr>
+<tr>
+<td><code>voice_intent.py</code> / <code>fingerprint.py</code> / <code>recorder.py</code></td>
+<td>语音意图判别（纯 numpy）、声学指纹、麦克风采集</td>
+</tr>
+<tr>
+<td><code>model_dl.py</code></td>
+<td>首次启动的模型下载（双源 + 断点 + 进度，含手机向量模型 EG2）</td>
+</tr>
+<tr>
+<td><code>mcp_server.py</code> / <code>mcp_agents.py</code> / <code>fxseek_skill/</code></td>
+<td>把媒体库接给本机 AI Agent</td>
+</tr>
+<tr>
+<td><code>launcher.py</code> / <code>tray_helper.py</code></td>
+<td>原生启动器（Mach-O，保证麦克风权限归属正确）、菜单栏</td>
+</tr>
+<tr>
+<td><code>ui.html</code> / <code>settings.html</code> / <code>i18n.js</code> / <code>icons.js</code></td>
+<td>前端（零构建、原生 JS）</td>
+</tr>
+<tr>
+<td><code>tools/</code></td>
+<td>打包脚本、依赖体检、原生启动器源码、示例素材生成</td>
+</tr>
+<tr>
+<td><code>FXseekMobile/dist/</code></td>
+<td>手机端的<strong>安装包与安装指引</strong>（<code>FXseekMobile-1.1.0.ipa</code>、<code>altstore.json</code>、<code>用户装包指引.md</code>）；<strong>App 源码不公开</strong>，这里的 <code>eg2.py</code> / <code>mobile.py</code> 是电脑端那一侧（离线向量表与局域网同步协议）</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td><a href="https://github.com/FRr688/FXseek/blob/main/docs/手册.md">工程手册</a>（设计取舍与踩坑）· <a href="https://github.com/FRr688/FXseek/blob/main/docs/building.md">构建指南</a> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/运行时与二进制.md">运行时与二进制</a> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/手机版协议.md">手机版接口协议</a> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/demo/">演示素材</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="许可重要">许可（重要）</h2>
+<ul>
+<li><strong>手机端（iPhone / iPad App）免费使用，但源码不公开</strong>：仓库里只有它的安装包（<code>FXseekMobile/dist/</code>），没有 App 源码；本仓库开源的是电脑端。</li>
+<li>电脑端采用 <strong>PolyForm Noncommercial License 1.0.0</strong>（<a href="https://github.com/FRr688/FXseek/blob/main/LICENSE">LICENSE</a>）：
+  <strong>个人学习 / 研究 / 业余爱好 / 慈善 / 教育 / 公共研究 / 政府</strong>等非商业用途 —— 免费，随便用、可以改。</li>
+<li><strong>任何商业用途都需要单独授权</strong>（公司内部使用、随产品分发、SaaS、二次开发交付……）
+  → 用途、报价与常见问题见 <strong><a href="https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md">COMMERCIAL.md</a></strong>。</li>
+<li>内置 / 依赖的第三方组件与模型许可见 <strong><a href="https://github.com/FRr688/FXseek/blob/main/THIRD-PARTY.md">THIRD-PARTY.md</a></strong>
+  （特别是 FFmpeg、Chromaprint 与内置模型的许可 —— 商用分发前请务必核对）。</li>
+</ul>
+<hr>
+<p><a href="javascript:sw('en')">English →</a></p>
+</div><div id=en class="hide">
+<h1 id="fxseek">FXseek</h1>
+<p><strong>A self-contained, fully local media library for macOS — find the photos, videos, audio and documents on your disk by describing them, by speaking (or humming), or by showing it a reference image. Pair your iPhone and the library follows you around the house.</strong></p>
+<p>Indexing, tagging and transcription all run <strong>on your own machine</strong>; nothing leaves it. There is no Python to install and no dependency to manage — the app ships with its own runtime and a built-in multimodal model.</p>
+<p><strong>English</strong> · <a href="javascript:sw('zh')">简体中文</a></p>
+<pre><code>&quot;a picture with balloons&quot;     → finds that photo, and tells you why it matched
+hold to speak &quot;find the dog&quot;  → voice → intent → search
+hum a chorus                  → humming search: acoustic fingerprint pinpoints that track
+drop in a reference image     → reverse image search; videos jump to the matching frame
+</code></pre>
+<hr>
+<p><img alt="FXseek main window · dark theme" src="../../wemm_app/docs/demo/01-night-zh.jpg"></p>
+<h2 id="three-demos">Three demos</h2>
+<p><strong>① Search by describing the picture</strong> — type "dog" or "knitwear"; results carry a <strong>match score</strong>, and double-clicking the search box brings up your history:
+<img alt="Text search over image content" src="../../wemm_app/docs/demo/search.gif"></p>
+<p>▶ <a href="https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-search-demo.mp4">Full demo · 45 s (with audio, 1600×900)</a></p>
+<p><strong>② Make it yours</strong> — light / dark theme and 简体中文 / English switch in one click; thumbnail wall, list view and detail pane whenever you want them:
+<img alt="UI tour" src="../../wemm_app/docs/demo/ui-tour.gif"></p>
+<p>▶ <a href="https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-ui-tour.mp4">Full demo · 22 s (with audio)</a></p>
+<p><strong>③ Memory Lane</strong> — an ambient gallery that keeps only photos and videos, drifting slowly in staggered columns; click any tile and it fades away:
+<img alt="Memory Lane" src="../../wemm_app/docs/demo/memory-lane.gif"></p>
+<p>▶ <a href="https://github.com/FRr688/FXseek/releases/download/v1.0.3/FXseek-memory-lane.mp4">Full demo · 30 s (with audio)</a></p>
+<blockquote>
+<p>The full videos (with audio, 1600×900) live in <a href="https://github.com/FRr688/FXseek/blob/main/releases">Releases</a> next to the installer.
+The GIFs are downscaled to 620px for load time — see the videos above, or the stills below, for detail.</p>
+</blockquote>
+<h3 id="stills-easier-on-the-eyes">Stills (easier on the eyes)</h3>
+<table>
+<thead>
+<tr>
+<th>Light theme · English</th>
+<th>Memory Lane</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Light theme (English)" src="../../wemm_app/docs/demo/02-daylight-en.jpg"></td>
+<td><img alt="Memory Lane" src="../../wemm_app/docs/demo/03-memory-lane.jpg"></td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-it-does">What it does</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Capability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔍 <strong>Search by describing the picture</strong></td>
+<td>Not just filenames: vector search understands <em>what is in the frame</em> ("water at sunset", "sweat on a palm"), then re-ranks.</td>
+</tr>
+<tr>
+<td>🎙 <strong>Voice search</strong></td>
+<td>Hold a key, say what you want. <strong>Humming search</strong> goes through an acoustic fingerprint (Chromaprint). Fingerprint first, intent routing, two fallbacks.</td>
+</tr>
+<tr>
+<td>🖼 <strong>Reverse image search / search by audio</strong></td>
+<td>Hand it one picture or one clip and get similar assets back; when it hits a video, the cover <em>is</em> the matching frame.</td>
+</tr>
+<tr>
+<td>📱 <strong>iPhone app</strong></td>
+<td>Browse, search (text / image / voice) and play the whole library from your phone over Wi-Fi — the phone's own photos and voice memos show up on the desktop as a normal index source, and tagging or transcription can run on either machine. <strong>The phone keeps a local index, so reverse image search, audio search and semantic search still work with no Wi-Fi at all — on-device, offline.</strong></td>
+</tr>
+<tr>
+<td>🗂 <strong>30+ formats</strong></td>
+<td>8 image, 8 video, 8 audio formats, plus PDF / Office / WPS / plain text / archive listings.</td>
+</tr>
+<tr>
+<td>🎬 <strong>More than search</strong></td>
+<td>Thumbnail wall, built-in player, recent uploads, trash.</td>
+</tr>
+<tr>
+<td>📜 <strong>One transcript panel, audio and video alike</strong></td>
+<td>The player has a collapsible <strong>Transcript</strong> panel — audio calls it the lyric view, video slides it out beside the picture (and the video actually <em>gives up width</em> rather than hiding text behind it). Same component, so both get the <em>Original / Polished</em> switch, <em>Re-polish</em>, <em>Re-transcribe</em> and <em>Revert</em>. The video <strong>subtitle overlay</strong> is driven from the same transcript, so polishing updates the subtitles too. The right-hand detail pane is read-only: it shows the text and points you at the player instead of stacking a row of buttons.</td>
+</tr>
+<tr>
+<td>🪄 <strong>AI polish for transcripts</strong></td>
+<td>Transcription is never perfect. Hand a transcript to your local chat model and it <em>fixes typos, restores punctuation, and labels who is speaking</em> — songs get lyrics treatment, interviews get <code>Speaker A:</code>. <strong>The original is always kept</strong>: the polished text sits beside it, both are searchable, and one click reverts. "Polish all" has an <strong>idle gate</strong> (on by default): it waits until you have stopped using the app for <code>idle_minutes</code>, pauses the moment you come back, and picks up where it left off — so it never fights your keyboard for the GPU.</td>
+</tr>
+<tr>
+<td>🎯 <strong>Word-level alignment for transcripts</strong></td>
+<td>Polishing fixes the <em>text</em>; this fixes the <em>timing</em>. A forced-alignment model (Qwen3-ForcedAligner-0.6B, ~1.2 GB, downloaded the first time you turn it on) locates every character inside the audio, so the lyric highlight and the video subtitles follow individual words instead of jumping one whole line at a time. It is honest about silence: if the first word lands at 0:22, <strong>nothing is highlighted for the first 22 seconds</strong> — the old even-split guess would happily point at line 3 of a song that hadn't started yet. Runs as a one-shot subprocess when the background queue has nothing better to do, so the model never sits in memory. Best on Chinese lyrics; Japanese and Korean are not supported yet.</td>
+</tr>
+<tr>
+<td>🎨 <strong>Highlight style and colour</strong></td>
+<td>A palette button next to the transcript switches the highlight between <strong>word-by-word</strong>, <strong>whole-line</strong>, and <strong>off</strong> (subtitles still show — they just stop changing colour), with five presets that sit inside the app's existing palette. Audio and video share one setting and it applies live during playback. "Word-by-word" is greyed out only when there is genuinely nothing to follow — and both the <strong>original</strong> and the <strong>polished</strong> transcript get their own timing (the offsets are remapped across the edit with a diff), so turning polishing on no longer costs you word-level highlighting</td>
+</tr>
+<tr>
+<td>✨ <strong>Memory Lane</strong></td>
+<td>A one-click "corridor of memories": photos and videos only, drifting in staggered columns; click one to let it fade out.</td>
+</tr>
+<tr>
+<td>🤖 <strong>Hook it up to local AI agents</strong></td>
+<td>A built-in MCP server, with one-click detection and setup for 6 agents (DSH, Codex, Claude Code, …).</td>
+</tr>
+<tr>
+<td>🌗 <strong>Everyday comfort</strong></td>
+<td>Bilingual UI, light/dark themes (optionally following the time of day), index-source management, a local HTTP API.</td>
+</tr>
+<tr>
+<td>🔄 <strong>Update check</strong></td>
+<td><em>About → Check for updates</em> compares your build against GitHub Releases. If it can't reach GitHub (offline, blocked, rate-limited) it says so plainly and reveals a <strong>releases</strong> button that opens the page in your browser — it never fakes a "you're up to date".</td>
+</tr>
+<tr>
+<td>🪶 <strong>Light on memory</strong></td>
+<td>The ~3.5 GB multimodal model is <strong>loaded on demand</strong> — launching the app costs a few tens of MB, not gigabytes, so an 8 GB Mac stays responsive. It loads on your first search (a second or two) and is <strong>released again after it has been idle</strong> (default 5 min, configurable); searching repeatedly within that window reuses the one copy.</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>The quiet but important part: <strong>not a single search request ever leaves this machine.</strong> Privacy-first is not
+a slogan here — the bundled WEMM-Embedding-2B model runs locally, and transcription only ever talks to the
+local or self-hosted service <em>you</em> point it at.</p>
+</blockquote>
+<h2 id="under-the-hood">Under the hood</h2>
+<ul>
+<li><strong>Two on-device embedding models, switchable and side by side</strong> — desktop retrieval runs <strong>WEMM-Embedding-2B</strong>
+  (wemm-2b, 2048-dim, the more accurate one); the phone's offline retrieval runs <strong>EG2 / EmbeddingGemma 2</strong>
+  (Google's 740M multimodal encoder: 270M text + 170M vision + 300M audio, 768-dim, ~1.2 GB of MLX 8-bit weights;
+  on iPhone it can run on the ANE through Core ML). They are <strong>not the same vector space</strong>, so the desktop
+  re-encodes the whole library with the same EG2 and syncs it to the phone incrementally by revision — which is
+  what lets the phone do <strong>reverse image search, audio search and semantic search entirely on-device, offline</strong> —
+  while desktop search itself keeps using WEMM. Nothing is disturbed on either side.</li>
+<li><strong>Three-stage retrieval</strong>: filename → vectors → deep re-rank, so long-tail descriptions still land.</li>
+<li><strong>Hybrid scoring</strong>: vectors + keywords + type/time filters, with guards for empty queries and cold caches.</li>
+<li><strong>Word-level timeline</strong>: Qwen3-ForcedAligner-0.6B forced alignment, so lyrics and subtitles follow individual
+  characters — and it stays honest about silence.</li>
+<li><strong>Zero upload</strong>: all inference is local; keys, assets and indexes never leave the device. In LAN mode the phone
+  is still looking at the library on <em>your</em> Mac.</li>
+</ul>
+<h2 id="download">Download</h2>
+<ol>
+<li>Grab <code>FXseek-1.1.0.dmg</code> from <a href="https://github.com/FRr688/FXseek/blob/main/releases">Releases</a> — the phone build is <code>FXseekMobile/dist/FXseekMobile-1.1.0.ipa</code> in this repo, see <a href="#-iphone--ipad">iPhone / iPad</a> below</li>
+<li><strong>Delete any older copy first</strong>: <code>/Applications/FXseek.app</code> (installing over it leaves stale files behind)</li>
+<li>Open the dmg and drag <code>FXseek.app</code> into <em>Applications</em></li>
+<li>On first launch it <strong>downloads the built-in model (~1.8 GB)</strong> automatically, with a progress bar; it tries a mirror first and falls back to the official source</li>
+<li>The app is not notarised by Apple, so if Gatekeeper blocks the first launch, <strong>right-click → Open</strong> (or allow it under <em>System Settings → Privacy &amp; Security</em>)</li>
+</ol>
+<p><strong>Requires</strong>: Apple Silicon (M-series) + macOS 13 or newer. Verified on an Apple M4.</p>
+<h3 id="downloading-from-mainland-china">Downloading from mainland China</h3>
+<p>GitHub's release CDN can be slow or unreachable there. These mirrors serve the exact same file:</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Link</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⚡ Mirror 1</td>
+<td><code>https://ghfast.top/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+<tr>
+<td>⚡ Mirror 2</td>
+<td><code>https://hk.gh-proxy.com/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+<tr>
+<td>⚡ Mirror 3</td>
+<td><code>https://ghproxy.net/https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+<tr>
+<td>🌐 Direct</td>
+<td><code>https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseek-1.1.0.dmg</code></td>
+</tr>
+</tbody>
+</table>
+<p>The mirrors are third-party proxies — they may be unavailable at any time. If none of them work, try the
+direct link, or use any GitHub accelerator you trust by prefixing it to the direct URL.</p>
+<p><strong>File integrity</strong> (349.5 MB / 366,472,614 bytes):</p>
+<pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
+# daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
+</code></pre>
+<h2 id="-iphone--ipad">📱 iPhone / iPad</h2>
+<p>Once FXseek is running on the Mac, the phone can use the same library over <strong>a direct LAN connection</strong>:
+browse, search (text / image / audio) and play the whole library from your phone. <strong>Phone ⇄ Mac transfer</strong> goes
+both ways — the phone's own photos, voice memos and files can be pushed into a desktop index source, and desktop
+assets can be saved onto the phone to take with you. The phone keeps a <strong>local index</strong>, so once you leave the
+house it still searches with no Wi-Fi at all (on-device, offline). Pairing is a one-time 6-digit code exchanged
+for a long-lived token, and everything off the loopback interface requires that token — <strong>the library itself never
+leaves your LAN</strong>.</p>
+<h3 id="sideloading-it-5-steps">Sideloading it (5 steps)</h3>
+<p>Free the whole way; no developer account needed. A sideloaded build is good for <strong>7 days</strong> — sign it again when it
+expires, or let AltStore renew it for you automatically.</p>
+<ol>
+<li><strong>Get the build</strong> — <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa"><code>FXseekMobile/dist/FXseekMobile-1.1.0.ipa</code></a> (~25 MB, <a href="https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa">direct link</a>). The phone app is <strong>free, binary only — its source is not published</strong> (the same file will also sit in the release assets)</li>
+<li><strong>Install a signing tool</strong> — <a href="https://sideloadly.io">Sideloadly</a> (most reliable, sign once over a cable) · <a href="https://altstore.io">AltStore</a> (auto-renew, same Wi-Fi) · <a href="https://github.com/opa334/TrollStore">TrollStore</a> (iOS ≤ 16.6.1, permanent)</li>
+<li><strong>Sign it onto the phone</strong> — connect the iPhone with a cable and tap <em>Trust</em>; open Sideloadly and drag the ipa into the window; put your normal Apple ID in the <strong>Apple ID</strong> field (the password only ever goes to Apple's signing service); hit <strong>Start</strong> until it says <strong>Done</strong></li>
+<li><strong>Allow it on the phone</strong> — Settings → General → <strong>VPN &amp; Device Management</strong> → pick your Apple ID → <strong>Trust</strong>; on iOS 16+ also Settings → Privacy &amp; Security → <strong>Developer Mode</strong> → on, then restart once</li>
+<li><strong>Try it</strong> — open FXseek → the <strong>On this device</strong> tab at the bottom → drop in a couple of songs or photos → play one → hit the lock button and check for <em>Previous / Next</em> on the lock screen</li>
+</ol>
+<blockquote>
+<p>⚠️ <strong>If your signing tool reports <code>Login failed (-80045)</code>: it is not your mistake.</strong> Since 12 Oct 2026 Apple's
+account-verification endpoint has been refusing sign-ins, so every sideloading tool (Sideloadly / AltStore /
+SideStore…) fails with that same code — the failure is at the <em>login</em> step, before anything is signed. Switch
+Sideloadly's anisette from Local to Remote, or install the same ipa with <a href="https://github.com/nab138/iloader/releases">iloader</a>;
+don't hammer retries with the same Apple ID (Apple rate-limits them). Details: <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/用户装包指引.md"><code>FXseekMobile/dist/用户装包指引.md</code></a> <em>(Chinese)</em>.</p>
+</blockquote>
+<ul>
+<li>📖 Full walkthrough and FAQ: <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/用户装包指引.md"><code>FXseekMobile/dist/用户装包指引.md</code></a> <em>(Chinese)</em></li>
+<li>🧩 <strong>No computer needed</strong> (AltStore source): paste this line into AltStore's <code>Browse → Sources → +</code> and you get one-tap installs with automatic re-signing:</li>
+</ul>
+<pre><code>https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
+</code></pre>
+<p>The source file is the repository's own <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/altstore.json"><code>FXseekMobile/dist/altstore.json</code></a> (the <code>.ipa</code> and icon live in the same folder).</p>
+<p><strong>Phone build integrity</strong> (24.9 MB / 26,142,315 bytes, build 37):</p>
+<pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
+# e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+</code></pre>
+<h2 id="building-from-source">Building from source</h2>
+<p>The repository holds <strong>source only</strong>. To build a runnable <code>.app</code> / <code>.dmg</code> you need three things in the
+repository root — <code>venv/</code>, <code>bin/</code> and <code>model/</code> — all of which are <code>.gitignore</code>d.
+<strong>Full step-by-step instructions, including two pitfalls we actually hit</strong>, are in
+→ <a href="https://github.com/FRr688/FXseek/blob/main/docs/building.md">docs/building.md</a>.</p>
+<pre><code class="language-bash">bash tools/build_app.sh          # .app only
+bash tools/build_app.sh --dmg    # .app + .dmg
+hdiutil verify dist/FXseek-1.1.0.dmg     # must print VALID
+
+# Dev mode: run the server directly; edits to ui.html / settings.html apply on refresh
+./venv/cpython-3.11/bin/python3.11 app.py --port 8231
+
+# Dependency audit (run this before touching the packaging slim-down list)
+./venv/cpython-3.11/bin/python3.11 tools/audit_deps.py
+</code></pre>
+<h2 id="project-layout">Project layout</h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app.py</code></td>
+<td>HTTP server + web UI + search API (stdlib only; the front end is re-read from disk per request, so edits apply on refresh)</td>
+</tr>
+<tr>
+<td><code>indexer.py</code> / <code>fastsearch.py</code></td>
+<td>Index construction + three-stage retrieval (filename → vectors → deep re-rank)</td>
+</tr>
+<tr>
+<td><code>embed.py</code> / <code>serve.py</code></td>
+<td>Model loading and self-check / OpenAI-compatible local embedding service</td>
+</tr>
+<tr>
+<td><code>eg2.py</code> / <code>mobile.py</code></td>
+<td>EG2 vector table and incremental sync (phone offline search) / pairing, mDNS advertising and LAN auth</td>
+</tr>
+<tr>
+<td><code>voice_intent.py</code> / <code>fingerprint.py</code> / <code>recorder.py</code></td>
+<td>Spoken-intent classification (pure numpy), acoustic fingerprinting, microphone capture</td>
+</tr>
+<tr>
+<td><code>model_dl.py</code></td>
+<td>First-launch model download (two sources, resumable, with progress — EG2 included)</td>
+</tr>
+<tr>
+<td><code>mcp_server.py</code> / <code>mcp_agents.py</code> / <code>fxseek_skill/</code></td>
+<td>Exposes the library to local AI agents</td>
+</tr>
+<tr>
+<td><code>launcher.py</code> / <code>tray_helper.py</code></td>
+<td>Native launcher (Mach-O, so microphone permission is attributed correctly) and menu-bar helper</td>
+</tr>
+<tr>
+<td><code>ui.html</code> / <code>settings.html</code> / <code>i18n.js</code> / <code>icons.js</code></td>
+<td>Front end (no build step, plain JS)</td>
+</tr>
+<tr>
+<td><code>tools/</code></td>
+<td>Packaging scripts, dependency audit, native launcher source, sample-asset generator</td>
+</tr>
+<tr>
+<td><code>FXseekMobile/dist/</code></td>
+<td>The phone app's <strong>binary and install guide</strong> (<code>FXseekMobile-1.1.0.ipa</code>, <code>altstore.json</code>, <code>用户装包指引.md</code>); <strong>the app's source is not published</strong> — <code>eg2.py</code> / <code>mobile.py</code> above are the Mac side (offline vector table and LAN sync protocol)</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td><a href="https://github.com/FRr688/FXseek/blob/main/docs/building.md">Building guide</a> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/手册.md">engineering notes</a> <em>(Chinese)</em> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/运行时与二进制.md">runtime &amp; binaries</a> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/手机版协议.md">mobile protocol</a> · <a href="https://github.com/FRr688/FXseek/blob/main/docs/demo/">demo assets</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="license-important">License (important)</h2>
+<ul>
+<li><strong>The phone app (iPhone / iPad) is free to use but closed source</strong>: this repo ships only its binary (<code>FXseekMobile/dist/</code>), never the app source. This repository open-sources the Mac app only.</li>
+<li>The Mac app is released under the <strong>PolyForm Noncommercial License 1.0.0</strong> (<a href="https://github.com/FRr688/FXseek/blob/main/LICENSE">LICENSE</a>):
+  free to use and modify for <strong>personal study, research, hobby projects, charity, education, public
+  research and government</strong> use.</li>
+<li><strong>Any commercial use requires a separate license</strong> (internal company use, shipping it with a product,
+  SaaS, contract development, …) → see <strong><a href="https://github.com/FRr688/FXseek/blob/main/COMMERCIAL.md">COMMERCIAL.md</a></strong> for terms and pricing.</li>
+<li>Licenses for bundled and third-party components and models are listed in <strong><a href="https://github.com/FRr688/FXseek/blob/main/THIRD-PARTY.md">THIRD-PARTY.md</a></strong>
+  — check it before distributing, especially for FFmpeg, Chromaprint and the bundled model.</li>
+</ul>
+<hr>
+<p><a href="javascript:sw('zh')">简体中文 →</a></p>
+</div></div>
+<script>function sw(l){zh.classList.toggle('hide',l!='zh');en.classList.toggle('hide',l!='en');
+document.getElementById('bzh').classList.toggle('on',l=='zh');document.getElementById('ben').classList.toggle('on',l=='en');scrollTo(0,0)}</script>

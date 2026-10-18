@@ -1,0 +1,1827 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工作模式</title>
+<style>
+/* ==========================================================================
+   工作模式（搜索/抓取层）
+
+   这一层只画「能点的东西」：
+     · 搜索胶囊 + 类别条 + 结果面板
+     · 拖拽幽灵、明信片的悬停/拖动/摘除（卡片本身画在绳窗里）
+     · 「收工」按钮、提示药丸
+
+   绳子、明信片、收工动画全在 rope.html 那扇窗里 —— 那扇窗是桌面层级、
+   穿透点击，所以它只显示、不接收事件；交互全在这里做，坐标一一对应。
+   两扇窗的对齐靠同一份版式常量（ROPE_AT 等），改一个地方要两边一起改。
+   ========================================================================== */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent}
+body{
+  font:13px/1.45 -apple-system,"PingFang SC","Helvetica Neue",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;
+  color:var(--fg);
+}
+
+/* ------------------------------------------------------------------ 主题 */
+/* 这扇窗是透明的，底是用户的桌面或别的窗口。
+   所以两种主题都不能用「纯白卡 + 深字」那种做法 —— 得给玻璃底足够的
+   不透明度兜住对比度，否则用户在浅色壁纸上看不清字。 */
+:root{
+  /* ★ 全页**故意不用 backdrop-filter**。
+     这扇窗是「透明无边框、底下就是用户的桌面」的窗口，WKWebView 又关掉了
+     自己的底（drawsBackground=False）。这种组合下毛玻璃每帧都要向系统问
+     「我背后是什么」，而背后是**会动的桌面壁纸**时合成器没有一个稳定的底
+     可以采样 —— 表现就是整块面板持续闪烁。换成实心半透明底，观感几乎一样，
+     但没有这个抖动源。改回去之前先想清楚这件事。 */
+
+  --fgrgb: 235,238,243;
+  --fg:#eef1f6;
+  --dim:rgba(238,241,246,.60);
+  --dim2:rgba(238,241,246,.42);
+  --panel:rgba(38,42,49,.72);
+  --panel2:rgba(30,34,40,.80);
+  --line:rgba(255,255,255,.13);
+  --line2:rgba(255,255,255,.20);
+  --glass-hi:rgba(255,255,255,.20);
+  --shadow:0 18px 48px rgba(0,0,0,.46);
+  --accent:#3b82f6;
+  --post:#ffffff;          /* 明信片白框：写死，不跟主题走 */
+}
+body[data-theme="light"]{
+  --fgrgb: 22,26,33;
+  --fg:#f2f5fa;
+  --dim:rgba(240,244,250,.72);
+  --dim2:rgba(240,244,250,.55);
+  --panel:rgba(52,58,68,.62);
+  --panel2:rgba(44,49,58,.72);
+  --line:rgba(255,255,255,.20);
+  --line2:rgba(255,255,255,.30);
+}
+
+/* ====================================================== 搜索区（液态玻璃） */
+#searchwrap{position:absolute;left:50%;transform:translateX(-50%);z-index:30}
+#bar{
+  position:relative;display:flex;align-items:center;gap:6px;
+  height:52px;padding:0 7px 0 17px;border-radius:999px;
+  /* iOS 26/27 的液态玻璃：底色压得很低，靠大半径模糊 + 高饱和把背景「拉」进来，
+     再叠一条顶部内高光当折射边。纯半透明不模糊会糊成一团看不清字。 */
+  background:linear-gradient(180deg,rgba(60,66,76,.80),rgba(24,28,34,.86));
+  box-shadow:
+    0 16px 40px rgba(0,0,0,.40),
+    inset 0 1px 0 var(--glass-hi),
+    inset 0 -1px 0 rgba(255,255,255,.06),
+    0 0 0 .5px rgba(255,255,255,.16);
+  -webkit-app-region:no-drag;
+}
+#bar .mag{width:18px;height:18px;flex:0 0 18px;opacity:.72;margin-right:3px}
+#q{
+  flex:1 1 auto;min-width:0;height:100%;border:0;outline:0;background:transparent;
+  font:400 16px/1 -apple-system,"PingFang SC","Helvetica Neue",system-ui,sans-serif;
+  color:var(--fg);letter-spacing:.2px;
+}
+#q::placeholder{color:var(--dim2)}
+#spin{width:16px;height:16px;flex:0 0 16px;display:none;margin-right:2px}
+#spin.on{display:block;animation:spin .85s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 右侧那三个圆钮：清空（红）、以图搜、以音搜 */
+.rbtn{
+  flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.14);color:var(--fg);
+  transition:background .14s,transform .12s;
+}
+.rbtn:hover{background:rgba(255,255,255,.22)}
+.rbtn:active{transform:scale(.92)}
+.rbtn svg{width:17px;height:17px;display:block}
+#clr{background:#f1473f;color:#fff;display:none;margin-right:1px}
+#clr:hover{background:#ff5a52}
+#clr.on{display:flex}
+#clr svg{width:15px;height:15px}
+#esc{
+  flex:0 0 auto;height:24px;padding:0 8px;border-radius:7px;border:0;cursor:pointer;
+  font:500 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:rgba(255,255,255,.11);color:var(--dim);margin-left:2px;
+}
+#esc:hover{background:rgba(255,255,255,.2);color:var(--fg)}
+
+/* ---------------------------------------------------------- 麦克风（第③条）
+   样式对齐手机端 Shell.swift 里那枚麦克风：
+     · 未录音：灰底 + 线性麦克风图标（就是 .rbtn 原样）。
+     · 录音中：红底 + 白色方块；外面两圈 SVG 环 ——
+       `.marc` 是 22% 的一段弧，1 秒一圈匀速转（表示「在录」，与音量无关）；
+       `.mfull` 是满环，粗细 / 亮度跟着实时音量走（「它到底听见我没有」看得见）。 */
+#bmic{position:relative}
+#bmic .mring{position:absolute;inset:-4px;width:42px;height:42px;
+  pointer-events:none;display:none;overflow:visible}
+#bmic .mstop{display:none;width:14px;height:14px}
+#bmic .marc{stroke:#f1473f;stroke-width:2.5;stroke-linecap:round;
+  stroke-dasharray:24.9 88.2;transform-origin:20px 20px;
+  animation:micspin 1s linear infinite}
+@keyframes micspin{to{transform:rotate(360deg)}}
+#bmic .mfull{stroke:#f1473f;stroke-width:1.5;opacity:.2;
+  transition:stroke-width .08s linear,opacity .08s linear}
+#bmic.rec{background:#f1473f;color:#fff}
+#bmic.rec:hover{background:#ff5a52}
+#bmic.rec .mring{display:block}
+#bmic.rec .micon{display:none}
+#bmic.rec .mstop{display:block}
+/* 录音时整枚按钮随音量外扩一点点，和手机端 scaleEffect(1 + level*0.20) 同一手感 */
+#bmic.rec{transform:scale(calc(1 + var(--lv,0) * .10))}
+
+/* ------------------------------------------------------------- 类别条 */
+#kinds{
+  display:flex;align-items:center;gap:7px;margin-top:11px;
+  padding-left:4px;
+  /* ★ 必须是 wrap。原先是 nowrap + overflow:visible：chip 一多（加上「全部
+     来源」那个下拉之后正好超宽），整行就**横向溢出去**压在别的 chip 上，
+     截图里看着就是「全部来源 346」和「全部 346」叠成一坨。溢出不会报错，
+     只是视觉上烂掉，所以这行不能省。 */
+  flex-wrap:wrap;row-gap:7px;overflow:visible;
+}
+.chip{
+  display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;
+  border-radius:999px;border:0;cursor:pointer;white-space:nowrap;
+  font:500 12.5px/1 -apple-system,"PingFang SC",system-ui,sans-serif;
+  color:var(--dim);
+  /* ★ 不能用「白色半透明」当玻璃底。这扇窗底下是**用户的桌面**，
+     浅色壁纸上白玻璃 + 浅灰字 = 完全看不见（实机截图确认过）。
+     和搜索胶囊一样给一层深玻璃兜住对比度。 */
+  background:linear-gradient(180deg,rgba(60,66,76,.80),rgba(24,28,34,.86));
+  box-shadow:0 6px 16px rgba(0,0,0,.24),
+             inset 0 1px 0 var(--glass-hi),0 0 0 .5px rgba(255,255,255,.14);
+  transition:background .14s,color .14s;
+}
+.chip:hover{background:linear-gradient(180deg,rgba(84,91,102,.62),rgba(38,43,51,.70));
+  color:var(--fg)}
+.chip.on{background:var(--accent);color:#fff;
+  box-shadow:0 3px 12px rgba(59,130,246,.45),inset 0 1px 0 rgba(255,255,255,.30)}
+.chip svg{width:14px;height:14px;display:block;opacity:.85}
+.chip.on svg{opacity:1}
+.chip b{font-weight:600;font-size:11.5px;opacity:.62}
+.chip.on b{opacity:.92}
+.chip .caret{width:9px;height:9px;opacity:.6;margin-left:-1px}
+#ksrc{padding-left:11px}
+/* ★ 范老板 2026-10-15：「全部来源那里的指示灯删掉」——
+   原来这颗绿点想表达「索引源在线」，但它挂在「全部来源」这个**聚合**上，
+   语义本来就不对（全部来源哪来的在线/离线），而且和真要有状态灯的地方
+   （来源菜单里逐条的 .phstat）重复。删掉。 */
+#sep{width:1px;height:18px;background:var(--line);margin:0 1px;flex:0 0 1px}
+#kfmt{padding:0 10px}
+
+/* 下拉（来源 / 格式共用） */
+.menu{
+  position:absolute;z-index:60;display:none;min-width:190px;max-height:46vh;overflow:auto;
+  padding:6px;border-radius:14px;
+  /* ★ 范老板新④：来源菜单原来的渐变只到 .80/.88 的透明度，压在花花绿绿的
+     桌面/素材上时字几乎读不出来（实测整块结果网格透过来）。加背板不许偷懒：
+     底色提到 .93/.97，再叠一层 backdrop blur —— 既挡住背景又还留着玻璃感。 */
+  background:linear-gradient(180deg,rgba(52,58,68,.93),rgba(20,23,29,.97));
+  -webkit-backdrop-filter:blur(20px) saturate(150%);
+  backdrop-filter:blur(20px) saturate(150%);
+  box-shadow:var(--shadow),inset 0 1px 0 var(--glass-hi),0 0 0 .5px var(--line);
+}
+.menu.on{display:block}
+.menu .it{
+  display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;
+  cursor:pointer;font-size:12.5px;color:var(--dim);
+}
+.menu .it:hover{background:rgba(255,255,255,.10);color:var(--fg)}
+.menu .it.on{background:rgba(59,130,246,.24);color:#fff}
+.menu .it .nm{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu .it .cnt{flex:0 0 auto;font-size:11px;opacity:.55}
+.menu .hd{padding:7px 10px 3px;font-size:10.5px;color:var(--dim2);letter-spacing:.4px}
+.menu .it .tick{width:12px;flex:0 0 12px;opacity:0}
+.menu .it.on .tick{opacity:1}
+.menu .it .ic{width:14px;flex:0 0 14px;opacity:.65}
+/* ★ 范老板新④：联机索引源（手机）的状态灯。绿=在线、灰=离线。
+   形状/配色和休闲模式侧栏的 `.phstat` 对齐，两处看到的必须是同一件事。 */
+.phstat{
+  flex:0 0 auto;width:7px;height:7px;border-radius:50%;margin:0 2px 0 4px;
+  box-shadow:0 0 0 .5px rgba(0,0,0,.35);
+}
+.phstat.on{background:#34c759;box-shadow:0 0 6px rgba(52,199,89,.75)}
+.phstat.off{background:rgba(255,255,255,.26)}
+/* 「深度语义」钮：和休闲模式一样用主色（蓝）标出「这是重活」；
+   跑的时候转一圈脑图标，跑完自己回来。 */
+#bdeep{background:linear-gradient(180deg,#4b93ff,#3070e6);color:#fff}
+#bdeep:hover{background:linear-gradient(180deg,#5c9dff,#3b7bf0)}
+#bdeep.on{box-shadow:0 0 0 2px rgba(90,190,255,.55)}
+@keyframes spin1{to{transform:rotate(360deg)}}
+#bdeep.on svg{animation:spin1 .9s linear infinite}
+
+/* ------------------------------------------------------------- 结果面板 */
+#panel{
+  position:absolute;left:50%;transform:translateX(-50%);z-index:20;
+  display:none;padding:11px;border-radius:20px;overflow:auto;
+  background:linear-gradient(180deg,rgba(58,64,74,.66),rgba(26,30,36,.74));
+  box-shadow:var(--shadow),inset 0 1px 0 var(--glass-hi),0 0 0 .5px var(--line);
+  scrollbar-width:thin;
+}
+#panel.on{display:block}
+/* ★ 范老板：「两模式下检索能力全部同步一致」—— 休闲模式结果区顶上有句
+   「找到 39 项 · 仅图片 · 向量」的口径说明，工作模式一直没有。补上，
+   顺便让用户看得见这次到底是走了哪条路（浏览/文件名/向量/深度语义）。 */
+#cnthint{
+  font:500 11.5px/1.4 -apple-system,"PingFang SC",system-ui,sans-serif;
+  color:rgba(255,255,255,.55);letter-spacing:.2px;
+  padding:0 2px 8px;text-align:right;min-height:0;
+}
+#cnthint:empty{display:none;padding:0}
+#panel::-webkit-scrollbar{width:9px}
+#panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:5px;
+  border:2px solid transparent;background-clip:content-box}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:11px}
+.tile{
+  position:relative;border-radius:11px;overflow:hidden;aspect-ratio:4/3;cursor:grab;
+  background:rgba(255,255,255,.06);
+  box-shadow:0 0 0 .5px rgba(255,255,255,.09);
+  transition:transform .13s,box-shadow .13s;
+}
+.tile:hover{transform:translateY(-2px);
+  box-shadow:0 8px 20px rgba(0,0,0,.34),0 0 0 .5px rgba(255,255,255,.20)}
+.tile.dragging{opacity:.34}
+/* ★ 范老板第②条：挂上绳子的缩略图要「假消失」（有帮助理解的动效），摘下来
+   又要能回到被检索的状态。两个都只走 transform/opacity，不参与布局动画。 */
+.tile.gone{opacity:0;transform:scale(.6) translateY(-16px);pointer-events:none;
+  transition:transform .34s cubic-bezier(.4,0,.9,.55),opacity .34s ease-in}
+.tile.back{animation:tileBack .44s cubic-bezier(.34,1.45,.52,1)}
+@keyframes tileBack{from{opacity:0;transform:scale(.58)}to{opacity:1;transform:none}}
+.tile img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+/* ★ 范老板 2026-10-15：「工作模式下搜索结果缩略图也要像休闲模式一样有
+   『匹配度』显示。」休闲模式的规矩是「匹配度左上、类别右下」（ui.html 的
+   `.matchbadge` / `.corner`），这里照抄同一套，连配色分级都一样：
+   ≥60% 绿、40–59% 橙、<40% 灰。所以类别角标从左上挪到右下，给匹配度让位。 */
+.tile .badge{
+  position:absolute;right:6px;bottom:6px;padding:2px 7px;border-radius:7px;
+  font-size:10px;background:rgba(0,0,0,.56);color:#eef1f6;letter-spacing:.3px;
+}
+.matchbadge{
+  position:absolute;left:6px;top:6px;z-index:4;
+  background:#22c55e;color:#fff;font-size:10.5px;font-weight:700;
+  padding:2px 8px;border-radius:7px;letter-spacing:.2px;
+  font-variant-numeric:tabular-nums;
+  box-shadow:0 2px 8px rgba(34,197,94,.35);
+}
+.matchbadge.mid{background:#f59e0b;box-shadow:0 2px 8px rgba(245,158,11,.35)}
+.matchbadge.low{background:#94a3b8;box-shadow:0 2px 8px rgba(148,163,184,.3)}
+.matchbadge.linked{background:rgba(139,92,246,.92);box-shadow:0 2px 8px rgba(139,92,246,.4)}
+.tile .nm{
+  position:absolute;left:0;right:0;bottom:0;padding:16px 7px 6px;
+  font-size:10.5px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:linear-gradient(transparent,rgba(0,0,0,.72));
+}
+.empty{grid-column:1/-1;padding:44px 10px;text-align:center;color:var(--dim)}
+.empty .sub{margin-top:7px;font-size:12px;color:var(--dim2)}
+
+/* -------------------------------------------------- 拖拽幽灵 / 明信片 */
+.post{
+  position:absolute;width:172px;z-index:80;
+  background:var(--post);border-radius:6px;padding:7px 7px 0;
+  box-shadow:0 14px 30px rgba(0,0,0,.40),inset 0 0 0 1px rgba(0,0,0,.09);
+  transform-origin:50% 0;
+}
+.post .clip{position:absolute;left:50%;top:-19px;transform:translateX(-50%);
+  width:30px;height:44px;pointer-events:none}
+.post .clip svg{width:30px;height:44px;display:block;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.32))}
+.post .pic{width:100%;aspect-ratio:4/3;border-radius:4px;overflow:hidden;background:#e9ebef}
+.post .pic img{width:100%;height:100%;object-fit:cover;display:block}
+.post .cap{padding:5px 2px 6px;font-size:10.5px;color:#3b4048;font-weight:500;
+  text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.post .kill{
+  position:absolute;right:5px;top:-9px;width:21px;height:21px;border-radius:50%;
+  border:0;cursor:pointer;display:none;align-items:center;justify-content:center;
+  background:#f1473f;color:#fff;font-size:14px;line-height:1;
+  box-shadow:0 2px 7px rgba(0,0,0,.4);z-index:2;
+}
+#ghost{opacity:.95;transform-origin:50% 50%}
+#ghost.over .clip svg{filter:drop-shadow(0 0 9px rgba(90,190,255,.95))}
+#ghost.over{outline:2px solid rgba(90,190,255,.85);outline-offset:-2px}
+
+/* 悬停在已挂的明信片上：只画一个 × 和一圈光，卡片本体在绳窗里 */
+/* ★ 范老板 2026-10-15 新①：「明信片蓝色选中框删除」。
+   这块 `#hit` 是「工作模式下明信片画在绳窗里、真正接鼠标的却在这扇窗」的
+   桥 —— 它必须存在（而且必须能吃到指针事件），但**不该有任何外观**：
+   原来那圈 `box-shadow:0 0 0 2px rgba(90,190,255,.75)` 就是范老板看到的
+   蓝色选中框。绳窗里的明信片自己会给 hover / 拖动的反馈，不需要这层再描边。
+   注意：`.x` 是它的子元素，删的是边框不是这块命中区本身。 */
+#hit{
+  position:absolute;z-index:70;display:none;border-radius:7px;
+  cursor:grab;
+}
+#hit.on{display:block}
+#hit .x{
+  position:absolute;right:-9px;top:-9px;width:23px;height:23px;border-radius:50%;
+  border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  background:#f1473f;color:#fff;font-size:15px;line-height:1;
+  box-shadow:0 2px 8px rgba(0,0,0,.45);
+}
+#hit .x:hover{background:#ff5a52}
+
+/* --------------------------------------------------------- 收工 / 提示 */
+/* ★ 场记板样式的「收工」按钮 2026-10-14 搬去绳窗了（rope.html 的 #collectWrap）。
+   范老板第⑤条要它「一直在桌面上、吸附在左边缘、点得到」—— 它长在这扇窗里的
+   话，搜索层一收走它就跟着没了，做不到。CSS 一并搬走，这里不留壳子。 */
+
+#hint{
+  position:absolute;z-index:25;left:50%;transform:translateX(-50%);
+  padding:8px 17px;border-radius:999px;white-space:nowrap;
+  font-size:12px;color:var(--dim);
+  background:linear-gradient(180deg,rgba(60,66,76,.68),rgba(26,30,36,.76));
+  box-shadow:0 8px 22px rgba(0,0,0,.34),inset 0 1px 0 var(--glass-hi),
+             0 0 0 .5px var(--line);
+}
+#hint b{color:var(--fg);font-weight:600}
+#hint.off{display:none}
+
+#toast{
+  position:absolute;z-index:90;left:50%;bottom:74px;transform:translate(-50%,14px);
+  max-width:640px;padding:11px 18px;border-radius:14px;font-size:12.5px;
+  color:var(--fg);text-align:center;opacity:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(58,64,74,.78),rgba(24,28,34,.86));
+  box-shadow:var(--shadow),inset 0 1px 0 var(--glass-hi),0 0 0 .5px var(--line);
+  transition:opacity .2s,transform .2s;
+}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#toast.bad{box-shadow:0 18px 48px rgba(0,0,0,.5),inset 0 1px 0 var(--glass-hi),
+  0 0 0 1px rgba(241,71,63,.6)}
+#toast b{color:#fff}
+</style>
+</head>
+<body>
+<div id="searchwrap">
+  <div id="bar">
+    <svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">
+      <circle cx="10.5" cy="10.5" r="6.6"/><path d="M15.4 15.4 20 20" stroke-linecap="round"/>
+    </svg>
+    <input id="q" autocomplete="off" spellcheck="false"
+           placeholder="搜素材… 打字就行，挑中的图往绳子上拖">
+    <svg id="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <path d="M12 3.4a8.6 8.6 0 1 1-6.1 2.5" stroke-linecap="round"/>
+    </svg>
+    <button class="rbtn" id="clr" title="清空">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+           stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <button class="rbtn" id="bimg" title="以图搜图（选一张图找相似素材）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linejoin="round">
+        <rect x="3" y="4.6" width="18" height="14.8" rx="3.4"/>
+        <circle cx="8.6" cy="9.8" r="1.7"/>
+        <path d="M3.6 16.4l4.6-4.2 3.4 3 3-2.6 5.8 5.2"/>
+      </svg>
+    </button>
+    <!-- ★ 范老板 2026-10-15：「『以音搜』和『麦克风录音』是两种按钮，你把『以音搜』
+         按钮删了」。确实删错了 —— 这两件事不一样：
+           · 以音搜（这一颗）= 从磁盘挑一段音频，拿它去库里比声纹；
+           · 麦克风录音（下一颗）= 现录一段，同样是比声纹，但入口是录音。
+         休闲模式那排里也一直是两颗分开的（ui.html #btnAudioSearch / #bmic），
+         图标也要区分开：以音搜是音符，麦克风才是麦克风。 -->
+    <button class="rbtn" id="baud" title="以音搜素材（选一段音频，找同一段录音）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.2 17.4V5.6l10-1.9v11.6"/>
+        <circle cx="6.4" cy="17.6" r="2.9"/>
+        <circle cx="16.4" cy="15.6" r="2.9"/>
+      </svg>
+    </button>
+    <!-- ★ 范老板 2026-10-15 第③条：「工作模式下的搜索框少了麦克风功能，
+         麦克风录音按钮样式按手机端样式设计，和手机端样式同步。」
+         原来这颗只是个「挑一段音频文件」的按钮 —— 图标是麦克风，但点下去弹的是
+         文件框，用户当然觉得「麦克风没了」。现在真录音：点一下开录、再点一下结束，
+         录到的字节直接喂 /v1/audio-search 比声纹（和手机端那枚麦克风一个行为）。
+         样式照抄手机端 Shell.swift 里那枚：未录音是灰底 mic；
+         录音时红底 + 白色方块，外面套两圈 —— 一圈 22% 的弧匀速转表示「在录」，
+         一圈满环吃音量（越大越亮越粗）。 -->
+    <button class="rbtn" id="bmic" title="麦克风录音搜（点一下开始、再点一下结束）">
+      <svg class="mring" viewBox="0 0 40 40" fill="none">
+        <circle class="marc" cx="20" cy="20" r="18"/>
+        <circle class="mfull" cx="20" cy="20" r="18"/>
+      </svg>
+      <svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round">
+        <rect class="mic-body" x="9" y="2.8" width="6" height="11" rx="3"/>
+        <path d="M5.6 11.4a6.4 6.4 0 0 0 12.8 0M12 17.8V21M8.8 21h6.4"/>
+      </svg>
+      <svg class="mstop" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="7" y="7" width="10" height="10" rx="2.4"/>
+      </svg>
+    </button>
+    <!-- ★ 范老板新③：「把漏掉的『深度语义』功能按钮补上」。
+         休闲模式那排工具里它是那颗蓝色脑子（ui.html #btnDeep → doDeepSearch()），
+         工作模式一直缺这一颗 —— 只能走默认的快检索。这里照抄它的语义：
+         同一个 `/v1/search`，多带一个 `tier:'deep'`。 -->
+    <button class="rbtn" id="bdeep" title="深度语义检索（更准，但慢一些、也更耗资源）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.4 3.6A2.9 2.9 0 0 0 6.5 6.5 2.6 2.6 0 0 0 5 8.9c0 .9.4 1.6 1 2.1a2.7 2.7 0 0 0-.6 1.7c0 1.2.8 2.2 1.9 2.5v3.1c0 1.2 1 2.1 2.1 2.1h1.1V3.6z"/>
+        <path d="M14.6 3.6a2.9 2.9 0 0 1 2.9 2.9A2.6 2.6 0 0 1 19 8.9c0 .9-.4 1.6-1 2.1a2.7 2.7 0 0 1 .6 1.7c0 1.2-.8 2.2-1.9 2.5v3.1c0 1.2-1 2.1-2.1 2.1h-1.1V3.6z"/>
+      </svg>
+    </button>
+    <button id="esc" title="收起（Esc）">esc</button>
+  </div>
+
+  <div id="kinds">
+    <button class="chip" id="ksrc" title="选择索引来源">
+      <span id="ksrcName">全部来源</span><b id="kc-all">0</b>
+      <svg class="caret" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+           stroke-width="1.8"><path d="M2.6 4.6 6 8l3.4-3.4" stroke-linecap="round"
+           stroke-linejoin="round"/></svg>
+    </button>
+    <button class="chip on" data-kind="" id="kcAll"><span>全部</span><b id="kcAllN">0</b></button>
+      <button class="chip" data-kind="video">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <rect x="2.6" y="6" width="12.6" height="12" rx="2.4"/>
+        <path d="M15.2 12l6-3.4v6.8z" fill="currentColor" stroke="none"/></svg>
+      视频<b id="kc-video">0</b>
+    </button>
+    <button class="chip" data-kind="image">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linejoin="round">
+        <rect x="3" y="4.6" width="18" height="14.8" rx="3"/>
+        <circle cx="8.6" cy="9.8" r="1.6"/><path d="M3.6 16.4l4.6-4.2 3.4 3 3-2.6 5.8 5.2"/></svg>
+      图片<b id="kc-image">0</b>
+    </button>
+    <button class="chip" data-kind="audio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <path d="M9 18V6l10-2v12"/><circle cx="6.6" cy="18" r="2.5"/>
+        <circle cx="16.6" cy="16" r="2.5"/></svg>
+      音频<b id="kc-audio">0</b>
+    </button>
+    <button class="chip" data-kind="document" id="chipDoc">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linejoin="round">
+        <path d="M6 2.8h7l5 5v13.4H6z"/><path d="M13 2.8v5h5"/></svg>
+      文档<b id="kc-document">0</b>
+      <span id="sep"></span>
+      <span id="docCaret" style="display:flex;align-items:center;gap:4px">
+        <span id="fmtName">格式</span>
+        <svg class="caret" viewBox="0 0 12 12" fill="none" stroke="currentColor"
+             stroke-width="1.8"><path d="M2.6 4.6 6 8l3.4-3.4" stroke-linecap="round"
+             stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+  </div>
+</div>
+
+<div id="panel"><div id="cnthint"></div><div id="grid"></div></div>
+<!-- ★ 绳子上面那个说明药丸已按范老板要求**去掉**（10-14：「钢丝绳上方的
+     说明面板也去掉不要」）。改挂一张空白示例明信片在绳上，一眼就懂怎么用。
+     元素留着但永不显示，纯粹是为了不让下面几处 hintEl.* 抛空引用。 -->
+<div id="hint" style="display:none"></div>
+<div id="hit"><button class="x">×</button></div>
+<div id="toast"></div>
+<div class="menu" id="srcMenu"></div>
+<div class="menu" id="fmtMenu"></div>
+
+<input type="file" id="fpick" accept="image/*" hidden>
+<!-- ★ 新③对齐休闲模式：以音搜也收视频（后端会抽音轨做指纹），
+     休闲模式那个 input 就是 `accept="audio/*,video/*"`。 -->
+<input type="file" id="fapick" accept="audio/*,video/*" hidden>
+
+<script>
+/* ==========================================================================
+   工作模式前端
+   --------------------------------------------------------------------------
+   搜 → 挂 → 收。明信片的**显示**在绳窗，**交互**在这里。
+   ========================================================================== */
+'use strict';
+const $ = s => document.querySelector(s);
+const input = $('#q'), panel = $('#panel'), grid = $('#grid'),
+      searchwrap = $('#searchwrap'), kindsBar = $('#kinds'),
+            toastEl = $('#toast'), hintEl = $('#hint');
+
+const S = {
+  W:0, H:0,
+  ropeY:0, sag:18,
+  hung:[],            // [{id, path, name, kind, x}] —— 服务端那份清单的本地影子
+  drag:null,
+  busy:false,
+  kind:'', fmt:'', source:'',
+  results:[], counts:{files:0, by_kind:{}},
+  mode:'text',        // text / browse / image / audio
+  note:'',            // 「· 仅图片 · 向量」这类口径说明（和休闲模式同一句）
+  /* 匹配度门槛：启动时从 /v1/settings 读，和休闲模式读同一个字段，
+     保证两边「过滤掉多少条」也一致。 */
+  matchLevel:'balanced',
+  hover:null,
+};
+
+/* ------------------------------------------------------------- 版式常量 */
+/* ★ 必须和 rope.html 里那三个数一模一样，否则明信片和绳子会错位。
+   范老板 10-14 的标注：绳线上移、绳和搜索框之间留出一张明信片的高度。 */
+/* ★★ 2026-10-14 修一个藏了很久的 bug：rope.html 那边的绳位被范老板连着往上
+   推了四次（26.2% → 12.5% → 8.5% → 5.5% → 3.2%），但**这里一直没跟着改**。
+   两扇窗铺的是同一块 `NSScreen.visibleFrame`（见 workwin.py 的 `_visible_frame`），
+   坐标系完全重合，「必须一模一样」就是这个意思。差出来的 0.093 × 860 ≈ 80px
+   让 work.html 眼里的「绳」比真绳低了 80px，一次错两个地方：
+     · 挂明信片的判定区整体偏下 —— 用户明明对准了钢丝绳，系统说没对准（第②条）；
+     · 已经挂上去的卡片，鼠标悬停、点「×」的命中框也跟着偏了 80px。
+   改这一个数，上面两处一起好。 */
+const ROPE_AT  = 0.032;   // 绳子：屏高的 3.2%（★ 必须和 rope.html 一致）
+/* ★ 搜索框顶：29.2% → 38%（范老板 10-14 第三条反馈：「搜索面板向下移，
+   挡住明信片了」）。绳在 12.5%，一张明信片连夹子约 190px；29.2% 在 875px
+   高的屏上只有 255px —— 卡片下沿正好切进搜索框。38% 给到 332px，卡片挂满
+   也碰不到框，下面还够摆三行结果。 */
+const BOX_AT   = 0.38;    // 搜索框顶：38%
+const BOX_W    = 0.52;    // 搜索框宽：52%
+const BOX_MAXW = 780;
+const CARD_W   = 172;     // 明信片宽（★ 必须和 rope.html:437 的 CARD_W 一致）
+
+/* 绳子：两头固定、中间下垂的一条。t=-1..1，(1-t²) 中间取 1、两头取 0。 */
+function ropeY(x){
+  const t = Math.max(-1, Math.min(1, (x / Math.max(1, S.W)) * 2 - 1));
+  return S.ropeY + S.sag * (1 - t * t);
+}
+
+function layout(){
+  S.W = innerWidth; S.H = innerHeight;
+  S.ropeY = Math.round(S.H * ROPE_AT);
+  S.sag = Math.max(12, Math.min(26, Math.round(S.W * 0.017)));
+
+  const w = Math.min(BOX_MAXW, Math.round(S.W * BOX_W));
+  const top = Math.round(S.H * BOX_AT);
+  searchwrap.style.width = w + 'px';
+  searchwrap.style.top = top + 'px';
+  // 面板紧贴搜索区下方，一直铺到离屏幕底 104px（给 Dock 让位）。
+  // 上限在这里定死 —— 绳子位置是固定的，结果再多也不能把绳顶跑。
+  const pTop = top + searchwrap.offsetHeight + 11;
+  panel.style.width = w + 'px';
+  panel.style.top = pTop + 'px';
+  // 底部只给 Dock 留 62px。原先留 104，白白少看两行结果。
+  panel.style.maxHeight = Math.max(150, S.H - pTop - 62) + 'px';
+  paintRopeBits();
+  hitFollow();
+}
+/* 提示药丸：挂在绳子上方一点。
+   ★ 「收工」按钮不在这儿了 —— 它整个搬去绳窗（rope.html 的 placeCollect()），
+     因为范老板第⑤条要它常驻桌面上，而搜索层是会被自动收走的。 */
+function paintRopeBits(){
+  hintEl.style.top = Math.round(ropeY(S.W / 2) - 44) + 'px';
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const thumbURL = p => '/v1/thumb?w=320&path=' + encodeURIComponent(p);
+const KIND_CN = {image:'图片', video:'视频', audio:'音频', document:'文档'};
+const extOf = p => { const m = /\.([a-z0-9]{1,6})$/i.exec(String(p).split('?')[0]);
+                     return m ? m[1].toLowerCase() : ''; };
+
+let toastT = 0;
+function toast(html, bad){
+  toastEl.innerHTML = html;
+  toastEl.classList.toggle('bad', !!bad);
+  toastEl.classList.add('on');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => toastEl.classList.remove('on'), bad ? 6500 : 3200);
+}
+
+/* ============================================================== 一、搜 */
+let searchTimer = 0, searchSeq = 0;
+
+input.addEventListener('input', () => {
+  S.mode = 'text';
+  $('#clr').classList.toggle('on', !!input.value);
+  clearTimeout(searchTimer);
+  const q = input.value.trim();
+  if (!q){
+    grid.innerHTML=''; S.results=[]; paintCounts();
+    // 清空输入框：选了类别就把那一类全摊出来，没选才收起来。
+    // 一律收起来的话，用户点了「图片」再清空输入框，会觉得那个按钮失灵了。
+    if (S.kind) browseKind(); else panel.classList.remove('on');
+    return;
+  }
+  searchTimer = setTimeout(() => search(q), 180);
+});
+
+/* ==========================================================================
+   ★ 范老板 2026-10-15：「工作模式的搜索算法应该和休闲模式共用同一套算法逻辑
+   才对，现在输入同一个结果却不同，测试修复，保证两模式下检索能力全部同步一致。」
+
+   真凶就是下面这几条 —— 工作模式以前只把用户敲的字原样丢给 `/v1/search`，
+   而休闲模式（ui.html `doSearch()`）在路上还有一层「**先认类型词/格式词**」的
+   预处理。所以同一个「图片」：
+     · 休闲模式：认出「图片」是类型词 → 整句被剥空 → **直接浏览 image 类别**
+       → 39 张图；
+     · 工作模式：拿「图片」两个字去做语义检索 → 120 条杂七杂八的东西
+       （音频排在前面）—— 数量、内容、排序全对不上。
+
+   下面这些常量与函数是**从 ui.html 原样搬过来的**（TYPE_WORDS / FMT_WORDS /
+   detectTypeWord / stripTypeWords / detectFmtWord / stripFmtWords / matchFmt /
+   smartFilter）。两份要一直保持一致：改 ui.html 里那套，记得同步这里。
+   ========================================================================== */
+const TYPE_WORDS = [
+  {kind:'image',    cn:'图片', words:['照片','图片','图像','相片','相册','写真','图画','绘图','插画','海报','截图','壁纸','头像','photo','picture','image','img','jpg','jpeg','png','gif','webp']},
+  {kind:'video',    cn:'视频', words:['视频','影片','录像','影视','动画','短片','剪辑','movie','video','clip','mp4','mov','avi','mkv']},
+  {kind:'audio',    cn:'音频', words:['音频','音乐','歌曲','歌声','录音','配乐','哼唱','配音','音效','song','music','audio','mp3','wav','m4a','flac','aac','sound']},
+  {kind:'document', cn:'文档', words:['文档','文稿','资料','文件','电子书','笔记','报告','论文','表格','幻灯片','report','document','docx','doc','pdf','word','txt','xlsx','xls','pptx','ppt','csv','md']},
+];
+const FMT_WORDS = [
+  {ext:['pdf'],                          cn:'PDF',   words:['pdf']},
+  {ext:['wps'],                          cn:'WPS 文字', words:['wps文字','wps 文字','wps']},
+  {ext:['et'],                           cn:'WPS 表格', words:['wps表格','wps 表格','et','金山表格']},
+  {ext:['dps'],                          cn:'WPS 演示', words:['wps演示','wps 演示','dps','金山演示']},
+  {ext:['doc','docx','rtf'],             cn:'Word',  words:['word','doc','docx','rtf']},
+  {ext:['xlsx','xlsm'],                  cn:'表格',  words:['excel','xlsx','xlsm','电子表格','表格']},
+  {ext:['pptx'],                         cn:'幻灯片',words:['ppt','pptx','幻灯片','演示文稿']},
+  {ext:['txt','log'],                    cn:'纯文本',words:['txt','log','纯文本','文本文件','文本']},
+  {ext:['md'],                           cn:'Markdown', words:['markdown','md']},
+  {ext:['html','htm'],                   cn:'HTML',  words:['html','htm','网页']},
+  {ext:['json'],                         cn:'JSON',  words:['json']},
+  {ext:['xml'],                          cn:'XML',   words:['xml']},
+  {ext:['yaml','yml'],                   cn:'YAML',  words:['yaml','yml']},
+  {ext:['csv'],                          cn:'CSV',   words:['csv']},
+  {ext:['py'],                           cn:'代码',  words:['python','py','代码']},
+  {ext:['js'],                           cn:'代码',  words:['javascript','js','代码']},
+  {ext:['ts'],                           cn:'代码',  words:['typescript','ts','代码']},
+];
+function kindLabel(kind){
+  const CN = {audio:'音频', video:'视频', image:'图片', document:'文档'};
+  const arr = Array.isArray(kind) ? kind : [kind];
+  return arr.filter(Boolean).map(k => CN[k] || k).join('+');
+}
+function detectTypeWord(q){
+  const s = (q||'').toLowerCase(); let hit = null;
+  for(const t of TYPE_WORDS) for(const w of t.words){
+    const i = s.indexOf(w);
+    if(i >= 0 && (hit === null || i < hit.i)) hit = {i, kind:t.kind, cn:t.cn, word:w};
+  }
+  return hit;
+}
+function stripTypeWords(q){
+  let s = q;
+  for(const t of TYPE_WORDS) for(const w of t.words)
+    s = s.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'), ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+function detectFmtWord(q){
+  const s = (q||'').toLowerCase(); let hit = null;
+  for(const f of FMT_WORDS) for(const w of f.words){
+    const i = s.indexOf(w);
+    if(i < 0) continue;
+    if(hit === null || i < hit.i || (i === hit.i && w.length > hit.word.length))
+      hit = {i, ext:f.ext, cn:f.cn, word:w};
+  }
+  return hit;
+}
+function stripFmtWords(q){
+  let s = q;
+  for(const f of FMT_WORDS) for(const w of f.words)
+    s = s.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b', 'gi'), ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+function matchFmt(path, exts){
+  return exts.indexOf(extOf(path)) >= 0;
+}
+/* 匹配度门槛：和 ui.html 的 smartFilter 同一套。
+   `S.matchLevel` 在启动时从 `/v1/settings` 读（休闲模式也是读同一个字段），
+   于是两边的「过滤掉多少条」也一致。 */
+const MIN_RELEVANT = 0.46;
+function smartFilter(list){
+  if(!Array.isArray(list) || !list.length) return list || [];
+  if(S.matchLevel === 'off') return list;
+  const linked = list.filter(x => x && x.linked);
+  const rest = linked.length ? list.filter(x => !(x && x.linked)) : list;
+  const scored = rest.filter(x => x && x.score != null && x.score > 0);
+  if(scored.length !== rest.length && !scored.length) return list;
+  const top = Math.max(...scored.map(x => x.score));
+  const LV = {loose:[0.30,0.50,3], balanced:[0.46,0.60,3], strict:[0.58,0.75,1], strictest:[0.70,0.85,1]};
+  const [abs, rel, fb] = LV[S.matchLevel] || LV.balanced;
+  const thr = Math.max(abs, top * rel);
+  const keep = scored.filter(x => Math.round(x.score * 100) >= Math.round(thr * 100));
+  let kept = keep;
+  if(!kept.length){
+    if(top >= Math.min(thr, MIN_RELEVANT)) kept = scored.slice().sort((a,b)=>b.score-a.score).slice(0, fb);
+    else kept = [];
+  }
+  return linked.concat(kept);
+}
+
+/* 自动检索：和休闲模式 doSearch() 同一条流水线。
+   返回 {items, note, mode} —— note 只用来给用户看这次的检索口径。 */
+async function runSearch(q, opts){
+  const tier = (opts && opts.tier) || null;
+  const tw = detectTypeWord(q);
+  const fw = detectFmtWord(q);
+
+  /* ★ 先把「上一次被类型词点亮的那颗 chip」放掉，**再**算 effKind。
+     顺序反了就会出这种鬼：搜「图片」点亮图片 chip → 再搜「日落」，
+     effKind 还是拿旧的 'image' 算出来的，结果被悄悄锁死在图片里。 */
+  if (!tw && !fw && S.kindAuto){ setKindUI(''); }
+
+  /* 类型词优先于上方的类别筛选 —— 休闲模式也是这个优先级
+     （`effKind = fk || (fw ? 'document' : (tw ? tw.kind : STATE.kind))`）。 */
+  const effKind = fw ? 'document' : (tw ? tw.kind : (S.kind || null));
+  let stripped = tw ? stripTypeWords(q) : q;
+  if (fw) stripped = stripFmtWords(stripped);
+  const onlyTypeWord = (tw || fw) && !stripped.trim();
+
+  /* 同步 UI：类别 chip 跟着类型词亮起来（用户敲「图片」时那颗自己选中）。
+     `S.kindAuto` 记住「这颗是类型词点亮的」；用户自己点的那颗永远是 false，
+     两个分支都不会去碰它。 */
+  if ((tw || fw) && effKind !== (S.kind || null)){
+    setKindUI(effKind); S.kindAuto = true;
+  }
+  const kindNote = (tw && !fw) ? (' · 仅' + tw.cn) : '';
+
+  if (onlyTypeWord){
+    /* 纯类别/格式词（「图片」「pdf」「文档」）：**不过语义检索**，
+       直接浏览该范围下的全部素材 —— 这正是休闲模式的行为。 */
+    const body = {kind:effKind, limit:300, sort:'recent'};
+    if (S.source) body.source = S.source;
+    const r = await fetch('/v1/browse', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const d = await r.json();
+    let items = d.items || [];
+    if (fw) items = items.filter(x => matchFmt(x.path, fw.ext));
+    const note = fw ? (' · 仅' + fw.cn) : kindNote;
+    return {items, note:(note || (S.fmt ? ' · 已按格式筛选' : '')) + ' · 浏览模式', mode:'browse'};
+  }
+
+  const effQ = stripped || q;
+  const body = {query:effQ, top_k:80, kind:effKind};
+  if (tier) body.tier = tier;
+  if (S.source) body.source = S.source;
+  const r = await fetch('/v1/search', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const d = await r.json();
+  if (d && d.error) throw new Error(d.error);
+  let hits = d.results || [];
+  if (fw) hits = hits.filter(x => matchFmt(x.path, fw.ext));
+  else if (S.fmt) hits = hits.filter(x => extOf(x.path) === S.fmt);
+  const modeName = {fast:'文件名', vector:'向量', deep:'深度语义', auto:'自动'}[d.tier || 'auto'] || '';
+  const ms = d.elapsed_ms != null ? (' · ' + d.elapsed_ms + 'ms') : '';
+  return {items:smartFilter(hits), note:(fw ? (' · 仅' + fw.cn) : kindNote) + ' · ' + modeName + ms,
+          mode:'text'};
+}
+
+async function search(q){
+  const seq = ++searchSeq;
+  $('#spin').classList.add('on');
+  try{
+    const r = await runSearch(q);
+    if (seq !== searchSeq) return;        // 打字快时，早先那次的结果直接丢掉
+    S.mode = r.mode;
+    S.results = r.items || [];
+    S.note = r.note || '';
+    renderAll();
+  }catch(e){
+    if (seq === searchSeq) toast('搜索出错了：' + esc(e.message), true);
+  }finally{
+    if (seq === searchSeq) $('#spin').classList.remove('on');
+  }
+}
+/* ★ 范老板新③：深度语义检索。和上面的 search() 是同一条路，只多一个
+   `tier:'deep'`（休闲模式的 doDeepSearch() 也是这么发的）。
+   慢、耗资源，所以由用户**显式点**，不做成默认。 */
+async function deepSearch(){
+  const q = input.value.trim();
+  if (!q){ toast('先输入要搜的词，再点深度语义'); input.focus(); return; }
+  const seq = ++searchSeq;
+  const btn = $('#bdeep');
+  btn.classList.add('on');
+  $('#spin').classList.add('on');
+  try{
+    /* 深度语义也只是同一条流水线上的一个开关（tier:'deep'）——
+       类型词/格式词预处理、类别收窄、匹配门槛全都要一起走，
+       否则「深度」和「普通」又会是两套口径。 */
+    const r = await runSearch(q, {tier:'deep'});
+    if (seq !== searchSeq) return;
+    S.mode = 'text';
+    S.results = r.items || [];
+    S.note = (r.note || '') + ' · 深度语义';
+    renderAll();
+    toast('深度语义检索完成 · ' + S.results.length + ' 项');
+  }catch(e){
+    toast('深度检索失败：' + esc(e.message), true);
+  }finally{
+    if (seq === searchSeq) $('#spin').classList.remove('on');
+    setTimeout(() => btn.classList.remove('on'), 900);
+  }
+}
+/* 没输关键词、只点了类别 → 直接把这一类列出来（和休闲模式行为一致） */
+async function browseKind(){
+  $('#spin').classList.add('on');
+  try{
+    /* 口径和休闲模式的浏览分支对齐：limit 300 + 按时间倒序。 */
+    const body = {kind:S.kind, limit:300, sort:'recent'};
+    if (S.source) body.source = S.source;
+    const r = await fetch('/v1/browse', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const j = await r.json();
+    S.mode = 'browse';
+    S.note = ' · 浏览模式';
+    S.results = (j.items || []).map(x => Object.assign({kind:S.kind}, x));
+    renderAll();
+  }catch(e){
+    toast('读取素材列表失败：' + esc(e.message), true);
+  }finally{
+    $('#spin').classList.remove('on');
+  }
+}
+/* 本地筛：类别 + 文档格式。★ 不重新跑检索 —— 结果本来就在手里，
+   切一下类别就重新推理一遍的话，用户要等、结果还会闪。 */
+/* ★ 范老板第②条：「挂上去的就从搜索库剔除，不会被重新检索」。
+   所以这里是**真按挂着的清单过滤**，不是只在视图上藏一下。
+   ★ 但它是「**假**消失」：S.results 一个字都不动。真把条目从结果里删掉的话，
+   取消挂载之后就再也回不来了（那一轮检索的结果已经没了），除非重跑一遍检索 ——
+   那既慢又会让整个网格闪。 */
+function hungPaths(){
+  const s = new Set();
+  S.hung.forEach(h => s.add(h.path));
+  return s;
+}
+function filtered(){
+  let items = S.results;
+  if (S.kind) items = items.filter(x => x.kind === S.kind);
+  if (S.fmt)  items = items.filter(x => extOf(x.path) === S.fmt);
+  const hp = hungPaths();
+  if (hp.size) items = items.filter(x => !hp.has(x.path));
+  return items;
+}
+/* 余弦分 → 百分比匹配度。**逐字照抄** ui.html 的 matchInfo()，
+   保证两个模式对同一条结果给出一模一样的数字和颜色分级。 */
+function matchInfo(x){
+  if (S.mode === 'browse' || x.score == null || !x.score) return null;
+  const raw = x.score;
+  const pct = Math.round(Math.min(99, Math.max(5, raw * 100)));
+  const cls = pct >= 60 ? '' : (pct >= 40 ? 'mid' : 'low');
+  return {pct, cls, raw};
+}
+function matchBadge(x){
+  if (x.linked){
+    const off = (x.offset_sec != null) ? ('，这首歌在这一份里出现在 ' + x.offset_sec.toFixed(1) + 's') : '';
+    const t = '与「' + (x.linked_via || '') + '」是同一首歌（指纹关联 ' + (x.link_votes || '') + ' 个窗口' + off + '）';
+    return '<span class="matchbadge linked" title="' + esc(t) + '">同一首歌</span>';
+  }
+  const mi = matchInfo(x);
+  if (!mi) return '';
+  return '<span class="matchbadge ' + mi.cls + '" title="匹配度 ' + mi.pct +
+         '%（原始相似度 ' + mi.raw.toFixed(3) + '）">' + mi.pct + '% 匹配</span>';
+}
+
+/* 刚被摘下来的那几张 —— renderAll() 让它们「长回来」而不是硬生生出现。 */
+let justBack = new Set();
+/* ★★ 范老板 2026-10-16 第④条：「冷启动进工作模式，拖第一张搜索区素材会卡 1 秒」。
+   这条路的**头一次**要一次性攒好几样东西：`buildCard()` 里那段内联 SVG（夹子）解析、
+   `.post` 这套样式的首次计算与建层、缩略图那张位图的解码、以及 WKWebView 里透明
+   窗口的首次命中测试。之后拖第二张就都命中缓存了 —— 所以他感觉是「只有第一张卡」。
+   修法：结果一渲染完，就在屏幕外先造一张一模一样、但 opacity:0、position:fixed 的
+   ghost（用列表里第一张的图），把这些一次性开销提前付掉；等它图片解码完再撤。
+   注意：**必须等 onload 再撤**，图还没解码就 remove，等于什么都没预热。 */
+function warmGhost(items){
+  try {
+    const it = (items && items[0]) || null;
+    if (!it) return;
+    const el = buildCard(it);
+    el.id = 'ghost-warm';
+    el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;'
+                     + 'opacity:0;pointer-events:none;z-index:-1';
+    document.body.appendChild(el);
+    const img = el.querySelector('img');
+    const drop = () => setTimeout(() => { try { el.remove(); } catch (e) {} }, 60);
+    if (img && !img.complete) { img.onload = drop; img.onerror = drop; }
+    else drop();
+  } catch (e) {}
+}
+
+function renderAll(){
+  paintCounts();
+  const items = filtered();
+  panel.classList.add('on');
+  if (!items.length){
+    grid.innerHTML = '<div class="empty">没找到。换个说法试试？'
+      + '<div class="sub">文件名、画面内容、听到的话都能搜</div></div>';
+    return;
+  }
+  grid.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  items.forEach(it => {
+    const d = document.createElement('div');
+    d.className = 'tile';
+    d.dataset.path = it.path;
+    d.title = it.path;
+    d.innerHTML =
+      '<img src="' + thumbURL(it.path) + '" loading="lazy" decoding="async">' +
+      matchBadge(it) +
+      '<span class="badge">' + (KIND_CN[it.kind] || it.kind || '') + '</span>' +
+      '<span class="nm">' + esc(it.name || '') + '</span>';
+    if (justBack.has(it.path)) d.classList.add('back');
+    d.addEventListener('pointerdown', ev => startDrag(ev, it, d));
+    frag.appendChild(d);
+  });
+  grid.appendChild(frag);
+  justBack.clear();
+  panel.scrollTop = 0;
+  /* 第④条：结果一出来就把「第一张卡」的拖动开销提前付掉（见 warmGhost 注释） */
+  warmGhost(items);
+}
+
+/* ---------------------------------------------------------- 类别 + 计数 */
+/* 只改「选中哪个类别」这件事本身（chip 高亮 + 格式筛选复位），不触发检索。
+   runSearch() 认出类型词之后要自己把 chip 点亮，走的就是这一支 ——
+   走 setKind() 会再踢一次检索，白跑一轮还闪。 */
+function setKindUI(kind){
+  S.kind = kind || '';
+  S.kindAuto = false;                 // 任何显式设置都作废「类型词点亮」标记
+  if (S.kind !== 'document'){ S.fmt = ''; closeMenu('#fmtMenu'); }
+  [...kindsBar.querySelectorAll('.chip[data-kind]')].forEach(c =>
+    c.classList.toggle('on', S.kind === c.dataset.kind));
+  paintFmtName();
+}
+function setKind(kind){
+  setKindUI(kind);
+  if (input.value.trim()) renderAll();        // 有词：本地重筛，零延迟
+  else if (S.kind) browseKind();              // 没词：把这一类摊出来
+  else panel.classList.remove('on');
+}
+kindsBar.addEventListener('click', ev => {
+  if (ev.target.closest('#ksrc')){ toggleSrcMenu(); return; }
+  if (ev.target.closest('#docCaret')){
+    if (!S.kind) setKind('document'); else toggleFmtMenu();
+    return;
+  }
+  const c = ev.target.closest('.chip[data-kind]');
+  if (!c) return;
+  setKind(c.dataset.kind === S.kind ? '' : c.dataset.kind);
+});
+function paintCounts(){
+  const set = (id, v) => { const e = $('#' + id); if (e) e.textContent = v; };
+  const bk = S.counts.by_kind || {};
+  const searched = !!S.results.length;
+
+  /* ★ 范老板 2026-10-15：「你自己看你截图里的计数，后面跟搜索出来的结果数量完全
+     对不上，例如『全部』/39 而『全部来源』/355，既没变，感觉计数方法不统一，
+     一会 120 一会 355。」
+     病根：左边那颗角标讲的是「**这个来源库里有几个文件**」（作用域大小），
+     右边那一排讲的是「**这次搜到几条**」。两个口径混在同一行，数字当然对不上；
+     而且以前它在「结果数 / 来源文件数」之间来回跳，就成了「一会 120 一会 355」。
+
+     现在统一成**一条口径**，和休闲模式完全一致：
+       · 没检索（浏览态）→ 全部角标 = 当前作用域里的素材总数，类别 = 各类别总数；
+       · 检索中        → 全部角标 = 这次的结果条数，类别 = 各类别的结果条数。
+     两个数系永远同源、永远对得上。「来源」下拉里每一项的条数仍然照旧显示
+     作用域大小 —— 那是「选择器」的规模信息，不是结果计数，两码事。 */
+  const n = searched ? S.results.length : (S.counts.files || 0);
+  set('kc-all', n);
+  set('kcAllN', n);
+  const tally = {video:0, image:0, audio:0, document:0};
+  if (searched) S.results.forEach(x => { if (tally[x.kind] != null) tally[x.kind]++; });
+  ['video','image','audio','document']
+    .forEach(k => set('kc-' + k, searched ? tally[k] : (bk[k] || 0)));
+  /* 「找到 N 项 · 仅图片 · 向量」这类口径提示，和休闲模式那句 setCountHint 对齐。 */
+  const hint = $('#cnthint');
+  if (hint){
+    if (searched) hint.textContent = '找到 ' + n + ' 项' + (S.note || '');
+    else if (S.mode === 'image') hint.textContent = '以图搜图结果 ' + n + ' 项';
+    else if (S.mode === 'audio') hint.textContent = '以音搜结果 ' + n + ' 项';
+    else hint.textContent = '';
+  }
+}
+
+/* （原来这里有个 `loadSrcFiles()`：单独拉一份「来源→文件数」给角标用。
+   范老板新④之后角标一律走 `loadCounts()` 的 `/v1/stats?source=…`，
+   那份缓存没有任何人读了，删掉 —— 留着只会让下一个人以为还有第二条口径。） */
+
+/* ------------------------------------------------------------ 下拉菜单 */
+function closeMenu(sel){ const m = $(sel); if (m) m.classList.remove('on'); }
+function closeAllMenus(){ closeMenu('#fmtMenu'); closeMenu('#srcMenu'); }
+
+async function toggleSrcMenu(){
+  const m = $('#srcMenu');
+  if (m.classList.contains('on')){ closeMenu('#srcMenu'); return; }
+  closeMenu('#fmtMenu');
+  m.innerHTML = '<div class="hd">正在读取来源…</div>';
+  placeMenu(m, $('#ksrc'));
+  m.classList.add('on');
+  let srcs = [];
+  try{
+    const j = await (await fetch('/v1/sources')).json();
+    srcs = j.sources || j || [];
+  }catch(_){}
+  if (!srcs.length){ m.innerHTML = '<div class="hd">还没添加索引源</div>'; return; }
+  /* ★ 范老板新④：「联机索引源状态灯」。
+     手机来源不是目录 —— 它会掉线（拔了数据线、离开同一个 Wi-Fi）。休闲模式的
+     侧栏早就有一颗绿/灰点 + 「已连接 / 离线（只显示缓存预览）」的 tooltip，
+     工作模式这个菜单里原来什么都没有，用户看不出这 9 项是活的还是缓存的。
+     这里照抄休闲模式的两个 class：`.phstat.on` / `.phstat.off`。 */
+  const all = !S.source;
+  m.innerHTML =
+    '<div class="it' + (all ? ' on' : '') + '" data-path="">'
+    + '<span class="tick">✓</span><span class="nm">全部来源</span>'
+    + '<span class="cnt">' + (S.counts.files || 0) + '</span></div>'
+    + srcs.map(s => {
+        const on = S.source && s.path === S.source;
+        const isPhone = String(s.kind) === 'phone' || String(s.path).indexOf('phone:') === 0;
+        const tip = isPhone
+          ? ' title="' + esc((s.name || s.path) + (s.online
+              ? ' · 已连接'
+              : ' · 离线（只显示缓存预览）')) + '"'
+          : '';
+        const stat = isPhone
+          ? '<span class="phstat ' + (s.online ? 'on' : 'off') + '"></span>'
+          : '';
+        return '<div class="it' + (on ? ' on' : '') + '"' + tip
+          + ' data-path="' + esc(s.path) + '">'
+          + '<span class="tick">✓</span>'
+          + '<span class="nm">' + (isPhone ? '📱 ' : '') + esc(s.name || s.path) + '</span>'
+          + stat
+          + '<span class="cnt">' + (s.files || 0) + '</span></div>';
+      }).join('');
+  placeMenu(m, $('#ksrc'));
+}
+$('#srcMenu').addEventListener('click', ev => {
+  const it = ev.target.closest('.it');
+  if (!it) return;
+  S.source = it.dataset.path || '';
+  closeMenu('#srcMenu');
+  const nm = S.source ? (it.querySelector('.nm').textContent || '').trim() : '';
+  // ★ 必须点名改这层 span：原来写的是 childNodes[1]，而第 0 个孩子是
+  //   换行空白、第 1 个是那个绿点 <span class="dot"> —— 于是「全部来源」
+  //   被写进绿点里，和旁边原本那段文字**叠在一起**，看着像花了。
+  $('#ksrcName').textContent = S.source ? nm : '全部来源';
+  /* ★ 换来源 → 角标必须跟着换作用域（范老板新④）。这一句放在检索之前：
+     它问的是 `/v1/stats?source=…`，和有没有关键词无关。有结果时 paintCounts
+     会改口按结果集统计；没结果时就用这份「该来源里到底有多少素材」。 */
+  loadCounts();
+  // 换来源 → 必须重新问一次后端（source 是服务端的过滤条件，本地筛不出来）
+  if (input.value.trim()) search(input.value.trim());
+  else if (S.kind) browseKind();
+  else { S.results = []; grid.innerHTML=''; panel.classList.remove('on'); }
+});
+
+function paintFmtName(){
+  const e = $('#fmtName');
+  e.textContent = S.fmt ? ('.' + S.fmt) : '格式';
+  $('#chipDoc').classList.toggle('fmt', !!S.fmt);
+}
+function toggleFmtMenu(){
+  const m = $('#fmtMenu');
+  if (m.classList.contains('on')){ closeMenu('#fmtMenu'); return; }
+  closeMenu('#srcMenu');
+  // 格式清单从**当前结果**里现攒，不用问后端
+  const docs = S.results.filter(x => x.kind === 'document');
+  const map = {};
+  docs.forEach(x => { const e = extOf(x.path) || '?'; map[e] = (map[e] || 0) + 1; });
+  const exts = Object.keys(map).sort((a,b) => map[b] - map[a]);
+  if (!exts.length){ toast('这次结果里没有文档'); return; }
+  m.innerHTML = '<div class="hd">文档格式</div>'
+    + '<div class="it' + (S.fmt ? '' : ' on') + '" data-ext="">'
+    + '<span class="tick">✓</span><span class="nm">全部格式</span>'
+    + '<span class="cnt">' + docs.length + '</span></div>'
+    + exts.map(e => '<div class="it' + (S.fmt === e ? ' on' : '') + '" data-ext="' + e + '">'
+        + '<span class="tick">✓</span><span class="nm">.' + e + '</span>'
+        + '<span class="cnt">' + map[e] + '</span></div>').join('');
+  placeMenu(m, $('#chipDoc'));
+  m.classList.add('on');
+}
+$('#fmtMenu').addEventListener('click', ev => {
+  const it = ev.target.closest('.it');
+  if (!it) return;
+  S.fmt = it.dataset.ext || '';
+  S.kind = 'document';
+  paintFmtName();
+  closeMenu('#fmtMenu');
+  setKind('document');
+  if (!input.value.trim()) renderAll();
+});
+function placeMenu(m, anchor){
+  m.style.visibility = 'hidden';
+  m.classList.add('on');
+  const r = anchor.getBoundingClientRect();
+  const w = m.offsetWidth || 200;
+  let left = Math.round(r.left);
+  if (left + w > innerWidth - 12) left = innerWidth - 12 - w;
+  m.style.left = Math.max(12, left) + 'px';
+  m.style.top  = Math.round(r.bottom + 8) + 'px';
+  m.style.visibility = '';
+}
+document.addEventListener('pointerdown', ev => {
+  if (!ev.target.closest('.menu') && !ev.target.closest('#ksrc')
+      && !ev.target.closest('#docCaret')) closeAllMenus();
+}, true);
+
+/* ★ 范老板：「鼠标点击搜索面板以后区域，也能立马隐藏搜索面板」。
+   整屏吃点击由 hitRects() 兜住，这里负责把「点在 UI 外面」翻译成收起。
+   白名单照抄 hitRects() 里真正要保留的东西，别把拖明信片/菜单误伤了。 */
+const KEEP_CLICK = '#searchwrap,#kinds,#panel,#hit,.menu,#ghost,.tile,.post,#toast,#hint';
+/* ★ 2026-10-14 删掉了一段「点在**画出来的**那个 FXseek 文件夹上就开真目录」的
+   点击穿透逻辑（原 `S.dest` / `S.outDir` / `/v1/work/folderpos`）。范老板第③条
+   把假文件夹取消了：收工之后 Finder 里那个是真文件夹，点它本来就归系统管，
+   这段代码既没有落点可对，也没有存在意义。 */
+document.addEventListener('pointerdown', ev => {
+  if (S.drag) return;                       // 正拖着明信片，不算
+  const t = ev.target;
+  if (t && t.closest && t.closest(KEEP_CLICK)) return;
+  dismiss();
+}, true);
+
+/* ============================================================== 二、挂 */
+/* 自己拿指针事件画幽灵，不用 HTML5 的 draggable：
+   后者的幽灵图跟着系统走、改不了样子，而这里要的恰恰是「一离开搜索框
+   就变成一张带夹子的明信片」。 */
+function startDrag(ev, item, tile){
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  const el = buildCard(item);
+  el.id = 'ghost';
+  document.body.appendChild(el);
+  S.drag = {item, el, tile, started:false};
+  tile.classList.add('dragging');
+  moveGhost(ev.clientX, ev.clientY);
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', onDragUp, {once:true});
+}
+function moveGhost(x, y){
+  const el = S.drag && S.drag.el;
+  if (!el) return;
+  // 夹子对准指针，而不是卡片左上角 —— 用户盯着的是夹子挂上绳那一刻
+  el.style.transform = 'translate(' + (x - CARD_W / 2) + 'px,' + (y + 22) + 'px)';
+}
+/* 指针离绳多近才算「可以挂上」。
+   ★ 范老板第②条：「判定太窄，必须要求鼠标落在细细的钢丝绳才算成功挂上，
+     判定范围应该扩大，包含钢丝绳上下范围均可成功挂上，优化用户体验」。
+   ±92 是**改 ROPE_AT 之前**凑出来的数：那时 ropeY() 比真绳低 80px，真正生效
+   的范围是 [真绳-12, 真绳+172] —— 几乎整条区间都落在绳子**下面**，绳子本身
+   和它上方反而是死区，所以手感才那么差。绳位修正之后同一个数字会把区间整个
+   翻到另一侧，干脆在这里重新定：以真绳为中心对称的 ±120px（比一张明信片还
+   高），上下都算挂上。 */
+function nearRope(x, y){ return Math.abs(y - ropeY(x)) < 120; }
+function onDragMove(ev){
+  const d = S.drag;
+  if (!d) return;
+  moveGhost(ev.clientX, ev.clientY);
+  const r = searchwrap.getBoundingClientRect();
+  const inside = ev.clientX >= r.left && ev.clientX <= r.right &&
+                 ev.clientY >= r.top  && ev.clientY <= r.bottom;
+  if (!inside) d.started = true;
+  d.el.classList.toggle('over', !inside && nearRope(ev.clientX, ev.clientY));
+}
+async function onDragUp(ev){
+  window.removeEventListener('pointermove', onDragMove);
+  const d = S.drag;
+  S.drag = null;
+  if (!d) return;
+  d.el.remove();
+  if (d.tile) d.tile.classList.remove('dragging');
+  if (!d.started) return;                      // 只是点了一下，没拖出去
+  if (!nearRope(ev.clientX, ev.clientY)){
+    toast('松手的位置不在绳子上 —— 拖到绳子上再松', true);
+    return;
+  }
+  const x = Math.max(CARD_W / 2, Math.min(S.W - CARD_W / 2, ev.clientX));
+  await hangCall('hang', {path:d.item.path, x:x});
+  /* ★ 第②条：挂上去的那一张先从搜索结果里**缩走**，缩完再让网格收口。
+     顺序不能反 —— 先 renderAll() 的话它当场被抽走，用户只看到「闪了一下」；
+     而 grid 一重建，原来那个 DOM 也就没了，动画根本没地方放。 */
+  await dropTile(d.item.path);
+  renderAll();
+}
+/* ★ 三条路的 URL 不是一个前缀加动作名：加是 `/v1/work/hang`，挪和摘是
+   `/hang/move`、`/hang/remove`。而且挪/摘是按服务端给的 **id** 定位，
+   不是 path —— 同一张图挂两次是两件东西，按 path 认会摘错。 */
+const HANG_URL = {hang:'/v1/work/hang', move:'/v1/work/hang/move',
+                  remove:'/v1/work/hang/remove'};
+async function hangCall(action, body){
+  try{
+    const r = await fetch(HANG_URL[action] || ('/v1/work/hang/' + action), {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const j = await r.json();
+    if (j.error || j.ok === false) toast(esc(j.error || '操作失败'), true);
+    /* ★ 这里必须 `await`：原来是不等的「发出去就不管」，而下面两处调用点都要在
+       「服务端那份清单已经刷新」之后才敢 renderAll()（范老板第②条：挂上要缩走、
+       摘下来要长回来）。不等的话 renderAll() 读到的是**上一轮** S.hung，刚摘下来
+       的那一张还留在「已剔除」名单里，缩略图永远长不回来。 */
+    await loadHung();
+  }catch(e){ toast('操作失败：' + esc(e.message), true); }
+}
+
+/* 夹子：跨在绳子上的那只长尾夹。 */
+const CLIP_SVG =
+  '<svg class="clip" viewBox="0 0 30 44" fill="none">' +
+    '<path d="M10.4 22V9.2a4.6 4.6 0 0 1 9.2 0v20a3.4 3.4 0 0 1-6.8 0V11.4" ' +
+      'stroke="url(#cg)" stroke-width="3.2" stroke-linecap="round"/>' +
+    '<rect x="8.6" y="19" width="12.8" height="6.4" rx="2.2" fill="url(#cg)"/>' +
+    '<rect x="8.6" y="19" width="12.8" height="2.1" rx="1.05" fill="rgba(255,255,255,.5)"/>' +
+  '</svg>';
+const DEFS =
+  '<svg width="0" height="0" style="position:absolute"><defs>' +
+    '<linearGradient id="cg" x1="0" y1="0" x2="1" y2="0">' +
+      '<stop offset="0" stop-color="#8f97a1"/><stop offset=".35" stop-color="#e8ecef"/>' +
+      '<stop offset=".64" stop-color="#a8b0ba"/><stop offset="1" stop-color="#6d747d"/>' +
+    '</linearGradient></defs></svg>';
+function buildCard(item){
+  const el = document.createElement('div');
+  el.className = 'post';
+  el.innerHTML = CLIP_SVG +
+    '<div class="pic"><img decoding="async" src="' + thumbURL(item.path) + '"></div>' +
+    '<div class="cap">' + esc(item.name || '') + '</div>';
+  return el;
+}
+
+/* -------------------------------------------- 悬停 / 拖动已挂的明信片 */
+/* 卡片本体画在绳窗里（那扇窗穿透点击），所以这里放一块**透明的命中区**：
+   指针进到哪张卡片上，就把这块命中区和那个 × 挪过去。 */
+function hitFollow(){
+  const el = $('#hit');
+  if (!S.hover){ el.classList.remove('on'); return; }
+  const h = S.hover;
+  const y = ropeY(h.x) + 4;
+  el.style.left = (h.x - CARD_W / 2) + 'px';
+  el.style.top  = y + 'px';
+  el.style.width  = CARD_W + 'px';
+  el.style.height = 'calc(' + CARD_W + 'px * 0.75 + 40px)';
+  el.classList.add('on');
+}
+/* 让某一张缩略图从网格里「缩走」。返回一个等它放完的 Promise。 */
+function dropTile(path){
+  const t = [...grid.querySelectorAll('.tile')].find(d => d.dataset.path === path);
+  if (!t) return Promise.resolve();
+  t.classList.add('gone');
+  return new Promise(res => setTimeout(res, 360));
+}
+function hitAt(x, y){
+  for (const h of S.hung){
+    const l = h.x - CARD_W / 2, t = ropeY(h.x) + 4;
+    if (x >= l && x <= l + CARD_W && y >= t - 26 && y <= t + CARD_W * 0.75 + 46) return h;
+  }
+  return null;
+}
+document.addEventListener('pointermove', ev => {
+  if (S.drag){ return; }
+  if (ev.target.closest('#hit')) return;
+  const h = hitAt(ev.clientX, ev.clientY);
+  if (h !== S.hover){ S.hover = h; hitFollow(); }
+  document.body.style.cursor = h ? 'grab' : '';
+});
+$('#hit').addEventListener('pointerdown', ev => {
+  if (ev.target.classList.contains('x')) return;
+  const h = S.hover;
+  if (!h) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const startX = ev.clientX, x0 = h.x;
+  let moved = false;
+  const move = e => {
+    if (Math.abs(e.clientX - startX) > 3) moved = true;
+    h.x = Math.max(CARD_W / 2, Math.min(S.W - CARD_W / 2,
+                 x0 + (e.clientX - startX)));
+    S.hover = h; hitFollow();               // 本地先跟手，松手才写服务端
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up, {once:true});
+    if (moved) hangCall('move', {id:h.id, x:h.x});
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up, {once:true});
+});
+$('#hit').querySelector('.x').addEventListener('click', ev => {
+  ev.stopPropagation();
+  const h = S.hover;
+  if (!h) return;
+  S.hover = null; hitFollow();
+  /* ★ 第②条的另一半：摘下来之后缩略图要回到搜索结果里（带动效）。
+     justBack 让 renderAll() 认出「这一张是刚回来的」，给它一段长回来的动画。 */
+  justBack.add(h.path);
+  hangCall('remove', {id:h.id}).then(() => renderAll());
+});
+
+/* ==================================================== 二·五、点击穿透上报 */
+/* 这扇窗是**整屏大小**的（不这样拖拽的幽灵图会被窗口边界裁掉、动画也画不
+   出去），但整屏窗口会把桌面空白处的点击一起吃掉 —— 用户想选个桌面图标，
+   点下去什么也没发生。所以把「现在真正有东西的那几块矩形」报给宿主，宿主
+   追着鼠标做逐像素命中测试：不在矩形里就让这一层对点击透明。
+
+   ★ 拖拽 / 收工途中必须报**整窗**：指针一旦划出搜索框，宿主以为用户走开了、
+     把窗口切成穿透，正在进行的拖拽当场断掉 —— 表现是「拖到一半卡片掉了」。 */
+function hitRects(){
+  /* ★ 范老板：「鼠标点击搜索面板以后区域，也能立马隐藏搜索面板」。
+     所以整屏都吃点击 —— 不再只报 UI 的那几块。桌面上的空白处点下去也算，
+     页面的 pointerdown 就能立刻 dismiss。工作模式本来就是盖住桌面的一层，
+     收起后窗口隐藏，桌面照常点得到。 */
+  return [[0, 0, S.W, S.H]];
+}
+let hitLast = '';
+function pushHitRects(){
+  let r;
+  try{ r = JSON.stringify(hitRects()); }catch(_){ return; }
+  if (r === hitLast) return;            // 没变就别发，省得每几百毫秒吵一次
+  hitLast = r;
+  fetch('/v1/work/hitrects', {method:'POST', cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:'{"rects":' + r + '}'}).catch(()=>{});
+}
+
+/* ★★ 2026-10-18：「搜索区」矩形（范老板的口径 —— 工作模式下判「用户算不算
+   在活动」只看这一块，暂存区不参与）。
+   为什么必须由页面来量：只有页面知道字体加载完之后 `#searchwrap` 到底多高、
+   结果面板铺到哪儿（宿主那边没有 DOM）。坐标就是 CSS 像素、窗口左上原点，
+   和命中区那套完全一致，宿主拿 frame 一减就能比。
+   `#searchwrap` + `#panel` 合成一个外接矩形：搜索条和结果列表视觉上就是
+   连在一起的一整块玻璃，中间那条 11px 的缝隙不该算成「离开搜索区」。 */
+function searchZoneRect(){
+  let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+  for (const el of [searchwrap, panel]){
+    if (!el || !el.getBoundingClientRect) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    x1 = Math.min(x1, r.left); y1 = Math.min(y1, r.top);
+    x2 = Math.max(x2, r.right); y2 = Math.max(y2, r.bottom);
+  }
+  if (x2 <= x1 || y2 <= y1) return null;
+  return [Math.round(x1), Math.round(y1), Math.round(x2 - x1), Math.round(y2 - y1)];
+}
+let szLast = 'x';
+function pushSearchZone(){
+  let s;
+  try{ s = JSON.stringify(searchZoneRect()); }catch(_){ return; }
+  if (s === szLast) return;
+  szLast = s;
+  fetch('/v1/work/searchzone', {method:'POST', cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:'{"rect":' + s + '}'}).catch(()=>{});
+}
+
+/* ============================================================== 三、收工 */
+/* ★ 收工按钮的点击与流程整个搬去了绳窗：rope.html 的 collectNow()。
+   那边的理由是范老板第⑤条 —— 按钮要常驻桌面（搜索层会被自动收走），
+   而搜索层一收走，这扇窗里的按钮就跟着没了。
+   本页只负责「收完之后把缩略图放回搜索结果」，见下面 loadHung() 里的自动回填。 */
+
+/* ------------------------------------------------------------ 暂存清单 */
+/* 明信片的**显示**在绳窗，这里只留一份影子用来做命中判定。
+   ★ 用 GET（偷看）：fly 那面旗子只有绳窗能消费，这里要是也消费了，
+     两扇窗会抢，绳窗就有一半概率收不到、收工不飞。 */
+async function loadHung(){
+  try{
+    /* ★ 先记下这一轮之前挂着哪些 —— 收工现在是从**绳窗**发起的，这扇窗不会
+       被通知；等下一轮轮询发现清单少了人，就得把那几张缩略图放回搜索结果。
+       不然用户收完工会发现结果里缺了一大块（这正是第②条的反面）。 */
+    const wasHung = S.hung.map(h => h.path);
+    const j = await (await fetch('/v1/work/hung', {cache:'no-store'})).json();
+    S.hung = j.items || [];
+    const nowHung = new Set(S.hung.map(h => h.path));
+    let back = 0;
+    wasHung.forEach(p => { if (!nowHung.has(p)){ justBack.add(p); back++; } });
+    if (back) renderAll();
+    /* ★ 绳窗报来的「鼠标还停在暂存区上」（约 1s 一次）。它那扇窗是穿透点击的、
+       收不到任何鼠标事件，只能靠这个把「人还在这儿」传过来 —— 少了这一句，
+       范老板盯着卡片看的时候，搜索层到点会自己收走，3 秒后又被叫回来。 */
+    if (j.hover) idleReset();
+    if (S.hover && !S.hung.some(h => h.id === S.hover.id)) S.hover = null;
+    paintHung();
+  }catch(_){}
+}
+function paintHung(){
+  const n = S.hung.length;
+  if (n){
+    hintEl.classList.add('off');
+  } else {
+    hintEl.classList.remove('off');
+    hintEl.innerHTML = '把搜索结果往绳子上拖 —— 这条绳就是暂存区，'
+                     + '最后点左边的「收工」收进桌面的 <b>FXseek</b> 文件夹';
+  }
+  hitFollow();
+}
+
+/* ============================================================ 以图/以音搜 */
+/* ★ 范老板新③：这两个按钮以前「选完文件回来啥也没有」。
+   真凶不在这两行，而在宿主的「点搜索区外面就收起」监听：原生文件框是本 app
+   的面板，用户在上面点「打开」的那一记 mouseDown 坐标当然不在搜索区矩形里，
+   于是搜索层被判定为「点了外面」当场收走 —— 用户只看到搜索框凭空消失。
+   所以弹框**之前**必须先告诉宿主「我在选文件，这一段时间别拿点外收起」。
+   `NSApp.modalWindow()` 兜不住 NSOpenPanel（详见 workwin.set_picking 的注释）。 */
+let _pickTimer = 0;
+function setPicking(on){
+  clearTimeout(_pickTimer);
+  fetch('/v1/work/picking', {method:'POST', cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({on:!!on})}).catch(() => {});
+  // 兜底：用户把文件框就那么晾着、或者取消时窗口没拿到 focus，
+  // 也不能让「正在选文件」这个状态永远生效（那会连 esc 之外的收起都失灵）。
+  if (on) _pickTimer = setTimeout(() => setPicking(false), 180000);
+}
+/* 文件框一关（选完或取消），窗口会重新拿到焦点 —— 这就是「可以恢复点外收起」的信号。
+   留 400ms 让 change 事件先跑（change 里也会关掉）。 */
+addEventListener('focus', () => setTimeout(() => setPicking(false), 400));
+
+$('#bimg').addEventListener('click', () => { setPicking(true); $('#fpick').click(); });
+/* 以音搜：挑一段音频文件比声纹（和「麦克风录音」是两颗按钮，别混）。
+   挑文件期间压住「点外面自动收起」，否则文件框一弹出来搜索层就自己消失了。 */
+$('#baud').addEventListener('click', () => { setPicking(true); $('#fapick').click(); });
+/* 麦克风：点一下开录、再点一下结束，录完直接走同一条声纹比对。 */
+$('#bmic').addEventListener('click', () => micTapped());
+$('#bdeep').addEventListener('click', deepSearch);
+$('#fpick').addEventListener('change', e => {
+  setPicking(false);
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) byImage(f);
+});
+$('#fapick').addEventListener('change', e => {
+  setPicking(false);
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) byAudio(f);
+});
+const readAsDataURL = f => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result);
+  r.onerror = () => rej(new Error('读不出这个文件'));
+  r.readAsDataURL(f);
+});
+async function byImage(file){
+  S.mode = 'image';
+  $('#spin').classList.add('on');
+  panel.classList.add('on');
+  grid.innerHTML = '<div class="empty">正在找相似素材…'
+    + '<div class="sub">' + esc(file.name) + '</div></div>';
+  try{
+    const data = await readAsDataURL(file);
+    const r = await fetch('/v1/search-image', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image:data, top_k:60})});
+    const j = await r.json();
+    if (j.error){ toast(esc(j.error), true); grid.innerHTML=''; return; }
+    S.results = j.results || [];
+    input.value = ''; $('#clr').classList.remove('on');
+    renderAll();
+    toast('按这张图找到 <b>' + S.results.length + '</b> 个相似素材');
+  }catch(e){ toast('以图搜图失败：' + esc(e.message), true); }
+  finally{ $('#spin').classList.remove('on'); }
+}
+async function byAudio(file){
+  const data = await readAsDataURL(file);
+  return byAudioData(data, file.name);
+}
+/* 无论「录一段」还是「挑一个文件」，最后都落到这里比声纹。
+   ★ 范老板第③条：录音那条路的产物是 `data:audio/mp4;base64,…`（原生录音）
+     或 Blob URL（浏览器录音），和文件那条路一样都是 data URL，
+     所以后端 /v1/audio-search 一个字都不用改。 */
+async function byAudioData(data, name){
+  S.mode = 'audio';
+  $('#spin').classList.add('on');
+  panel.classList.add('on');
+  grid.innerHTML = '<div class="empty">正在比对音频指纹…'
+    + '<div class="sub">' + esc(name || '录音') + '</div></div>';
+  try{
+    const r = await fetch('/v1/audio-search', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({audio:data, top_k:24, threshold:0.30})});
+    const j = await r.json();
+    if (j.error){ toast(esc(j.error), true); grid.innerHTML=''; return; }
+    S.results = j.results || [];
+    input.value = ''; $('#clr').classList.remove('on');
+    renderAll();
+    toast('按这段声音找到 <b>' + S.results.length + '</b> 个素材');
+  }catch(e){ toast('以音搜素材失败：' + esc(e.message), true); }
+  finally{ $('#spin').classList.remove('on'); }
+}
+
+/* ======================================================== 麦克风（录音即搜）
+   ★ 范老板 2026-10-15 第③条。和手机端 VoiceRecorder 的交互完全一致：
+     点一下开录、再点一下结束（不做按住说话）——真机、模拟器、一根手指都不容易出错。
+
+   ★ 为什么要走后端 `/v1/mic/*` 而不是浏览器 getUserMedia：
+     WKWebView 的录音能力是**按启动方式给的** —— 终端里跑进程时
+     `navigator.mediaDevices` 在，双击/程序坞启动的 .app 里它是 undefined。
+     桌面版因此早就写了原生录音（recorder.py，AVFoundation → m4a），
+     休闲模式那颗麦克风就是这么走的。工作模式这里照抄同一条链路，
+     免得「同一个 app，从访达开就没麦克风」。 */
+let _mic = {on:false, timer:0, mode:''};
+let _micRec = null, _micChunks = [];
+
+async function micApi(name){
+  const r = await fetch('/v1/mic/' + name, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:'{}'});
+  return await r.json();
+}
+function micPaint(lv){
+  const b = $('#bmic'); if(!b) return;
+  lv = Math.max(0, Math.min(1, Number(lv) || 0));
+  b.style.setProperty('--lv', lv.toFixed(3));
+  const full = b.querySelector('.mfull');
+  if (full){
+    full.style.strokeWidth = (1.5 + lv * 3.5).toFixed(2);
+    full.style.opacity = (0.20 + lv * 0.65).toFixed(2);
+  }
+  const arc = b.querySelector('.marc');
+  if (arc) arc.style.opacity = (0.55 + lv * 0.45).toFixed(2);
+}
+async function micTapped(){ if (_mic.on) await micStop(); else await micStart(); }
+
+async function micStart(){
+  const b = $('#bmic');
+  if (_mic.on) return;
+  /* 先问后端原生录音在不在。在（桌面版）就走 AVFoundation；
+     不在（浏览器里打开这个页面）再退回 getElementUserMedia。 */
+  let st = null;
+  try{ st = await micApi('status'); }catch(e){ st = null; }
+  if (st && st.available){
+    if (st.denied){
+      toast('麦克风被系统拒了：到「系统设置 → 隐私与安全性 → 麦克风」给 FXseek 打开', true);
+      return;
+    }
+    if (st.undetermined) toast('第一次用麦克风：请在系统弹窗里点「允许」');
+    let d;
+    try{ d = await micApi('start'); }catch(e){ d = {error:String(e && e.message || e)}; }
+    if (!d || d.error){
+      toast((d && d.error) || '录音起不来', true);
+      return;
+    }
+    _mic.mode = 'native'; _mic.on = true;
+    b.classList.add('rec'); micPaint(0);
+    /* 电平轮询：和休闲模式 / 手机端一样约 60ms 一拍，够光环跟手又不压 HTTP */
+    _mic.timer = setInterval(() => {
+      micApi('level').then(j => { if (_mic.on) micPaint(j && j.level); }).catch(() => {});
+    }, 70);
+    return;
+  }
+  /* ---- 浏览器录音（getUserMedia）---- */
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    toast('这台机器上拿不到麦克风', true);
+    return;
+  }
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    _micChunks = []; _micRec = new MediaRecorder(stream);
+    _micRec.ondataavailable = e => { if (e.data && e.data.size) _micChunks.push(e.data); };
+    _micRec.start();
+    _mic.stream = stream;
+    _mic.mode = 'web'; _mic.on = true;
+    b.classList.add('rec'); micPaint(0);
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ac.createAnalyser(); an.fftSize = 512;
+    ac.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    _mic.timer = setInterval(() => {
+      an.getByteTimeDomainData(buf);
+      let s = 0;
+      for (let i = 0; i < buf.length; i++){ const v = (buf[i] - 128) / 128; s += v * v; }
+      if (_mic.on) micPaint(Math.min(1, Math.sqrt(s / buf.length) * 4));
+    }, 60);
+  }catch(e){
+    toast('无法访问麦克风：' + (e.message || e), true);
+  }
+}
+
+async function micStop(){
+  const b = $('#bmic');
+  if (!_mic.on) return;
+  clearInterval(_mic.timer); _mic.timer = 0;
+  _mic.on = false;
+  b.classList.remove('rec'); b.style.setProperty('--lv', '0'); micPaint(0);
+  if (_mic.mode === 'native'){
+    let d;
+    try{ d = await micApi('stop'); }catch(e){ d = {error:String(e && e.message || e)}; }
+    if (!d || d.error || !d.audio){
+      toast((d && d.error) || '没录到声音', true);
+      return;
+    }
+    await byAudioData(d.audio, '录音 ' + (d.seconds || '') + ' 秒');
+    return;
+  }
+  /* 浏览器那条路：等最后一片数据到齐再拼 */
+  const rec = _micRec; _micRec = null;
+  const done = new Promise(res => { rec.onstop = res; rec.stop(); });
+  await done;
+  try{ if (_mic.stream) _mic.stream.getTracks().forEach(t => t.stop()); }catch(e){}
+  _mic.stream = null;
+  const blob = new Blob(_micChunks, {type: _micChunks[0] ? _micChunks[0].type : 'audio/webm'});
+  _micChunks = [];
+  if (!blob.size){ toast('没录到声音', true); return; }
+  await byAudioData(await readAsDataURL(blob), '录音 ' + Math.round(blob.size / 1024) + 'KB');
+}
+
+/* 正在录的时候被收走 / 按 Esc —— 别把录音机和麦克风那么晾着 */
+async function micAbort(){
+  if (!_mic.on) return;
+  clearInterval(_mic.timer); _mic.timer = 0; _mic.on = false;
+  const b = $('#bmic'); if (b){ b.classList.remove('rec'); micPaint(0); }
+  try{
+    if (_mic.mode === 'native') await micApi('cancel');
+    else if (_micRec){ _micRec.stop(); _micRec = null;
+      if (_mic.stream) _mic.stream.getTracks().forEach(t => t.stop()); _mic.stream = null; }
+  }catch(e){}
+}
+
+/* ============================================================== 交互壳 */
+$('#clr').addEventListener('click', () => {
+  input.value = ''; $('#clr').classList.remove('on');
+  S.results = []; grid.innerHTML = ''; panel.classList.remove('on');
+  /* 清空 = 回到「什么都没筛」：连类型词点亮的那颗 chip 一起放掉。
+     用户自己点的类别不算（S.kindAuto=false），清空输入不该把它抹掉。 */
+  if (S.kindAuto) setKindUI('');
+  paintCounts(); loadCounts(); input.focus();
+});
+$('#esc').addEventListener('click', dismiss);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){
+    if ($('#srcMenu').classList.contains('on') || $('#fmtMenu').classList.contains('on')){
+      closeAllMenus(); return;
+    }
+    // Esc 两级：先收结果面板，面板收着才把整层藏起来。
+    // 一下子全没了的话，搜到一半手滑按到 Esc 就得从头再来。
+    if (panel.classList.contains('on')){ panel.classList.remove('on'); input.blur(); }
+    else dismiss();
+  }
+  if (e.key === 'Enter' && input.value.trim()) search(input.value.trim());
+});
+/* 把搜索这一层**打回出厂状态**：关键词、结果、面板、类别、来源全清。
+   ★ 范老板的要求原话是「隐藏后再唤醒是初始状态，也就是说隐藏意味杀死搜索
+     进程」。窗口是藏着不是销毁的，页面里的变量全都还活着 —— 不在隐藏时
+     主动清一遍，唤醒回来就是上一次搜到一半的样子。 */
+function resetAll(){
+  try{
+    input.value = '';
+    /* ★ 范老板第①条：隐藏再唤醒之后那个红色 ✕ 还赖着不走。
+       根因是 `input.value = ''` 直接赋值**不触发 `input` 事件**，而 ✕ 的显隐
+       全靠 `input` 事件里那句 `$('#clr').classList.toggle('on', !!input.value)`
+       （见下面 `input.addEventListener('input', …)`）。直接赋值把它绕过去了，
+       `.on` 就一直挂在上面。这里跟事件处理器用**同一句**收尾，别另发明判断。 */
+    $('#clr').classList.remove('on');
+    S.results = []; S.kind = ''; S.fmt = ''; S.source = ''; S.mode = 'text';
+    S.hover = null;
+    panel.classList.remove('on');
+    grid.innerHTML = '';
+    document.querySelectorAll('#kinds .chip').forEach(c =>
+      c.classList.toggle('on', c.id === 'kcAll' || c.id === 'ksrc'));
+    const nm = $('#ksrcName'); if (nm) nm.textContent = '全部来源';
+    closeAllMenus();
+    paintFmtName();
+    loadCounts();                 // 计数回到全库
+  }catch(e){}
+}
+
+function dismiss(){
+  closeAllMenus();
+  /* ★ 正在录音时被收走：麦克风不能就那么开着（系统会一直显示橙点）。
+     丢弃这一段，不进检索。 */
+  micAbort();
+  // 藏起搜索这一层。绳子上的东西照旧挂着（绳窗是另一扇窗，不受影响）。
+  // 同时让窗口层解除「唤醒键=切换」：再按唤醒键只能是「叫出来」，
+  // 不能是把一个已经看不见的窗口收回去 —— 那样按一下没反应，像坏了。
+  resetAll();
+  fetch('/v1/work/dismiss', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:'{}'}).catch(()=>{});
+}
+
+/* 1 分钟没人动就自动收起搜索层（范老板的要求）。
+   ★ 只收搜索层，不动绳子。计时器在**每一次**交互上重置：
+     移动鼠标、敲键盘、点一下都算「人在」；只看打字的话，用户
+     拖半天卡片忘了敲字就被收走，那是灾难。 */
+// 秒数由服务端给（菜单栏面板里可以改），默认 60；0 = 不自动收。
+let IDLE_MS = 60000;
+let idleT = 0;
+function idleReset(){
+  clearTimeout(idleT);
+  if (!IDLE_MS) return;              // 0 = 永不自动收
+  idleT = setTimeout(() => {
+    // 正在拖东西 / 正在收工时不收 —— 半空中把窗口藏了，手里那张卡就没了
+    if (S.drag || S.busy) { idleReset(); return; }
+    // ★ 到点就收，**不看现在是待搜索还是已经搜出结果**（范老板第 3 条：
+    //   「不论搜索框现在的状态」）。原来是分两拍的 —— 先关面板、下一次
+    //   到点才收窗口，结果用户盯着「搜到一半的界面」等半天它也不走。
+    input.blur();
+    dismiss();
+  }, IDLE_MS);
+}
+async function loadIdle(){
+  try{
+    const j = await (await fetch('/v1/work/state', {method:'POST', cache:'no-store',
+      headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+    const sec = (j && j.idle_sec != null) ? j.idle_sec : 60;
+    IDLE_MS = sec > 0 ? sec * 1000 : 0;
+  }catch(e){}
+  idleReset();
+}
+['pointermove','pointerdown','keydown','wheel','input'].forEach(ev =>
+  document.addEventListener(ev, idleReset, {passive:true}));
+window.addEventListener('focus', idleReset);
+
+/* 指向空白处点一下：收结果面板（**不退窗口**）。
+   一下点到桌面就整层不见了，而绳子上的东西还在 —— 用户会以为丢了。 */
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('#searchwrap') || S.drag) return;
+  if (e.target.closest('#hit') || e.target.closest('#panel')) return;
+  panel.classList.remove('on');
+});
+
+/* 被叫到前台时把搜索这一层打回初始状态，并把光标放回输入框。
+   ★★ 2026-10-14 范老板二次确认（第①条）：「我要的是只要唤醒就能立即打字，
+      闪烁竖线只要是唤醒初始状态就是在」。前一轮我把三处自动聚焦全撤了、改成
+      「敲第一个字才聚焦」—— **理解反了**。他要的就是一唤醒、输入框就已经是
+      待输入状态（竖线在闪）。
+   ★ 三处自动聚焦全部恢复：这里、下方 `load` 那处、以及文件末尾工作模式初始化
+      那处。workwin.py 的 `show()` 每次都会 `NSApp.activateIgnoringOtherApps_` +
+      `makeKeyAndOrderFront_`，所以「按快捷键唤醒 / 从菜单栏进工作模式」都能把
+      键盘焦点交到这个 App，页面收到的这个 focus 事件就是落光标的地方。 */
+window.addEventListener('focus', () => setTimeout(() => {
+  // ★ 唤起即**初始状态**（范老板第 3 条：「隐藏后再唤醒是初始状态，隐藏意味
+  //   杀死搜索进程」）。原来这里是**有条件**清（只在输入框空且没结果时清），
+  //   于是「搜到一半被服务端收走、再按唤醒键」会把上次的结果原样带回来。
+  //   现在无条件清一遍：不管上一轮是 Esc、点空白、1 分钟自动收，还是菜单栏
+  //   图标/快捷键从窗口层直接 dismiss 的（那条路径根本跑不到页面的 dismiss()），
+  //   唤醒回来都是干净的。
+  resetAll(); idleReset(); input.focus();
+}, 30));
+
+/* 兜底：光标万一被点到别处（按钮、菜单、面板），敲第一个**可打印字符**也把它
+   送回输入框，并且让这一下按键照常落进去（不 preventDefault，不然第一个字会被
+   吞掉）。正常路径用不上 —— 唤醒时上面已经聚焦了 —— 纯粹是别让「按一下就能
+   打字」这条断掉。 */
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey) return;          // ⌘A / ⌘W / ⌃F 这些是给窗口的
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+  if (a && a.closest && a.closest('button,.menu')) return;   // 焦点在按钮/菜单上时不抢
+  if (e.key.length !== 1 && e.key !== 'Backspace') return;   // Esc / 方向键 / Tab 不管
+  input.focus();
+  if (e.key === 'Backspace') e.preventDefault();   // 别把 Backspace 当「后退」
+}, true);
+
+/* ---------------------------------------------------------------- 主题 */
+(async () => {
+  const forced = new URLSearchParams(location.search).get('theme');
+  let t = forced;
+  if (!t){
+    try{ t = ((await (await fetch('/v1/settings')).json()).theme) || 'auto'; }
+    catch(_){ t = 'auto'; }
+  }
+  if (!t || t === 'auto'){
+    t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  if (t === 'dark') document.body.dataset.theme = 'dark';
+})();
+
+/* ------------------------------------------------------------ 启动 */
+/* 计数 —— ★ 一律带上当前来源（范老板新④）。服务端的 `scoped_stats(source=…)`
+   会和浏览/搜索**同一个口径**地算：索引里的、没建索引目录里能看见的、手机缓存
+   的那批，全都算进去。不带 source 就是全库。 */
+async function loadCounts(){
+  try{
+    const u = S.source
+      ? ('/v1/stats?source=' + encodeURIComponent(S.source))
+      : '/v1/stats';
+    const s = await (await fetch(u, {cache:'no-store'})).json();
+    S.counts = {files:s.files || 0, by_kind:s.by_kind || {}};
+  }catch(_){}
+  paintCounts();
+}
+
+document.body.insertAdjacentHTML('beforeend', DEFS);
+paintFmtName();
+layout();
+addEventListener('resize', layout);
+/* ★ 启动时量不准：`layout()` 要读 `#searchwrap.offsetHeight`，字体没加载完
+   之前那个高度偏小，结果面板会被算得偏高、压住类别条最后几像素
+   （实测算出来 81px、真实 99px），而且加载后不再变，肉眼看着像「本来就这样」。
+   ResizeObserver + fonts.ready + rAF 三道保险。 */
+if (window.ResizeObserver) new ResizeObserver(() => layout()).observe(searchwrap);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layout());
+requestAnimationFrame(() => layout());
+pushHitRects();
+loadCounts();
+/* 匹配度门槛：和休闲模式读同一个设置字段（ui.html 启动时也拉这一支）。
+   不读的话两边「达到几分才算相关」不一样，条数还是会差。 */
+(async () => { try{
+  const s = await (await fetch('/v1/settings')).json();
+  if (s && s.match_level) S.matchLevel = s.match_level;
+}catch(e){} })();
+loadHung();
+loadIdle();   // 自动收的秒数由服务端定（菜单栏面板里能改）
+setInterval(loadHung, 1200);
+setInterval(pushHitRects, 600);    // 版式/结果面板一变就重报命中区
+setInterval(pushSearchZone, 600);  // 搜索区矩形（宿主用它判「用户算不算在活动」）
+/* ★ 第①条：初始化末尾这一句（原来的 `setTimeout(() => input.focus(), 60)`）
+   和 `load` 那处一起恢复 —— 见上面 window focus 那段注释。 */
+addEventListener('load', () => setTimeout(() => input.focus(), 80));
+setTimeout(() => input.focus(), 60);
+idleReset();
+
+/* ★★ 宿主主动叫醒用的入口（范老板第①条）。
+   为什么页面自己监听 window focus 不够：这扇窗是 pywebview 的**原生覆盖窗**，
+   它被 makeKeyAndOrderFront_ 叫出来的时候，页面根本不知道 —— 实测装了 1.1.2
+   之后范老板还是说「搜索框一唤醒就是聚焦状态，你还是没修改」。
+   所以改成反过来：workwin.show() 里用 WKWebView 的 evaluateJavaScript 主动调
+   这个函数（异步派发，不走 pywebview 那个会死锁的 evaluate_js）。
+   `input.focus()` 在这里调两次：一次立刻（键盘焦点刚抢过来，大多数情况够用），
+   一次 90ms 后补（WKWebView 成为 key window 有时比 JS 慢一拍）。 */
+window.__fxseekFocus = function(mode){
+  /* ★ mode === "soft" = 只把光标放回输入框，**不重置界面**。
+     宿主那边的补救连发（WKWebView 成为 key window 常常比 JS 慢一拍，
+     要补 2~3 拍）如果每次都跑 resetAll()，用户已经敲进去的字会被清掉 ——
+     表现就是「打字打一半忽然自己没了」。第一拍才重置。 */
+  try{
+    if (mode !== "soft"){ resetAll(); idleReset(); }
+    input.focus();
+    setTimeout(() => { try{ input.focus(); }catch(_){} }, 90);
+  }catch(e){}
+};
+</script>
+</body>
+</html>

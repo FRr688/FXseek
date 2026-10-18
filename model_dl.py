@@ -244,7 +244,72 @@ SPEC_ALIGNER = ModelSpec(
     },
 )
 
-SPECS = {s.key: s for s in (SPEC_EMBED, SPEC_ALIGNER)}
+# --- 手机端离线检索用的 EG2（EmbeddingGemma 2）向量模型 ----------------------
+# ★ 这份是「给手机算的」第二套向量，见 eg2.py 开头的说明。
+# 尺寸取自 hf-mirror 的 API（16 个文件，合计 1,266,584,562 B ≈ 1.18 GiB）。
+# 注意它在仓库里是**单个** model.safetensors（不切片），所以没有 shard 列表。
+# 暂时没有 sample_hash —— 那是首尾各 8 MB 的采样 sha256，要下完才能算；
+# 少这一项只影响「镜像把文件下坏了」这类检测，不影响能不能跑。
+SPEC_EG2 = ModelSpec(
+    key="eg2",
+    repo_id="mlx-community/embeddinggemma-2-8bit",
+    dir_name="model-eg2",
+    label="手机向量模型（EG2 / EmbeddingGemma 2）",
+    label_en="Phone embedding model (EG2 / EmbeddingGemma 2)",
+    files=[
+        "model.safetensors",
+        "tokenizer.json",
+        "model.safetensors.index.json",
+        "config.json",
+        "config_sentence_transformers.json",
+        "sentence_bert_config.json",
+        "modules.json",
+        "1_Pooling/config.json",
+        "2_Normalize/config.json",
+        "processor_config.json",
+        "preprocessor_config.json",
+        "tokenizer_config.json",
+        "chat_template.jinja",
+        "validation.json",
+        "README.md",
+        ".gitattributes",
+    ],
+    sizes={
+        "model.safetensors": 1234238431,
+        "tokenizer.json": 32170510,
+        "model.safetensors.index.json": 153721,
+        "config.json": 5463,
+        "README.md": 4624,
+        "validation.json": 2417,
+        "processor_config.json": 1788,
+        "tokenizer_config.json": 1599,
+        ".gitattributes": 1570,
+        "config_sentence_transformers.json": 1565,
+        "chat_template.jinja": 1016,
+        "sentence_bert_config.json": 747,
+        "preprocessor_config.json": 511,
+        "modules.json": 413,
+        "2_Normalize/config.json": 97,
+        "1_Pooling/config.json": 90,
+    },
+    required=[
+        "config.json",
+        "model.safetensors",
+        "model.safetensors.index.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "1_Pooling/config.json",
+    ],
+    text_tail={
+        "config.json", "config_sentence_transformers.json",
+        "sentence_bert_config.json", "modules.json",
+        "1_Pooling/config.json", "2_Normalize/config.json",
+        "processor_config.json", "preprocessor_config.json",
+        "tokenizer_config.json", "model.safetensors.index.json",
+    },
+)
+
+SPECS = {s.key: s for s in (SPEC_EMBED, SPEC_ALIGNER, SPEC_EG2)}
 
 
 
@@ -498,6 +563,9 @@ def download_file(source, fn, dest_dir, progress=None, cancel=None, spec=None):
         return final
 
     os.makedirs(dest_dir, exist_ok=True)
+    # EG2 的清单里有 `1_Pooling/config.json` 这种带子目录的文件，
+    # 所以还要把它自己那层建出来（平铺的 spec 走到这里是空操作）。
+    os.makedirs(os.path.dirname(final), exist_ok=True)
     have = os.path.getsize(part) if os.path.isfile(part) else 0
 
     headers = {}
@@ -796,7 +864,7 @@ def _main():
     ap.add_argument("--dir", help="下载到哪个目录（默认数据目录下的 model/）")
     ap.add_argument("--data-dir", help="用户数据目录")
     ap.add_argument("--spec", default="embed", choices=list(SPECS),
-                    help="下哪个模型：embed（检索）/ aligner（对齐）")
+                    help="下哪个模型：embed（检索）/ aligner（对齐）/ eg2（手机向量）")
     args = ap.parse_args()
 
     spec = SPECS[args.spec]

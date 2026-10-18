@@ -23,6 +23,34 @@
   'use strict';
 
   var ZH2EN =   {
+    /* ── 手机连接 / 局域网配对（整块原本一条都没有） ── */
+    "手机连接": "Phone connection",
+    "局域网连接": "LAN access",
+    "地址": "Address",
+    "配对码": "Pairing code",
+    "已配对的设备": "Paired devices",
+    "撤销": "Revoke",
+    "换一个": "New code",
+    "未命名手机": "Unnamed phone",
+    "还没有手机配对过": "No phones paired yet",
+    "让同一个 Wi-Fi 下的手机连到这台电脑的库。关着的时候只有本机能访问，手机连不上。":
+      "Lets phones on the same Wi-Fi connect to this computer\u2019s library. While it is off, only this computer can reach it — phones cannot.",
+    "手机第一次连接时填这个；同一个 Wi-Fi 下会自动发现，通常不用手填":
+      "Fill this in the first time you connect; on the same Wi-Fi the computer is usually found automatically.",
+    "手机第一次连接时输入。5 分钟内有效，用一次就作废":
+      "Enter this the first time you connect. Valid for 5 minutes and good for one use.",
+    "撤销之后那台手机要重新输配对码":
+      "After revoking, that phone must enter the pairing code again.",
+    "开启后手机会在同一 Wi-Fi 下自动发现这台电脑，用配对码连一次就记着了。":
+      "Once on, phones on the same Wi-Fi find this computer automatically — connect with the pairing code once and it is remembered.",
+    "数据不出局域网：手机的每次检索都由这台电脑算完再把结果发回去。":
+      "Data never leaves your LAN: every phone search is computed here and the results are sent back.",
+
+    /* ── 操作日志的分类名（这几个漏了，日志里一直露中文） ── */
+    "原件同步": "Original sync",
+    "外派任务": "Outsourced task",
+    "时间轴对齐": "Timeline alignment",
+
     "开启后，编码助手（DSH、Codex、Claude Code 等）就能用自然语言直接检索你的素材，拿到文件路径后自行打开、整理或加工。检索仍在本机完成，数据不出门。": "Once enabled, coding agents (DSH, Codex, Claude Code, and others) can search your assets in natural language, then open, organize, or process the files themselves once they have the paths. All searching still happens on this Mac — nothing leaves your machine.",
     "💡 MCP 走 stdio：每个 Agent 自己拉起一个轻量子进程，它再回连本服务取结果， 所以这里不需要额外的网络端口，也不用常驻。": "💡 MCP uses stdio: each agent spawns its own lightweight subprocess, which connects back to this service for results. No extra network port is needed, and nothing has to stay running.",
     "「失效记录」指索引过、但文件已经被删除或移走的条目。应用启动时会自动清理一次；不属于任何索引源的条目只报告、不自动删除。": "“Stale records” are entries that were indexed but whose files have since been deleted or moved. They are cleaned up automatically once at app launch; entries that don’t belong to any index source are only reported, never removed automatically.",
