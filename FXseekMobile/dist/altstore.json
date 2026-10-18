@@ -25,9 +25,9 @@
           "version": "1.1.0",
           "date": "2026-10-18",
           "downloadURL": "https://github.com/FRr688/FXseek/releases/download/v1.1.0/FXseekMobile-1.1.0.ipa",
-          "size": 26142315,
-          "sha256": "e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b",
-          "buildVersion": 37,
+          "size": 26143063,
+          "sha256": "47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663",
+          "buildVersion": 38,
           "minOSVersion": "15.0"
         }
       ],
@@ -36,9 +36,9 @@
         "privacy": {}
       },
       "version": "1.1.0",
-      "buildVersion": "37",
-      "size": 26142315,
-      "sha256": "e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b",
+      "buildVersion": "38",
+      "size": 26143063,
+      "sha256": "47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663",
       "date": "2026-10-18T21:39:00+08:00"
     }
   ],

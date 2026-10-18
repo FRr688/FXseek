@@ -107,11 +107,11 @@ GitHub's release CDN can be slow or unreachable there. These mirrors serve the e
 The mirrors are third-party proxies — they may be unavailable at any time. If none of them work, try the
 direct link, or use any GitHub accelerator you trust by prefixing it to the direct URL.
 
-**File integrity** (349.5 MB / 366,472,614 bytes):
+**File integrity** (350.3 MB / 367,309,446 bytes):
 
 ```bash
 shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
-# daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
+# 0f7aac8a203741bc0581402c0e5f649f4a2339a5faf6bef13be8277e9635ec1e
 ```
 
 ## 📱 iPhone / iPad
@@ -150,11 +150,11 @@ https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.
 
   The source file is the repository's own [`FXseekMobile/dist/altstore.json`](FXseekMobile/dist/altstore.json) (the `.ipa` and icon live in the same folder).
 
-**Phone build integrity** (24.9 MB / 26,142,315 bytes, build 37):
+**Phone build integrity** (24.9 MB / 26,143,063 bytes, build 38):
 
 ```bash
 shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
-# e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+# 47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663
 ```
 
 ## Building from source

@@ -41,7 +41,7 @@ REPO = "FRr688/FXseek"
 MIRROR = "https://ghproxy.net/"
 MIRROR_ALTS = ("ghfast.top", "hk.gh-proxy.com")
 
-W, H = 1080, 2000
+W, H = 1080, 2088   # ★ 2026-10-18：底部加两行镜像直链，2000 → 2088
 BG_TOP, BG_BOT = (250, 250, 252), (243, 242, 250)
 INK = (22, 24, 32)
 SUB = (108, 114, 132)
@@ -73,10 +73,19 @@ def _dmg_size_mb(version: str) -> int:
 
 
 def urls(version: str, mirror: str = MIRROR) -> dict:
+    """海报上的三条地址。
+
+    ★ 2026-10-18 改过口径：主码 **不再钉死版本**，改成「镜像 + releases/latest」。
+      钉死的好处是扫码即下、不用过网页；坏处是每发一版海报就作废（1.1.1 一出来，
+      旧海报的码就指向一个 404）。现在主码永远跟着最新 Release 走，版本号写在下面的
+      小字里；页面上的下载按钮如果因为没梯子点不动，就复制纸上印的那条资产直链。
+    """
     direct = "https://github.com/%s/releases/download/v%s/FXseek-%s.dmg" % (REPO, version, version)
+    latest = "https://github.com/%s/releases/latest" % REPO
     return {"direct": direct,
-            "mirror": mirror + direct,
-            "github": "https://github.com/%s/releases/latest" % REPO}
+            "mirror": mirror + latest,
+            "mirror_direct": mirror + direct,
+            "github": latest}
 
 
 def share_text(version: str | None = None, mirror: str = MIRROR) -> str:
@@ -291,6 +300,12 @@ def render(out_path=None, version=None, size_mb=None, mirror=MIRROR) -> dict:
            fill=(178, 98, 18))
     d.text((M + 100, by + 72), "应用未做 Apple 公证，双击会被拦一次，属正常",
            font=font(24), fill=(150, 110, 70))
+
+    # ---------- 镜像直链（网页上的下载按钮指回 github.com，国内没梯子会卡）----------
+    ly = by + bh + 26
+    center(d, ly, "按钮打不开？把下面这行复制到浏览器（走镜像，直接下）", font(22), SUB)
+    center(d, ly + 38, "ghproxy.net/https://github.com/%s/releases/download/v%s/FXseek-%s.dmg"
+           % (REPO, VER, VER), font(19), (75, 85, 99))
 
     # ---------- 底部 ----------
     center(d, H - 76, "全程本地运行 · 不上传 · 不注册 · 非商业用途免费",

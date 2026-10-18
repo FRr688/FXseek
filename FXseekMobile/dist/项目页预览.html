@@ -198,9 +198,9 @@ blockquote{border-left:4px solid var(--bd);margin:1.2em 0;padding:0 1em;color:va
 </table>
 <p>镜像都是第三方代理，随时可能失效；如果都打不开，就用官方直链，或者拿你信得过的 GitHub 加速前缀
 拼在直链前面。建议<strong>先试加速、慢就换直链</strong>。</p>
-<p><strong>完整性核对</strong>（文件 349.5 MB / 366,472,614 字节）：</p>
+<p><strong>完整性核对</strong>（文件 350.3 MB / 367,309,446 字节）：</p>
 <pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
-# 应为 daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
+# 应为 0f7aac8a203741bc0581402c0e5f649f4a2339a5faf6bef13be8277e9635ec1e
 </code></pre>
 <h2 id="-手机端iphone--ipad">📱 手机端（iPhone / iPad）</h2>
 <p>电脑装上 FXseek 之后，手机也能用同一个库：<strong>局域网直连</strong>，在手机上浏览、检索（文字 / 以图 / 以音）和播放
@@ -229,9 +229,9 @@ blockquote{border-left:4px solid var(--bd);margin:1.2em 0;padding:0 1em;color:va
 <pre><code>https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
 </code></pre>
 <p>源文件就是仓库里的 <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/altstore.json"><code>FXseekMobile/dist/altstore.json</code></a>（<code>.ipa</code> 与图标也在同一个目录）。</p>
-<p><strong>手机端完整性核对</strong>（文件 24.9 MB / 26,142,315 字节，构建 37）：</p>
+<p><strong>手机端完整性核对</strong>（文件 24.9 MB / 26,143,063 字节，构建 38）：</p>
 <pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
-# 应为 e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+# 应为 47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663
 </code></pre>
 <h2 id="从源码构建">从源码构建</h2>
 <p>仓库只放源码，构建前需要自备三样东西（都已被 <code>.gitignore</code> 忽略）：
@@ -491,9 +491,9 @@ local or self-hosted service <em>you</em> point it at.</p>
 </table>
 <p>The mirrors are third-party proxies — they may be unavailable at any time. If none of them work, try the
 direct link, or use any GitHub accelerator you trust by prefixing it to the direct URL.</p>
-<p><strong>File integrity</strong> (349.5 MB / 366,472,614 bytes):</p>
+<p><strong>File integrity</strong> (350.3 MB / 367,309,446 bytes):</p>
 <pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
-# daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
+# 0f7aac8a203741bc0581402c0e5f649f4a2339a5faf6bef13be8277e9635ec1e
 </code></pre>
 <h2 id="-iphone--ipad">📱 iPhone / iPad</h2>
 <p>Once FXseek is running on the Mac, the phone can use the same library over <strong>a direct LAN connection</strong>:
@@ -527,9 +527,9 @@ don't hammer retries with the same Apple ID (Apple rate-limits them). Details: <
 <pre><code>https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
 </code></pre>
 <p>The source file is the repository's own <a href="https://github.com/FRr688/FXseek/blob/main/FXseekMobile/dist/altstore.json"><code>FXseekMobile/dist/altstore.json</code></a> (the <code>.ipa</code> and icon live in the same folder).</p>
-<p><strong>Phone build integrity</strong> (24.9 MB / 26,142,315 bytes, build 37):</p>
+<p><strong>Phone build integrity</strong> (24.9 MB / 26,143,063 bytes, build 38):</p>
 <pre><code class="language-bash">shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
-# e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+# 47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663
 </code></pre>
 <h2 id="building-from-source">Building from source</h2>
 <p>The repository holds <strong>source only</strong>. To build a runnable <code>.app</code> / <code>.dmg</code> you need three things in the

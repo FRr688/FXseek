@@ -103,11 +103,11 @@ GitHub 的下载线路在国内可能很慢甚至连不上。下面几个镜像�
 镜像都是第三方代理，随时可能失效；如果都打不开，就用官方直链，或者拿你信得过的 GitHub 加速前缀
 拼在直链前面。建议**先试加速、慢就换直链**。
 
-**完整性核对**（文件 349.5 MB / 366,472,614 字节）：
+**完整性核对**（文件 350.3 MB / 367,309,446 字节）：
 
 ```bash
 shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
-# 应为 daf4130fa02a86ed5ae9776bd7be6e437170c2206a86c374daa9a47af1972adb
+# 应为 0f7aac8a203741bc0581402c0e5f649f4a2339a5faf6bef13be8277e9635ec1e
 ```
 
 ## 📱 手机端（iPhone / iPad）
@@ -141,11 +141,11 @@ https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.
 
   源文件就是仓库里的 [`FXseekMobile/dist/altstore.json`](FXseekMobile/dist/altstore.json)（`.ipa` 与图标也在同一个目录）。
 
-**手机端完整性核对**（文件 24.9 MB / 26,142,315 字节，构建 37）：
+**手机端完整性核对**（文件 24.9 MB / 26,143,063 字节，构建 38）：
 
 ```bash
 shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
-# 应为 e4ad2cd50324a4156f88e3d88db20e40891c84e3a6b401c94dd3443785ff883b
+# 应为 47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663
 ```
 
 ## 从源码构建
