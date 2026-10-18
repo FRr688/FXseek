@@ -196,6 +196,7 @@ hdiutil verify dist/FXseek-1.1.0.dmg     # must print VALID
 ## License (important)
 
 - **The phone app (iPhone / iPad) is free to use but closed source**: this repo ships only its binary (`FXseekMobile/dist/`), never the app source. This repository open-sources the Mac app only.
+- **Supporting development, or need unlimited items:** the paid edition is on [Afdian](https://ifdian.net/item/f9d058d0c70111f199f15254001e7c00) (¥29.9 one-time, one computer). The free edition is capped at 2,000 items and one phone; sharing keeps extending it. **The iOS app is always free** and is not sold there.
 - The Mac app is released under the **PolyForm Noncommercial License 1.0.0** ([LICENSE](LICENSE)):
   free to use and modify for **personal study, research, hobby projects, charity, education, public
   research and government** use.
