@@ -124,6 +124,15 @@ house it still searches with no Wi-Fi at all (on-device, offline). Pairing is a 
 for a long-lived token, and everything off the loopback interface requires that token — **the library itself never
 leaves your LAN**.
 
+### What it looks like, and how it pairs
+
+| Phone UI | Phone ⇄ Mac over Wi-Fi |
+|:--:|:--:|
+| ![Phone UI](docs/demo/phone-ui.gif) | ![Pairing demo](docs/demo/phone-link.gif) |
+| Grid browsing, audio cards, search by picture — all offline | Type the 6-digit code from the Mac and the phone joins the same library; a phone panel shows up on the desktop |
+
+Full demo videos (1080p, 25–30 s each): [phone UI](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-phone-ui.mp4) · [pairing](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-pairing.mp4)
+
 ### Sideloading it (5 steps)
 
 Free the whole way; no developer account needed. A sideloaded build is good for **7 days** — sign it again when it

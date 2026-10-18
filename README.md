@@ -117,6 +117,15 @@ shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
 存到手机里带走；手机保留一份**本地索引**，所以出了家门、断网也照样能搜（端侧离线）。
 配对走 6 位一次性配对码换长期令牌，回环以外的请求都要令牌，**库本身不出局域网**。
 
+### 长什么样 + 怎么连上电脑
+
+| 手机端界面 | 手机 ⇄ 电脑联机 |
+|:--:|:--:|
+| ![手机端界面](docs/demo/phone-ui.gif) | ![联机演示](docs/demo/phone-link.gif) |
+| 网格浏览、音频卡片、按画面搜，全程离线可用 | 设置里填电脑上那 6 位配对码，连上同一个库；电脑右侧同步出现手机面板 |
+
+完整演示视频（1080p，各 25–30 秒）：[手机端界面演示](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-phone-ui.mp4) · [联机演示](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-pairing.mp4)
+
 ### 装到 iPhone 上（5 步，小白版）
 
 全程免费，不需要开发者账号。装好后有效期 **7 天**，到期重签一次即可（用 AltStore 会自动续签）。
