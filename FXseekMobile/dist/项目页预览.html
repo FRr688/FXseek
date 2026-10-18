@@ -207,6 +207,26 @@ blockquote{border-left:4px solid var(--bd);margin:1.2em 0;padding:0 1em;color:va
 整个素材库；<strong>手机 ⇄ 电脑互传</strong> —— 手机自己的照片、录音、文件可以直接传进电脑的索引源，电脑上的素材也能
 存到手机里带走；手机保留一份<strong>本地索引</strong>，所以出了家门、断网也照样能搜（端侧离线）。
 配对走 6 位一次性配对码换长期令牌，回环以外的请求都要令牌，<strong>库本身不出局域网</strong>。</p>
+<h3 id="长什么样--怎么连上电脑">长什么样 + 怎么连上电脑</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">手机端界面</th>
+<th style="text-align: center;">手机 ⇄ 电脑联机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;"><img alt="手机端界面" src="../../wemm_app/docs/demo/phone-ui.gif"></td>
+<td style="text-align: center;"><img alt="联机演示" src="../../wemm_app/docs/demo/phone-link.gif"></td>
+</tr>
+<tr>
+<td style="text-align: center;">网格浏览、音频卡片、按画面搜，全程离线可用</td>
+<td style="text-align: center;">设置里填电脑上那 6 位配对码，连上同一个库；电脑右侧同步出现手机面板</td>
+</tr>
+</tbody>
+</table>
+<p>完整演示视频（1080p，各 25–30 秒）：<a href="https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-phone-ui.mp4">手机端界面演示</a> · <a href="https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-pairing.mp4">联机演示</a></p>
 <h3 id="装到-iphone-上5-步小白版">装到 iPhone 上（5 步，小白版）</h3>
 <p>全程免费，不需要开发者账号。装好后有效期 <strong>7 天</strong>，到期重签一次即可（用 AltStore 会自动续签）。</p>
 <ol>
@@ -503,6 +523,26 @@ assets can be saved onto the phone to take with you. The phone keeps a <strong>l
 house it still searches with no Wi-Fi at all (on-device, offline). Pairing is a one-time 6-digit code exchanged
 for a long-lived token, and everything off the loopback interface requires that token — <strong>the library itself never
 leaves your LAN</strong>.</p>
+<h3 id="what-it-looks-like-and-how-it-pairs">What it looks like, and how it pairs</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">Phone UI</th>
+<th style="text-align: center;">Phone ⇄ Mac over Wi-Fi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;"><img alt="Phone UI" src="../../wemm_app/docs/demo/phone-ui.gif"></td>
+<td style="text-align: center;"><img alt="Pairing demo" src="../../wemm_app/docs/demo/phone-link.gif"></td>
+</tr>
+<tr>
+<td style="text-align: center;">Grid browsing, audio cards, search by picture — all offline</td>
+<td style="text-align: center;">Type the 6-digit code from the Mac and the phone joins the same library; a phone panel shows up on the desktop</td>
+</tr>
+</tbody>
+</table>
+<p>Full demo videos (1080p, 25–30 s each): <a href="https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-phone-ui.mp4">phone UI</a> · <a href="https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-pairing.mp4">pairing</a></p>
 <h3 id="sideloading-it-5-steps">Sideloading it (5 steps)</h3>
 <p>Free the whole way; no developer account needed. A sideloaded build is good for <strong>7 days</strong> — sign it again when it
 expires, or let AltStore renew it for you automatically.</p>
