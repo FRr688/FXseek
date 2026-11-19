@@ -81,7 +81,7 @@
 
 ## 下载
 
-1. 到 [Releases](../../releases) 下载 `FXseek-1.1.0.dmg`（手机端是仓库里的 `FXseekMobile/dist/FXseekMobile-1.1.0.ipa`，见下方[手机端](#-手机端iphone--ipad)）
+1. 到 [Releases](../../releases) 下载 `FXseek-1.1.0.dmg`（手机端在另一个仓库：[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)）
 2. **安装前先删掉旧版**：`/Applications/FXseek.app`（直接覆盖会留下旧文件）
 3. 打开 dmg，把 `FXseek.app` 拖进「应用程序」
 4. 首次启动会**自动下载内置模型（约 1.8 GB）**，默认走国内镜像、失败自动换官方源，带进度条
@@ -103,59 +103,21 @@ GitHub 的下载线路在国内可能很慢甚至连不上。下面几个镜像�
 镜像都是第三方代理，随时可能失效；如果都打不开，就用官方直链，或者拿你信得过的 GitHub 加速前缀
 拼在直链前面。建议**先试加速、慢就换直链**。
 
-**完整性核对**（文件 350.3 MB / 367,309,446 字节）：
+**完整性核对**（文件 222.0 MB / 232,777,319 字节）：
 
 ```bash
 shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
-# 应为 0f7aac8a203741bc0581402c0e5f649f4a2339a5faf6bef13be8277e9635ec1e
+# 应为 a92e0bb1d67590028413debfc0dbe0d454868ebbd878508ffa0db95a79712f7d
 ```
 
 ## 📱 手机端（iPhone / iPad）
 
-电脑装上 FXseek 之后，手机也能用同一个库：**局域网直连**，在手机上浏览、检索（文字 / 以图 / 以音）和播放
-整个素材库；**手机 ⇄ 电脑互传** —— 手机自己的照片、录音、文件可以直接传进电脑的索引源，电脑上的素材也能
-存到手机里带走；手机保留一份**本地索引**，所以出了家门、断网也照样能搜（端侧离线）。
-配对走 6 位一次性配对码换长期令牌，回环以外的请求都要令牌，**库本身不出局域网**。
+<p align="center">
+  <img src="https://raw.githubusercontent.com/FRr688/FXseekMobile/main/docs/demo/phone-main.png" width="210" alt="FXseek 手机端主界面">
+</p>
 
-### 长什么样 + 怎么连上电脑
-
-| 手机端界面 | 手机 ⇄ 电脑联机 |
-|:--:|:--:|
-| ![手机端界面](docs/demo/phone-ui.gif) | ![联机演示](docs/demo/phone-link.gif) |
-| 网格浏览、音频卡片、按画面搜，全程离线可用 | 设置里填电脑上那 6 位配对码，连上同一个库；电脑右侧同步出现手机面板 |
-
-完整演示视频（1080p，各 25–30 秒）：[手机端界面演示](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-phone-ui.mp4) · [联机演示](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-pairing.mp4)
-
-### 装到 iPhone 上（5 步，小白版）
-
-全程免费，不需要开发者账号。装好后有效期 **7 天**，到期重签一次即可（用 AltStore 会自动续签）。
-
-1. **下载安装包** —— [`FXseekMobile/dist/FXseekMobile-1.1.0.ipa`](FXseekMobile/dist/FXseekMobile-1.1.0.ipa)（约 25 MB，[直链](https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa)）。手机端**免费、只发安装包，源码不公开**（Release 建好后附件里也会放同一份）
-2. **装一个签名工具** —— [Sideloadly](https://sideloadly.io)（通用最稳，插线签一次）· [AltStore](https://altstore.io)（自动续签，同一个 Wi-Fi）· [TrollStore](https://github.com/opa334/TrollStore)（iOS ≤ 16.6.1，装完永久有效）
-3. **把 App 签进手机** —— 数据线连上 iPhone、手机上点「信任此电脑」；打开 Sideloadly，把 ipa 拖进窗口；**Apple ID** 填你平时下 App 的那个账号（密码只发给苹果官方签名服务）；点 **Start**，出现 **Done** 就成了
-4. **手机上允许它** —— 设置 → 通用 → **VPN 与设备管理** → 选你的 Apple ID → **信任**；（iOS 16+）设置 → 隐私与安全性 → 拉到底 → **开发者模式** → 打开，手机重启一次
-5. **试一下** —— 打开 FXseek → 底部「**本机素材**」→ 先放一两首歌或几张图进去 → 播放 → 按锁屏键，看锁屏上有没有「上一首 / 下一首」
-
-> ⚠️ **如果签名工具报 `Login failed (-80045)`：不是你弄错了。** 2026 年 10 月 12 日起苹果的账号验证接口在拒签，
-> 全球所有侧载工具（Sideloadly / AltStore / SideStore…）都报同一个错，报错点在「登录」那一步、还没走到签名。
-> 先把 Sideloadly 的 anisette 从 Local 换成 Remote，或者用 [iloader](https://github.com/nab138/iloader/releases) 装同一个 ipa；
-> 别对同一个账号连续重试（苹果会限流）。细节见[用户装包指引](FXseekMobile/dist/用户装包指引.md)。
-
-- 📖 图文详情与常见问题：[`FXseekMobile/dist/用户装包指引.md`](FXseekMobile/dist/用户装包指引.md)
-- 🧩 **免电脑安装**（AltStore 源）：把下面这一行贴进 AltStore 的 `Browse → Sources → +`，之后就能一键安装、自动续签：
-
-```
-https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
-```
-
-  源文件就是仓库里的 [`FXseekMobile/dist/altstore.json`](FXseekMobile/dist/altstore.json)（`.ipa` 与图标也在同一个目录）。
-
-**手机端完整性核对**（文件 24.9 MB / 26,143,063 字节，构建 38）：
-
-```bash
-shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
-# 应为 47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663
-```
+独立仓库：**[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)** —— 免费、5 步侧载。
+同一局域网配对后即可浏览、检索、互传整个素材库。电脑端只保留配对接口（`mobile.py`）与[协议文档](docs/手机版协议.md)。
 
 ## 从源码构建
 
@@ -189,12 +151,12 @@ hdiutil verify dist/FXseek-1.1.0.dmg     # 必须打印 VALID
 | `launcher.py` / `tray_helper.py` | 原生启动器（Mach-O，保证麦克风权限归属正确）、菜单栏 |
 | `ui.html` / `settings.html` / `i18n.js` / `icons.js` | 前端（零构建、原生 JS） |
 | `tools/` | 打包脚本、依赖体检、原生启动器源码、示例素材生成 |
-| `FXseekMobile/dist/` | 手机端的**安装包与安装指引**（`FXseekMobile-1.1.0.ipa`、`altstore.json`、`用户装包指引.md`）；**App 源码不公开**，这里的 `eg2.py` / `mobile.py` 是电脑端那一侧（离线向量表与局域网同步协议） |
+| `FXseekMobile/` | 手机端的**电脑侧对端**：`eg2.py`（离线向量表）、`mobile.py`（配对、mDNS 广播、局域网鉴权）；**安装包与安装指引已迁到独立仓库 [FXseekMobile](https://github.com/FRr688/FXseekMobile)** |
 | `docs/` | [工程手册](docs/手册.md)（设计取舍与踩坑）· [构建指南](docs/building.md) · [运行时与二进制](docs/运行时与二进制.md) · [手机版接口协议](docs/手机版协议.md) · [演示素材](docs/demo/) |
 
 ## 许可（重要）
 
-- **手机端（iPhone / iPad App）免费使用，但源码不公开**：仓库里只有它的安装包（`FXseekMobile/dist/`），没有 App 源码；本仓库开源的是电脑端。
+- **手机端（iPhone / iPad App）免费使用，但源码不公开**：安装包在独立仓库 [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)，本仓库开源的只是电脑端。
 - 电脑端采用 **PolyForm Noncommercial License 1.0.0**（[LICENSE](LICENSE)）：
   **个人学习 / 研究 / 业余爱好 / 慈善 / 教育 / 公共研究 / 政府**等非商业用途 —— 免费，随便用、可以改。
 - **任何商业用途都需要单独授权**（公司内部使用、随产品分发、SaaS、二次开发交付……）
