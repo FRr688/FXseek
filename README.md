@@ -116,7 +116,7 @@ shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
   <img src="https://raw.githubusercontent.com/FRr688/FXseekMobile/main/docs/demo/phone-main.png" width="210" alt="FXseek 手机端主界面">
 </p>
 
-独立仓库：**[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)** —— 免费、5 步侧载。
+独立仓库：**[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)** —— 5 步侧载安装。
 同一局域网配对后即可浏览、检索、互传整个素材库。电脑端只保留配对接口（`mobile.py`）与[协议文档](docs/手机版协议.md)。
 
 ## 从源码构建
@@ -154,16 +154,11 @@ hdiutil verify dist/FXseek-1.1.0.dmg     # 必须打印 VALID
 | `FXseekMobile/` | 手机端的**电脑侧对端**：`eg2.py`（离线向量表）、`mobile.py`（配对、mDNS 广播、局域网鉴权）；**安装包与安装指引已迁到独立仓库 [FXseekMobile](https://github.com/FRr688/FXseekMobile)** |
 | `docs/` | [工程手册](docs/手册.md)（设计取舍与踩坑）· [构建指南](docs/building.md) · [运行时与二进制](docs/运行时与二进制.md) · [手机版接口协议](docs/手机版协议.md) · [演示素材](docs/demo/) |
 
-## 许可（重要）
+## 许可
 
-- **手机端（iPhone / iPad App）免费使用，但源码不公开**：安装包在独立仓库 [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)，本仓库开源的只是电脑端。
-- 电脑端采用 **PolyForm Noncommercial License 1.0.0**（[LICENSE](LICENSE)）：
-  **个人学习 / 研究 / 业余爱好 / 慈善 / 教育 / 公共研究 / 政府**等非商业用途 —— 免费，随便用、可以改。
-- **任何商业用途都需要单独授权**（公司内部使用、随产品分发、SaaS、二次开发交付……）
-  → 用途、报价与常见问题见 **[COMMERCIAL.md](COMMERCIAL.md)**。
-- **想支持一下开发，或者需要不限条数的「专业版」**：在 [爱发电](https://ifdian.net/item/f9d058d0c70111f199f15254001e7c00) 购买（¥29.9，一次买断、一台电脑一份）。免费版限 2,000 条素材与 1 台手机，每天分享给朋友 / 转发朋友圈还能换使用天数；**手机端始终完全免费**，不在这里卖。
-- 内置 / 依赖的第三方组件与模型许可见 **[THIRD-PARTY.md](THIRD-PARTY.md)**
-  （特别是 FFmpeg、Chromaprint 与内置模型的许可 —— 商用分发前请务必核对）。
+- **电脑端**采用 **PolyForm Noncommercial License 1.0.0**（[LICENSE](LICENSE)），商用条款见 [COMMERCIAL.md](COMMERCIAL.md)
+- **手机端**（iPhone / iPad App）只分发安装包，源码不公开：安装包与指引在独立仓库 [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)
+- 内置与第三方组件、模型的许可见 [THIRD-PARTY.md](THIRD-PARTY.md)（FFmpeg、Chromaprint、内置模型）
 
 ---
 
