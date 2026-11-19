@@ -120,7 +120,7 @@ shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
   <img src="https://raw.githubusercontent.com/FRr688/FXseekMobile/main/docs/demo/phone-main.png" width="210" alt="FXseek iPhone app main screen">
 </p>
 
-Separate repository: **[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)** — free, 5-step sideload.
+Separate repository: **[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)** — a 5-step sideload install.
 Pair over the same LAN to browse, search and move files between both sides. The Mac side keeps only the pairing
 endpoint (`mobile.py`) and the [protocol notes](docs/手机版协议.md).
 
@@ -160,18 +160,10 @@ hdiutil verify dist/FXseek-1.1.0.dmg     # must print VALID
 | `FXseekMobile/` | The **Mac side** of the phone feature: `eg2.py` (offline vector table), `mobile.py` (pairing, mDNS broadcast, LAN auth). **The phone binary and install guide moved to their own repo: [FXseekMobile](https://github.com/FRr688/FXseekMobile)** |
 | `docs/` | [Building guide](docs/building.md) · [engineering notes](docs/手册.md) *(Chinese)* · [runtime & binaries](docs/运行时与二进制.md) · [mobile protocol](docs/手机版协议.md) · [demo assets](docs/demo/) |
 
-## License (important)
+## License
 
-- **The phone app (iPhone / iPad) is free to use but closed source**: its binary is distributed from [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile), never its app source. This repository open-sources the Mac app only.
-- **Supporting development, or need unlimited items:** the paid edition is on [Afdian](https://ifdian.net/item/f9d058d0c70111f199f15254001e7c00) (¥29.9 one-time, one computer). The free edition is capped at 2,000 items and one phone; sharing keeps extending it. **The iOS app is always free** and is not sold there.
-- The Mac app is released under the **PolyForm Noncommercial License 1.0.0** ([LICENSE](LICENSE)):
-  free to use and modify for **personal study, research, hobby projects, charity, education, public
-  research and government** use.
-- **Any commercial use requires a separate license** (internal company use, shipping it with a product,
-  SaaS, contract development, …) → see **[COMMERCIAL.md](COMMERCIAL.md)** for terms and pricing.
-- Licenses for bundled and third-party components and models are listed in **[THIRD-PARTY.md](THIRD-PARTY.md)**
-  — check it before distributing, especially for FFmpeg, Chromaprint and the bundled model.
-
----
-
-[简体中文 →](README.md)
+- **The Mac app** is released under the **PolyForm Noncommercial License 1.0.0** ([LICENSE](LICENSE));
+  commercial licensing terms are in [COMMERCIAL.md](COMMERCIAL.md).
+- **The phone app (iPhone / iPad)** ships as a signed binary only — package and install guide live in
+  [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile).
+- Licenses for bundled and third-party components and models are listed in [THIRD-PARTY.md](THIRD-PARTY.md).
