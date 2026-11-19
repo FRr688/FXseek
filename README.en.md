@@ -85,7 +85,7 @@ drop in a reference image     → reverse image search; videos jump to the match
 
 ## Download
 
-1. Grab `FXseek-1.1.0.dmg` from [Releases](../../releases) — the phone build is `FXseekMobile/dist/FXseekMobile-1.1.0.ipa` in this repo, see [iPhone / iPad](#-iphone--ipad) below
+1. Grab `FXseek-1.1.0.dmg` from [Releases](../../releases) — the phone app is a separate repository: [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)
 2. **Delete any older copy first**: `/Applications/FXseek.app` (installing over it leaves stale files behind)
 3. Open the dmg and drag `FXseek.app` into *Applications*
 4. On first launch it **downloads the built-in model (~1.8 GB)** automatically, with a progress bar; it tries a mirror first and falls back to the official source
@@ -107,64 +107,22 @@ GitHub's release CDN can be slow or unreachable there. These mirrors serve the e
 The mirrors are third-party proxies — they may be unavailable at any time. If none of them work, try the
 direct link, or use any GitHub accelerator you trust by prefixing it to the direct URL.
 
-**File integrity** (350.3 MB / 367,309,446 bytes):
+**File integrity** (222.0 MB / 232,777,319 bytes):
 
 ```bash
 shasum -a 256 ~/Downloads/FXseek-1.1.0.dmg
-# 0f7aac8a203741bc0581402c0e5f649f4a2339a5faf6bef13be8277e9635ec1e
+# a92e0bb1d67590028413debfc0dbe0d454868ebbd878508ffa0db95a79712f7d
 ```
 
 ## 📱 iPhone / iPad
 
-Once FXseek is running on the Mac, the phone can use the same library over **a direct LAN connection**:
-browse, search (text / image / audio) and play the whole library from your phone. **Phone ⇄ Mac transfer** goes
-both ways — the phone's own photos, voice memos and files can be pushed into a desktop index source, and desktop
-assets can be saved onto the phone to take with you. The phone keeps a **local index**, so once you leave the
-house it still searches with no Wi-Fi at all (on-device, offline). Pairing is a one-time 6-digit code exchanged
-for a long-lived token, and everything off the loopback interface requires that token — **the library itself never
-leaves your LAN**.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/FRr688/FXseekMobile/main/docs/demo/phone-main.png" width="210" alt="FXseek iPhone app main screen">
+</p>
 
-### What it looks like, and how it pairs
-
-| Phone UI | Phone ⇄ Mac over Wi-Fi |
-|:--:|:--:|
-| ![Phone UI](docs/demo/phone-ui.gif) | ![Pairing demo](docs/demo/phone-link.gif) |
-| Grid browsing, audio cards, search by picture — all offline | Type the 6-digit code from the Mac and the phone joins the same library; a phone panel shows up on the desktop |
-
-Full demo videos (1080p, 25–30 s each): [phone UI](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-phone-ui.mp4) · [pairing](https://github.com/FRr688/FXseek/releases/download/v1.1.0/fxseek-demo-pairing.mp4)
-
-### Sideloading it (5 steps)
-
-Free the whole way; no developer account needed. A sideloaded build is good for **7 days** — sign it again when it
-expires, or let AltStore renew it for you automatically.
-
-1. **Get the build** — [`FXseekMobile/dist/FXseekMobile-1.1.0.ipa`](FXseekMobile/dist/FXseekMobile-1.1.0.ipa) (~25 MB, [direct link](https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/FXseekMobile-1.1.0.ipa)). The phone app is **free, binary only — its source is not published** (the same file will also sit in the release assets)
-2. **Install a signing tool** — [Sideloadly](https://sideloadly.io) (most reliable, sign once over a cable) · [AltStore](https://altstore.io) (auto-renew, same Wi-Fi) · [TrollStore](https://github.com/opa334/TrollStore) (iOS ≤ 16.6.1, permanent)
-3. **Sign it onto the phone** — connect the iPhone with a cable and tap *Trust*; open Sideloadly and drag the ipa into the window; put your normal Apple ID in the **Apple ID** field (the password only ever goes to Apple's signing service); hit **Start** until it says **Done**
-4. **Allow it on the phone** — Settings → General → **VPN & Device Management** → pick your Apple ID → **Trust**; on iOS 16+ also Settings → Privacy & Security → **Developer Mode** → on, then restart once
-5. **Try it** — open FXseek → the **On this device** tab at the bottom → drop in a couple of songs or photos → play one → hit the lock button and check for *Previous / Next* on the lock screen
-
-> ⚠️ **If your signing tool reports `Login failed (-80045)`: it is not your mistake.** Since 12 Oct 2026 Apple's
-> account-verification endpoint has been refusing sign-ins, so every sideloading tool (Sideloadly / AltStore /
-> SideStore…) fails with that same code — the failure is at the *login* step, before anything is signed. Switch
-> Sideloadly's anisette from Local to Remote, or install the same ipa with [iloader](https://github.com/nab138/iloader/releases);
-> don't hammer retries with the same Apple ID (Apple rate-limits them). Details: [`FXseekMobile/dist/用户装包指引.md`](FXseekMobile/dist/用户装包指引.md) *(Chinese)*.
-
-- 📖 Full walkthrough and FAQ: [`FXseekMobile/dist/用户装包指引.md`](FXseekMobile/dist/用户装包指引.md) *(Chinese)*
-- 🧩 **No computer needed** (AltStore source): paste this line into AltStore's `Browse → Sources → +` and you get one-tap installs with automatic re-signing:
-
-```
-https://raw.githubusercontent.com/FRr688/FXseek/main/FXseekMobile/dist/altstore.json
-```
-
-  The source file is the repository's own [`FXseekMobile/dist/altstore.json`](FXseekMobile/dist/altstore.json) (the `.ipa` and icon live in the same folder).
-
-**Phone build integrity** (24.9 MB / 26,143,063 bytes, build 38):
-
-```bash
-shasum -a 256 ~/Downloads/FXseekMobile-1.1.0.ipa
-# 47758b12f7f0db08fc8616bddc4c6c7d9cb807629df15c898f9cab834150e663
-```
+Separate repository: **[FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile)** — free, 5-step sideload.
+Pair over the same LAN to browse, search and move files between both sides. The Mac side keeps only the pairing
+endpoint (`mobile.py`) and the [protocol notes](docs/手机版协议.md).
 
 ## Building from source
 
@@ -199,12 +157,12 @@ hdiutil verify dist/FXseek-1.1.0.dmg     # must print VALID
 | `launcher.py` / `tray_helper.py` | Native launcher (Mach-O, so microphone permission is attributed correctly) and menu-bar helper |
 | `ui.html` / `settings.html` / `i18n.js` / `icons.js` | Front end (no build step, plain JS) |
 | `tools/` | Packaging scripts, dependency audit, native launcher source, sample-asset generator |
-| `FXseekMobile/dist/` | The phone app's **binary and install guide** (`FXseekMobile-1.1.0.ipa`, `altstore.json`, `用户装包指引.md`); **the app's source is not published** — `eg2.py` / `mobile.py` above are the Mac side (offline vector table and LAN sync protocol) |
+| `FXseekMobile/` | The **Mac side** of the phone feature: `eg2.py` (offline vector table), `mobile.py` (pairing, mDNS broadcast, LAN auth). **The phone binary and install guide moved to their own repo: [FXseekMobile](https://github.com/FRr688/FXseekMobile)** |
 | `docs/` | [Building guide](docs/building.md) · [engineering notes](docs/手册.md) *(Chinese)* · [runtime & binaries](docs/运行时与二进制.md) · [mobile protocol](docs/手机版协议.md) · [demo assets](docs/demo/) |
 
 ## License (important)
 
-- **The phone app (iPhone / iPad) is free to use but closed source**: this repo ships only its binary (`FXseekMobile/dist/`), never the app source. This repository open-sources the Mac app only.
+- **The phone app (iPhone / iPad) is free to use but closed source**: its binary is distributed from [FRr688/FXseekMobile](https://github.com/FRr688/FXseekMobile), never its app source. This repository open-sources the Mac app only.
 - **Supporting development, or need unlimited items:** the paid edition is on [Afdian](https://ifdian.net/item/f9d058d0c70111f199f15254001e7c00) (¥29.9 one-time, one computer). The free edition is capped at 2,000 items and one phone; sharing keeps extending it. **The iOS app is always free** and is not sold there.
 - The Mac app is released under the **PolyForm Noncommercial License 1.0.0** ([LICENSE](LICENSE)):
   free to use and modify for **personal study, research, hobby projects, charity, education, public
